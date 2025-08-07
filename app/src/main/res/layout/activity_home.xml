@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F5F7FA"
+    android:fitsSystemWindows="true"
+    tools:context=".HomeActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- Header com logo e título -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:layout_marginBottom="32dp">
+
+            <ImageView
+                android:id="@+id/imageLogo"
+                android:layout_width="120dp"
+                android:layout_height="80dp"
+                android:layout_marginBottom="16dp"
+                app:srcCompat="@drawable/logo_rh247" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Sistema de Ponto"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:textColor="#2E3A59"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Bem-vindo ao painel administrativo"
+                android:textSize="16sp"
+                android:textColor="#8B94A8"
+                android:gravity="center" />
+
+        </LinearLayout>
+
+        <!-- Grid de Cards 2x2 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- Primeira linha de cards -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="16dp">
+
+                <!-- Card Usuários -->
+                <androidx.cardview.widget.CardView
+                    android:id="@+id/cardUsuarios"
+                    android:layout_width="0dp"
+                    android:layout_height="160dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="4dp"
+                    app:cardBackgroundColor="#FFFFFF">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="20dp">
+
+                                                 <ImageView
+                             android:layout_width="48dp"
+                             android:layout_height="48dp"
+                             android:layout_marginBottom="12dp"
+                             android:src="@drawable/user"
+                             android:tint="@color/primary_blue" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Usuários"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="#2E3A59"
+                            android:gravity="center" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Gerenciar usuários"
+                            android:textSize="12sp"
+                            android:textColor="#8B94A8"
+                            android:gravity="center"
+                            android:layout_marginTop="4dp" />
+
+                    </LinearLayout>
+
+                </androidx.cardview.widget.CardView>
+
+                <!-- Card Funcionários -->
+                <androidx.cardview.widget.CardView
+                    android:id="@+id/cardFuncionarios"
+                    android:layout_width="0dp"
+                    android:layout_height="160dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="4dp"
+                    app:cardBackgroundColor="#FFFFFF">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="20dp">
+
+                                                 <ImageView
+                             android:layout_width="48dp"
+                             android:layout_height="48dp"
+                             android:layout_marginBottom="12dp"
+                             android:src="@drawable/funcionarios"
+                             android:tint="@color/primary_blue" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Funcionários"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="#2E3A59"
+                            android:gravity="center" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Cadastro e controle"
+                            android:textSize="12sp"
+                            android:textColor="#8B94A8"
+                            android:gravity="center"
+                            android:layout_marginTop="4dp" />
+
+                    </LinearLayout>
+
+                </androidx.cardview.widget.CardView>
+
+            </LinearLayout>
+
+            <!-- Segunda linha de cards -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="16dp">
+
+                <!-- Card Registrar Ponto -->
+                <androidx.cardview.widget.CardView
+                    android:id="@+id/cardRegistrarPonto"
+                    android:layout_width="0dp"
+                    android:layout_height="160dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="4dp"
+                    app:cardBackgroundColor="#FFFFFF">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="20dp">
+
+                                                 <TextView
+                             android:layout_width="48dp"
+                             android:layout_height="48dp"
+                             android:layout_marginBottom="12dp"
+                             android:text="⏰"
+                             android:textSize="32sp"
+                             android:gravity="center" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Registrar Ponto"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="#2E3A59"
+                            android:gravity="center" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Bater ponto facial"
+                            android:textSize="12sp"
+                            android:textColor="#8B94A8"
+                            android:gravity="center"
+                            android:layout_marginTop="4dp" />
+
+                    </LinearLayout>
+
+                </androidx.cardview.widget.CardView>
+
+                <!-- Card Visualizar Pontos -->
+                <androidx.cardview.widget.CardView
+                    android:id="@+id/cardVisualizarPontos"
+                    android:layout_width="0dp"
+                    android:layout_height="160dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:foreground="?attr/selectableItemBackground"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="4dp"
+                    app:cardBackgroundColor="#FFFFFF">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="48dp"
+                            android:layout_height="48dp"
+                            android:layout_marginBottom="12dp"
+                            android:text="📋"
+                            android:textSize="32sp"
+                            android:gravity="center" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Relatórios"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="#2E3A59"
+                            android:gravity="center" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Ver pontos registrados"
+                            android:textSize="12sp"
+                            android:textColor="#8B94A8"
+                            android:gravity="center"
+                            android:layout_marginTop="4dp" />
+
+                    </LinearLayout>
+
+                </androidx.cardview.widget.CardView>
+
+            </LinearLayout>
+
+                         <!-- Terceira linha - apenas configurações centralizada -->
+             <LinearLayout
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+                 android:orientation="horizontal"
+                 android:gravity="center">
+
+                 <!-- Card Configurações -->
+                 <androidx.cardview.widget.CardView
+                     android:id="@+id/cardConfiguracoes"
+                     android:layout_width="0dp"
+                     android:layout_height="160dp"
+                     android:layout_weight="0.5"
+                     android:clickable="true"
+                     android:focusable="true"
+                     android:foreground="?attr/selectableItemBackground"
+                     app:cardCornerRadius="16dp"
+                     app:cardElevation="4dp"
+                     app:cardBackgroundColor="#FFFFFF">
+
+                     <LinearLayout
+                         android:layout_width="match_parent"
+                         android:layout_height="match_parent"
+                         android:orientation="vertical"
+                         android:gravity="center"
+                         android:padding="20dp">
+
+                         <TextView
+                             android:layout_width="48dp"
+                             android:layout_height="48dp"
+                             android:layout_marginBottom="12dp"
+                             android:text="⚙️"
+                             android:textSize="32sp"
+                             android:gravity="center" />
+
+                         <TextView
+                             android:layout_width="wrap_content"
+                             android:layout_height="wrap_content"
+                             android:text="Configurações"
+                             android:textSize="16sp"
+                             android:textStyle="bold"
+                             android:textColor="#2E3A59"
+                             android:gravity="center" />
+
+                         <TextView
+                             android:layout_width="wrap_content"
+                             android:layout_height="wrap_content"
+                             android:text="Ajustes do sistema"
+                             android:textSize="12sp"
+                             android:textColor="#8B94A8"
+                             android:gravity="center"
+                             android:layout_marginTop="4dp" />
+
+                     </LinearLayout>
+
+                 </androidx.cardview.widget.CardView>
+
+             </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- Footer com informações -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:layout_marginTop="40dp"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Sistema de Ponto - v2.0"
+                android:textSize="14sp"
+                android:textColor="#8B94A8" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Powered by Face Recognition Technology"
+                android:textSize="12sp"
+                android:textColor="#C4C9D4"
+                android:layout_marginTop="4dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</ScrollView>

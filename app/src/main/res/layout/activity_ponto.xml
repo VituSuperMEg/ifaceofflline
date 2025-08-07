@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mainLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#F5F5F5"
+    android:fitsSystemWindows="true">
+
+    <!-- Header -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🎯 SISTEMA DE PONTO"
+        android:textSize="24sp"
+        android:gravity="center"
+        android:textColor="#333333"
+        android:padding="16dp"
+        android:background="#FFFFFF" />
+
+    <!-- Status Text -->
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="📷 Posicione seu rosto na câmera"
+        android:textSize="16sp"
+        android:gravity="center"
+        android:textColor="#666666"
+        android:padding="16dp" />
+
+    <!-- Camera Container -->
+    <FrameLayout
+        android:id="@+id/cameraContainer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#000000">
+
+        <androidx.camera.view.PreviewView
+            android:id="@+id/previewView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <com.example.iface_offilne.util.FaceOverlayView
+            android:id="@+id/overlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+    </FrameLayout>
+
+    <!-- Funcionário Info (inicialmente oculto) -->
+    <LinearLayout
+        android:id="@+id/funcionarioInfo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:background="#FFFFFF"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/funcionarioNome"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="18sp"
+            android:textColor="#333333"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/ultimoPonto"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:gravity="center"
+            android:paddingTop="8dp"
+            android:paddingBottom="16dp" />
+
+        <RadioGroup
+            android:id="@+id/tipoPontoRadioGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <RadioButton
+                android:id="@+id/radioEntrada"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ENTRADA"
+                android:checked="true" />
+
+            <RadioButton
+                android:id="@+id/radioSaida"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="SAÍDA" />
+
+        </RadioGroup>
+
+    </LinearLayout>
+
+    <!-- Botão Voltar -->
+    <Button
+        android:id="@+id/btnVoltar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="⬅️ VOLTAR"
+        android:textSize="14sp"
+        android:backgroundTint="#757575"
+        android:textColor="#FFFFFF"
+        android:padding="16dp"
+        android:layout_margin="16dp" />
+
+</LinearLayout> 
