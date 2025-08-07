@@ -448,7 +448,7 @@ class CameraActivity : AppCompatActivity() {
             if (usuario != null) {
                 val faces = FaceEntity(
                     id = usuario.id,
-                    funcionarioId = usuario.id.toString(),
+                    funcionarioId = usuario.codigo,
                     embedding = vetorFacial.joinToString(","),
                     synced = true
                 )

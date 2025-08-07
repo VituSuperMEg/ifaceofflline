@@ -20,6 +20,7 @@ import com.example.iface_offilne.helpers.FaceRecognitionHelper
 import com.example.iface_offilne.helpers.bitmapToFloatArray
 import com.example.iface_offilne.helpers.cropFace
 import com.example.iface_offilne.helpers.toBitmap
+import com.example.iface_offilne.databinding.ActivityPontoBinding
 import com.example.iface_offilne.util.FaceOverlayView
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
@@ -38,6 +39,7 @@ import java.util.*
 
 class PontoActivity : AppCompatActivity() {
 
+    private lateinit var binding: ActivityPontoBinding
     private lateinit var previewView: PreviewView
     private lateinit var imageAnalyzer: ImageAnalysis
     private lateinit var overlay: FaceOverlayView
@@ -74,6 +76,10 @@ class PontoActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Inicializar binding
+        binding = ActivityPontoBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        
         // Resetar variáveis
         funcionarioReconhecido = null
         processandoFace = false
@@ -95,6 +101,9 @@ class PontoActivity : AppCompatActivity() {
         
         // Criar funcionário de teste se não existir
         createTestEmployeeIfNeeded()
+        
+        // Remover backgroundTint do botão voltar
+        binding.btnVoltar.backgroundTintList = null
 
         // Solicitar permissões
         if (allPermissionsGranted()) {
@@ -108,30 +117,20 @@ class PontoActivity : AppCompatActivity() {
         try {
             Log.d(TAG, "🔧 Configurando UI...")
             
-            // Usar layout XML em vez de criar programaticamente
-            setContentView(R.layout.activity_ponto)
-            
-            // Configurar status bar
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                window.statusBarColor = ContextCompat.getColor(this, android.R.color.transparent)
-                window.navigationBarColor = ContextCompat.getColor(this, android.R.color.transparent)
-            }
-            
             // Configurar padding para status bar
-            val mainLayout = findViewById<LinearLayout>(R.id.mainLayout)
-            mainLayout?.setPadding(0, getStatusBarHeight(), 0, 0)
+            binding.mainLayout.setPadding(0, getStatusBarHeight(), 0, 0)
             
-            // Referenciar views do layout XML
-            statusText = findViewById(R.id.statusText)
-            previewView = findViewById(R.id.previewView)
-            overlay = findViewById(R.id.overlay)
-            funcionarioInfo = findViewById(R.id.funcionarioInfo)
-            funcionarioNome = findViewById(R.id.funcionarioNome)
-            ultimoPonto = findViewById(R.id.ultimoPonto)
-            tipoPontoRadioGroup = findViewById(R.id.tipoPontoRadioGroup)
+            // Referenciar views usando binding
+            statusText = binding.statusText
+            previewView = binding.previewView
+            overlay = binding.overlay
+            funcionarioInfo = binding.funcionarioInfo
+            funcionarioNome = binding.funcionarioNome
+            ultimoPonto = binding.ultimoPonto
+            tipoPontoRadioGroup = binding.tipoPontoRadioGroup
             
             // Configurar botão voltar
-            findViewById<Button>(R.id.btnVoltar)?.setOnClickListener { finish() }
+            binding.btnVoltar.setOnClickListener { finish() }
             
             Log.d(TAG, "✅ UI configurada com sucesso")
             
@@ -416,14 +415,14 @@ class PontoActivity : AppCompatActivity() {
         // Buscar último ponto para referência
         val ultimoPontoEntity = AppDatabase.getInstance(this)
             .pontosGenericosDao()
-            .getUltimoPonto(funcionario.id.toString())
+            .getUltimoPonto(funcionario.codigo)
 
         // Determinar tipo de ponto baseado no último registro
         val tipoPonto = if (ultimoPontoEntity?.tipoPonto == "ENTRADA") "SAIDA" else "ENTRADA"
         
         // Registrar o ponto
         val ponto = PontosGenericosEntity(
-            funcionarioId = funcionario.id.toString(),
+            funcionarioId = funcionario.codigo,
             funcionarioNome = funcionario.nome,
             tipoPonto = tipoPonto,
             dataHora = horarioAtual
@@ -439,6 +438,8 @@ class PontoActivity : AppCompatActivity() {
         withContext(Dispatchers.Main) {
             mostrarConfirmacaoPonto(funcionario, tipoPonto, dataFormatada)
         }
+
+
         
         processandoFace = false
     }

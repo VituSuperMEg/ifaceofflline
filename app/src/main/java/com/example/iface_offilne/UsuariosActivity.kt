@@ -26,6 +26,10 @@ class UsuariosActivity : AppCompatActivity() {
     private lateinit var adapter: UsuariosAdapter
 
     private var isLoading = false
+    
+    companion object {
+        private const val REQUEST_EDIT_USER = 100
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,9 +38,9 @@ class UsuariosActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         adapter = UsuariosAdapter(listaUsuarios) { usuario ->
-            val screen  = Intent(this@UsuariosActivity, UsuarioEdit::class.java)
+            val screen = Intent(this@UsuariosActivity, UsuarioEdit::class.java)
             screen.putExtra("usuario", usuario)
-            startActivity(screen)
+            startActivityForResult(screen, REQUEST_EDIT_USER)
         }
 
         binding.listaUsuarios.layoutManager = LinearLayoutManager(this)
@@ -62,6 +66,15 @@ class UsuariosActivity : AppCompatActivity() {
         })
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        
+        if (requestCode == REQUEST_EDIT_USER && resultCode == UsuarioEdit.RESULT_USER_UPDATED) {
+            // Usuário foi atualizado, recarregar a lista
+            loadUsuarios()
+        }
+    }
+
     override fun onSupportNavigateUp(): Boolean {
         val navController = findNavController(R.id.nav_host_fragment_content_usuarios)
         return navController.navigateUp(appBarConfiguration)
@@ -80,7 +93,7 @@ class UsuariosActivity : AppCompatActivity() {
                 Log.e("M", "$users")
                 val mappedUsers = users.map { entity ->
                     FuncionariosLocalModel(
-                        codigo = entity.id.toString(),
+                        codigo = entity.codigo,
                         id = entity.id,
                         nome = entity.nome,
                         ativo = entity.ativo

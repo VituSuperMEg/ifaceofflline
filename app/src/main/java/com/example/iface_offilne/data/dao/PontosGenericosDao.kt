@@ -1,6 +1,7 @@
 package com.example.iface_offilne.data.dao
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -29,4 +30,7 @@ interface PontosGenericosDao {
     
     @Query("SELECT * FROM pontos_genericos WHERE funcionarioId = :funcionarioId ORDER BY dataHora DESC LIMIT 1")
     suspend fun getUltimoPonto(funcionarioId: String): PontosGenericosEntity?
+    
+    @Delete
+    suspend fun delete(ponto: PontosGenericosEntity)
 } 

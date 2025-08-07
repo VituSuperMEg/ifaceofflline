@@ -49,9 +49,11 @@ class FuncionariosActivity : AppCompatActivity() {
                 .setTitle("Sincronizar Funcionário")
                 .setMessage("Deseja sincronizar ${funcionariosModel.nome} ao sistema?")
                 .setPositiveButton("Sim") { dialog, _ ->
+                    val cpfLimpo = funcionariosModel.numero_cpf.replace(Regex("[^0-9]"), "")
+                    
                     val funcionario = FuncionariosEntity(
                         id = funcionariosModel.id,
-                        codigo = funcionariosModel.id.toString(),
+                        codigo = cpfLimpo,
                         nome = funcionariosModel.nome,
                         ativo = 1
                     )

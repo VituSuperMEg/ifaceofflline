@@ -5,8 +5,8 @@ import java.io.Serializable
 
 data class FuncionariosLocalModel(
     val id: Int,
-    val codigo: String,
-    val nome: String,
-    val ativo: Int = 1
+    var codigo: String,
+    var nome: String,
+    var ativo: Int = 1
 ) : Serializable
 

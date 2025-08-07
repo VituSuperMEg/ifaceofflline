@@ -1,6 +1,7 @@
 package com.example.iface_offilne.data
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -20,4 +21,10 @@ interface FaceDao {
 
     @Update
     suspend fun update(face: FaceEntity)
+    
+    @Query("DELETE FROM faces WHERE funcionarioId = :funcionarioId")
+    suspend fun deleteByFuncionarioId(funcionarioId: String)
+    
+    @Delete
+    suspend fun delete(face: FaceEntity)
 }

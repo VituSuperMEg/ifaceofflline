@@ -45,7 +45,7 @@ class FaceRecognitionHelper(private val context: Context) {
                 for (funcionario in funcionarios) {
                     try {
                         // Buscar o rosto do funcionário
-                        val faceEntity = faceDao.getByFuncionarioId(funcionario.id.toString())
+                        val faceEntity = faceDao.getByFuncionarioId(funcionario.codigo)
                         
                         if (faceEntity != null) {
                             // Converter o embedding string para FloatArray

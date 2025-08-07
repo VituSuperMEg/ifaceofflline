@@ -4,32 +4,10 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#F5F5F5"
+    android:background="#000000"
     android:fitsSystemWindows="true">
 
-    <!-- Header -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="🎯 SISTEMA DE PONTO"
-        android:textSize="24sp"
-        android:gravity="center"
-        android:textColor="#333333"
-        android:padding="16dp"
-        android:background="#FFFFFF" />
-
-    <!-- Status Text -->
-    <TextView
-        android:id="@+id/statusText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="📷 Posicione seu rosto na câmera"
-        android:textSize="16sp"
-        android:gravity="center"
-        android:textColor="#666666"
-        android:padding="16dp" />
-
-    <!-- Camera Container -->
+    <!-- Camera Container (ocupa quase tudo) -->
     <FrameLayout
         android:id="@+id/cameraContainer"
         android:layout_width="match_parent"
@@ -48,6 +26,18 @@
             android:layout_height="match_parent" />
 
     </FrameLayout>
+
+    <!-- Status Text (abaixo da câmera) -->
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="📷 Posicione seu rosto na câmera"
+        android:textSize="16sp"
+        android:gravity="center"
+        android:textColor="#FFFFFF"
+        android:padding="12dp"
+        android:background="#000000" />
 
     <!-- Funcionário Info (inicialmente oculto) -->
     <LinearLayout
@@ -106,11 +96,11 @@
         android:id="@+id/btnVoltar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="⬅️ VOLTAR"
+        android:text="VOLTAR"
         android:textSize="14sp"
-        android:backgroundTint="#757575"
+        android:background="@drawable/button_background_blue_selector"
         android:textColor="#FFFFFF"
-        android:padding="16dp"
-        android:layout_margin="16dp" />
+        android:padding="12dp"
+        android:layout_margin="8dp" />
 
 </LinearLayout> 

@@ -1,0 +1,24 @@
+<!-- res/drawable/button_background_pink_selector.xml -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape>
+            <solid android:color="#D13E5A" />
+            <corners android:radius="12dp" />
+            <stroke android:width="2dp" android:color="#D13E5A" />
+        </shape>
+    </item>
+    <item android:state_focused="true">
+        <shape>
+            <solid android:color="#D13E5A" />
+            <corners android:radius="12dp" />
+            <stroke android:width="2dp" android:color="#D13E5A" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <solid android:color="#F1536E" />
+            <corners android:radius="12dp" />
+            <stroke android:width="2dp" android:color="#F1536E" />
+        </shape>
+    </item>
+</selector> 

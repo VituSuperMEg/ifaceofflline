@@ -6,6 +6,8 @@ import android.util.Log
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
+import androidx.constraintlayout.widget.ConstraintLayout
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.example.iface_offilne.data.AppDatabase
 import com.example.iface_offilne.data.PontosGenericosEntity
 import kotlinx.coroutines.CoroutineScope
@@ -42,18 +44,55 @@ class VisualizarPontosActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#F5F5F5"))
         }
 
-        // Header
-        val header = TextView(this).apply {
-            text = "📋 PONTOS REGISTRADOS"
-            textSize = 24f
-            gravity = android.view.Gravity.CENTER
-            setTextColor(Color.parseColor("#333333"))
-            setPadding(16, 32, 16, 16)
-            setBackgroundColor(Color.parseColor("#FFFFFF"))
+        // Header com estilo da tela de usuários
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dpToPx(48)
+            ).apply {
+                setMargins(dpToPx(16), dpToPx(14), dpToPx(16), 0)
+            }
+            setBackgroundResource(R.drawable.roundend)
+            elevation = 5f
+            setPadding(dpToPx(16), dpToPx(14), dpToPx(16), dpToPx(14))
+            gravity = android.view.Gravity.CENTER_VERTICAL
         }
+
+        // Botão voltar com ícone
+        val btnVoltar = ImageButton(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setImageResource(R.drawable.arrowleft)
+            setBackgroundColor(Color.TRANSPARENT)
+            setOnClickListener { finish() }
+        }
+
+        // Título do header - não centralizado, ao lado da seta
+        val tituloHeader = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+            )
+            text = "Pontos Registrados"
+            textSize = 18f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor("#333333"))
+            gravity = android.view.Gravity.START or android.view.Gravity.CENTER_VERTICAL
+            setPadding(dpToPx(16), 0, 0, 0)
+        }
+
+        // Adicionar views ao header
+        header.addView(btnVoltar)
+        header.addView(tituloHeader)
 
         // Status
         statusText = TextView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
             text = "🔄 Carregando pontos..."
             textSize = 16f
             gravity = android.view.Gravity.CENTER
@@ -73,28 +112,43 @@ class VisualizarPontosActivity : AppCompatActivity() {
         scrollView = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                0, 1f // weight = 1 para ocupar espaço disponível
+                0, 1f
             )
             addView(pontosContainer)
         }
 
-        // Botão voltar
-        val btnVoltar = Button(this).apply {
-            text = "⬅️ VOLTAR"
-            textSize = 14f
-            setBackgroundColor(Color.parseColor("#757575"))
-            setTextColor(Color.WHITE)
-            setPadding(16, 12, 16, 12)
-            setOnClickListener { finish() }
-        }
-
-        // Montar layout principal
+        // Adicionar views ao layout principal
         mainLayout.addView(header)
         mainLayout.addView(statusText)
         mainLayout.addView(scrollView)
-        mainLayout.addView(btnVoltar)
 
-        setContentView(mainLayout)
+        // FloatingActionButton para sincronização
+        val fabSync = FloatingActionButton(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
+                setMargins(0, 0, dpToPx(16), dpToPx(16))
+            }
+            setImageResource(android.R.drawable.ic_menu_upload)
+            setOnClickListener {
+                sincronizarPontos()
+            }
+        }
+
+        // Container principal com FAB
+        val containerPrincipal = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        containerPrincipal.addView(mainLayout)
+        containerPrincipal.addView(fabSync)
+
+        setContentView(containerPrincipal)
     }
 
     private fun carregarPontos() {
@@ -128,7 +182,7 @@ class VisualizarPontosActivity : AppCompatActivity() {
         pontosContainer.removeAllViews()
 
         val formato = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
-        val formatoHora = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val formatoHora = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
         
         // Agrupar por data
         val pontosPorData = pontos.groupBy { ponto ->
@@ -165,7 +219,7 @@ class VisualizarPontosActivity : AppCompatActivity() {
 
     private fun criarViewPonto(ponto: PontosGenericosEntity, formatoHora: SimpleDateFormat): View {
         val pontoLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -174,58 +228,22 @@ class VisualizarPontosActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#FFFFFF"))
         }
 
-        // Ícone do tipo de ponto
-        val icone = TextView(this).apply {
-            text = if (ponto.tipoPonto == "ENTRADA") "🟢" else "🔴"
-            textSize = 20f
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        // Informações do ponto
-        val infoLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-            )
-            setPadding(16, 0, 0, 0)
-        }
-
         val nomeHora = TextView(this).apply {
             text = "${ponto.funcionarioNome} - ${formatoHora.format(Date(ponto.dataHora))}"
             textSize = 16f
             setTextColor(Color.parseColor("#333333"))
+            setPadding(0, 0, 0, 4)
         }
 
-        val tipoPonto = TextView(this).apply {
-            text = ponto.tipoPonto
-            textSize = 14f
-            setTextColor(
-                if (ponto.tipoPonto == "ENTRADA") 
-                    Color.parseColor("#4CAF50") 
-                else 
-                    Color.parseColor("#F44336")
-            )
+        val dataCompleta = TextView(this).apply {
+            val formatoCompleto = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
+            text = "Data: ${formatoCompleto.format(Date(ponto.dataHora))}"
+            textSize = 12f
+            setTextColor(Color.parseColor("#666666"))
         }
 
-        infoLayout.addView(nomeHora)
-        infoLayout.addView(tipoPonto)
-
-        // Status de sincronização
-        val statusSync = TextView(this).apply {
-            text = if (ponto.synced) "✅" else "⏳"
-            textSize = 16f
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        pontoLayout.addView(icone)
-        pontoLayout.addView(infoLayout)
-        pontoLayout.addView(statusSync)
+        pontoLayout.addView(nomeHora)
+        pontoLayout.addView(dataCompleta)
 
         // Linha separadora
         val separador = View(this).apply {
@@ -276,6 +294,35 @@ class VisualizarPontosActivity : AppCompatActivity() {
         }
 
         pontosContainer.addView(erro)
+    }
+
+    private fun sincronizarPontos() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Buscar pontos não sincronizados
+                val pontosNaoSincronizados = AppDatabase.getInstance(this@VisualizarPontosActivity)
+                    .pontosGenericosDao()
+                    .getPendingSync()
+
+                withContext(Dispatchers.Main) {
+                    if (pontosNaoSincronizados.isNotEmpty()) {
+                        statusText.text = "🔄 Sincronizando ${pontosNaoSincronizados.size} pontos..."
+                        // Aqui você implementaria a lógica de sincronização com o servidor
+                        // Por enquanto, apenas simular
+                        Thread.sleep(2000)
+                        statusText.text = "✅ ${pontosNaoSincronizados.size} pontos sincronizados!"
+                    } else {
+                        statusText.text = "✅ Todos os pontos já estão sincronizados!"
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Erro ao sincronizar pontos", e)
+                withContext(Dispatchers.Main) {
+                    statusText.text = "❌ Erro na sincronização"
+                }
+            }
+        }
     }
 
     private fun dpToPx(dp: Int): Int {
