@@ -1,6 +1,7 @@
 package com.example.iface_offilne
 
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -17,12 +18,16 @@ class Login : AppCompatActivity() {
 
     private lateinit var binding: ActivityLoginBinding
     private var logoClickCount = 0
+    private lateinit var sharedPreferences: SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         binding = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Inicializar SharedPreferences
+        sharedPreferences = getSharedPreferences("LoginPrefs", MODE_PRIVATE)
 
         // Garantir que o usuário ROOT existe
         ensureRootUserExists()
@@ -38,9 +43,13 @@ class Login : AppCompatActivity() {
         // Easter egg: clicar 5 vezes no logo para recriar usuário ROOT
         setupLogoEasterEgg()
 
+        // Verificar se usuário já está logado
+        checkSavedLogin()
+
         binding.btnLogin.setOnClickListener {
             val cpf = binding.cpfLogin.text.toString().trim()
             val senha = binding.senhaLogin.text.toString().trim()
+            val manterLogado = binding.checkboxManterLogado.isChecked
 
             if(cpf.isEmpty() || senha.isEmpty()) {
                 Toast.makeText(this, "Preecha todos os campos", Toast.LENGTH_SHORT).show()
@@ -53,18 +62,86 @@ class Login : AppCompatActivity() {
             CoroutineScope(Dispatchers.IO).launch {
                 val usuario = operadorDap.getOperador(cpf, senha)
                 withContext(Dispatchers.Main) {
-                    withContext(Dispatchers.Main) {
-                        if (usuario != null) {
-                            Toast.makeText(this@Login, "Login com sucesso", Toast.LENGTH_SHORT).show()
-                            val intent = Intent(this@Login, HomeActivity::class.java)
-                            startActivity(intent)
+                    if (usuario != null) {
+                        // Salvar dados de login se "manter logado" estiver marcado
+                        if (manterLogado) {
+                            saveLoginData(cpf, senha)
                         } else {
-                            Toast.makeText(this@Login, "Usuário ou senha incorretos", Toast.LENGTH_SHORT).show()
+                            clearLoginData()
                         }
+                        
+                        Toast.makeText(this@Login, "Login com sucesso", Toast.LENGTH_SHORT).show()
+                        val intent = Intent(this@Login, HomeActivity::class.java)
+                        startActivity(intent)
+                        finish() // Fechar a tela de login
+                    } else {
+                        Toast.makeText(this@Login, "Usuário ou senha incorretos", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
         }
+    }
+
+    /**
+     * Verifica se há dados de login salvos e faz login automático
+     */
+    private fun checkSavedLogin() {
+        val savedCpf = sharedPreferences.getString("saved_cpf", "")
+        val savedSenha = sharedPreferences.getString("saved_senha", "")
+        val manterLogado = sharedPreferences.getBoolean("manter_logado", false)
+
+        if (manterLogado && !savedCpf.isNullOrEmpty() && !savedSenha.isNullOrEmpty()) {
+            Log.d("Login", "🔄 Tentando login automático com dados salvos...")
+            
+            // Preencher campos
+            binding.cpfLogin.setText(savedCpf)
+            binding.senhaLogin.setText(savedSenha)
+            binding.checkboxManterLogado.isChecked = true
+            
+            // Tentar login automático
+            CoroutineScope(Dispatchers.IO).launch {
+                val db = AppDatabase.getInstance(this@Login)
+                val operadorDao = db.operadorDao()
+                val usuario = operadorDao.getOperador(savedCpf, savedSenha)
+                
+                withContext(Dispatchers.Main) {
+                    if (usuario != null) {
+                        Log.d("Login", "✅ Login automático realizado com sucesso")
+                        Toast.makeText(this@Login, "Login automático realizado", Toast.LENGTH_SHORT).show()
+                        val intent = Intent(this@Login, HomeActivity::class.java)
+                        startActivity(intent)
+                        finish()
+                    } else {
+                        Log.d("Login", "❌ Login automático falhou, dados inválidos")
+                        clearLoginData() // Limpar dados inválidos
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Salva os dados de login no SharedPreferences
+     */
+    private fun saveLoginData(cpf: String, senha: String) {
+        val editor = sharedPreferences.edit()
+        editor.putString("saved_cpf", cpf)
+        editor.putString("saved_senha", senha)
+        editor.putBoolean("manter_logado", true)
+        editor.apply()
+        Log.d("Login", "💾 Dados de login salvos para: $cpf")
+    }
+
+    /**
+     * Limpa os dados de login salvos
+     */
+    private fun clearLoginData() {
+        val editor = sharedPreferences.edit()
+        editor.remove("saved_cpf")
+        editor.remove("saved_senha")
+        editor.remove("manter_logado")
+        editor.apply()
+        Log.d("Login", "🗑️ Dados de login limpos")
     }
 
 

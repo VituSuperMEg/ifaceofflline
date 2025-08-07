@@ -5,8 +5,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import com.example.iface_offilne.Adpater.FuncionariosAdapter.FuncionarioViewHolder
-import com.example.iface_offilne.data.FuncionariosEntity
 import com.example.iface_offilne.models.FuncionariosLocalModel
 import com.example.iface_offilne.R
 
@@ -17,9 +15,11 @@ class UsuariosAdapter(
 
     inner class UsuarioViewHolder(itemView: View): RecyclerView.ViewHolder(itemView) {
         private val nomeTextView: TextView = itemView.findViewById(R.id.tuNomeUsuario)
+        private val codigoTextView: TextView = itemView.findViewById(R.id.codigoUsuario)
 
         fun bind(usuario: FuncionariosLocalModel) {
             nomeTextView.text = usuario.nome
+            codigoTextView.text = "Código: ${usuario.codigo}"
             itemView.setOnClickListener {
                 onClick(usuario)
             }
