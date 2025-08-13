@@ -37,19 +37,10 @@ class FaceRegistrationSuccessActivity : AppCompatActivity() {
             setBackgroundColor(android.graphics.Color.parseColor("#F5F5F5"))
         }
         
-        // ImageView para a foto
+        // ImageView para a foto (removido)
         imageViewPhoto = ImageView(this).apply {
             id = View.generateViewId()
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            background = androidx.core.content.ContextCompat.getDrawable(
-                this@FaceRegistrationSuccessActivity, 
-                R.drawable.circle_image_background
-            )
-            // Melhorar qualidade da imagem
-            setPadding(8, 8, 8, 8)
-            adjustViewBounds = true
-            // Aplicar elevação para sombra
-            elevation = dpToPx(8).toFloat()
+            visibility = android.view.View.GONE
         }
         
         // TextView para o nome do usuário
@@ -62,12 +53,13 @@ class FaceRegistrationSuccessActivity : AppCompatActivity() {
             setPadding(16, 0, 16, 0)
         }
         
-        // TextView para o ícone de sucesso
+        // TextView para o ícone de sucesso (removido)
         textViewSuccessIcon = TextView(this).apply {
             id = View.generateViewId()
-            text = "✅"
-            textSize = 56f
+            text = ""
+            textSize = 0f
             gravity = android.view.Gravity.CENTER
+            visibility = android.view.View.GONE
         }
         
         // TextView para a mensagem de sucesso
@@ -86,7 +78,7 @@ class FaceRegistrationSuccessActivity : AppCompatActivity() {
             id = View.generateViewId()
             text = "Continuar"
             textSize = 18f
-            setBackgroundColor(android.graphics.Color.parseColor("#4CAF50"))
+            background = androidx.core.content.ContextCompat.getDrawable(this@FaceRegistrationSuccessActivity, R.drawable.button_background_blue_selector)
             setTextColor(android.graphics.Color.WHITE)
             isAllCaps = false
             setPadding(16, 16, 16, 16)
@@ -98,8 +90,8 @@ class FaceRegistrationSuccessActivity : AppCompatActivity() {
             id = View.generateViewId()
             text = "Voltar"
             textSize = 18f
-            setBackgroundColor(android.graphics.Color.parseColor("#757575"))
-            setTextColor(android.graphics.Color.WHITE)
+            background = androidx.core.content.ContextCompat.getDrawable(this@FaceRegistrationSuccessActivity, R.drawable.button_background_white_blue_selector)
+            setTextColor(android.graphics.Color.parseColor("#264064"))
             isAllCaps = false
             setPadding(16, 16, 16, 16)
             typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -117,19 +109,13 @@ class FaceRegistrationSuccessActivity : AppCompatActivity() {
         val constraintSet = androidx.constraintlayout.widget.ConstraintSet()
         constraintSet.clone(layout)
         
-        // ImageView constraints (centro da tela, tamanho 280x280dp - maior)
-        constraintSet.constrainWidth(imageViewPhoto.id, dpToPx(280))
-        constraintSet.constrainHeight(imageViewPhoto.id, dpToPx(280))
-        constraintSet.connect(imageViewPhoto.id, androidx.constraintlayout.widget.ConstraintSet.TOP, 
-                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP, dpToPx(80))
-        constraintSet.connect(imageViewPhoto.id, androidx.constraintlayout.widget.ConstraintSet.START, 
-                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.START)
-        constraintSet.connect(imageViewPhoto.id, androidx.constraintlayout.widget.ConstraintSet.END, 
-                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.END)
+        // ImageView constraints (removido)
+        constraintSet.constrainWidth(imageViewPhoto.id, 0)
+        constraintSet.constrainHeight(imageViewPhoto.id, 0)
         
         // TextView nome constraints
         constraintSet.connect(textViewUserName.id, androidx.constraintlayout.widget.ConstraintSet.TOP, 
-                             imageViewPhoto.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, dpToPx(32))
+                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.TOP, dpToPx(120))
         constraintSet.connect(textViewUserName.id, androidx.constraintlayout.widget.ConstraintSet.START, 
                              androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.START, dpToPx(16))
         constraintSet.connect(textViewUserName.id, androidx.constraintlayout.widget.ConstraintSet.END, 
@@ -151,25 +137,25 @@ class FaceRegistrationSuccessActivity : AppCompatActivity() {
         constraintSet.connect(textViewMessage.id, androidx.constraintlayout.widget.ConstraintSet.END, 
                              androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.END, dpToPx(16))
         
-        // Botão continuar constraints
-        constraintSet.constrainWidth(buttonContinue.id, dpToPx(240))
-        constraintSet.constrainHeight(buttonContinue.id, dpToPx(56))
-        constraintSet.connect(buttonContinue.id, androidx.constraintlayout.widget.ConstraintSet.TOP, 
-                             textViewMessage.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, dpToPx(48))
+        // Botão continuar constraints (bottom)
+        constraintSet.constrainWidth(buttonContinue.id, dpToPx(360))
+        constraintSet.constrainHeight(buttonContinue.id, dpToPx(60))
+        constraintSet.connect(buttonContinue.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, 
+                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, dpToPx(120))
         constraintSet.connect(buttonContinue.id, androidx.constraintlayout.widget.ConstraintSet.START, 
-                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.START)
+                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.START, dpToPx(16))
         constraintSet.connect(buttonContinue.id, androidx.constraintlayout.widget.ConstraintSet.END, 
-                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.END)
+                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.END, dpToPx(16))
         
-        // Botão voltar constraints
-        constraintSet.constrainWidth(buttonBack.id, dpToPx(240))
-        constraintSet.constrainHeight(buttonBack.id, dpToPx(56))
-        constraintSet.connect(buttonBack.id, androidx.constraintlayout.widget.ConstraintSet.TOP, 
-                             buttonContinue.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, dpToPx(20))
+        // Botão voltar constraints (bottom)
+        constraintSet.constrainWidth(buttonBack.id, dpToPx(360))
+        constraintSet.constrainHeight(buttonBack.id, dpToPx(60))
+        constraintSet.connect(buttonBack.id, androidx.constraintlayout.widget.ConstraintSet.BOTTOM, 
+                             buttonContinue.id, androidx.constraintlayout.widget.ConstraintSet.TOP, dpToPx(20))
         constraintSet.connect(buttonBack.id, androidx.constraintlayout.widget.ConstraintSet.START, 
-                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.START)
+                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.START, dpToPx(16))
         constraintSet.connect(buttonBack.id, androidx.constraintlayout.widget.ConstraintSet.END, 
-                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.END)
+                             androidx.constraintlayout.widget.ConstraintSet.PARENT_ID, androidx.constraintlayout.widget.ConstraintSet.END, dpToPx(16))
         
         constraintSet.applyTo(layout)
         setContentView(layout)
@@ -186,14 +172,7 @@ class FaceRegistrationSuccessActivity : AppCompatActivity() {
             textViewUserName.text = "Usuário"
         }
         
-        // Recuperar foto do TempImageStorage
-        val faceBitmap = TempImageStorage.getFaceBitmap()
-        if (faceBitmap != null) {
-            // Redimensionar e tornar circular (orientação já corrigida no CameraActivity)
-            val resizedBitmap = resizeBitmapToSquare(faceBitmap, 280)
-            val circularBitmap = createCircularBitmap(resizedBitmap)
-            imageViewPhoto.setImageBitmap(circularBitmap)
-        }
+        // Foto removida da interface
     }
     
     private fun setupButtons() {
@@ -222,18 +201,10 @@ class FaceRegistrationSuccessActivity : AppCompatActivity() {
     }
     
     private fun correctImageOrientation(bitmap: Bitmap): Bitmap {
-        // Para câmera frontal, normalmente precisamos rotacionar para ficar em modo retrato
+        // Corrigir orientação para câmera frontal (180 graus é mais comum)
         val matrix = android.graphics.Matrix()
-        
-        // Se a imagem estiver mais larga que alta, rotacionar para modo retrato
-        if (bitmap.width > bitmap.height) {
-            matrix.postRotate(90f)
-            return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        }
-        
-        // Se já estiver em retrato, verificar se não está de cabeça para baixo
-        // Para câmera frontal, pode precisar de 180 graus
-        return bitmap
+        matrix.postRotate(180f)
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
     }
     
     private fun resizeBitmapToSquare(bitmap: Bitmap, targetSize: Int): Bitmap {

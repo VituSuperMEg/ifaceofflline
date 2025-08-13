@@ -18,6 +18,9 @@ interface FaceDao {
 
     @Query("SELECT * FROM faces WHERE synced = 0")
     suspend fun getPendingSync(): List<FaceEntity>
+    
+    @Query("SELECT * FROM faces")
+    suspend fun getAllFaces(): List<FaceEntity>
 
     @Update
     suspend fun update(face: FaceEntity)

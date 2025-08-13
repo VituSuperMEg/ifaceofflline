@@ -91,12 +91,12 @@
 
     </LinearLayout>
 
-    <!-- Botão Voltar -->
+    <!-- Botão Configurações -->
     <Button
         android:id="@+id/btnVoltar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="VOLTAR"
+        android:text="CONFIGURAÇÕES"
         android:textSize="14sp"
         android:background="@drawable/button_background_blue_selector"
         android:textColor="#FFFFFF"

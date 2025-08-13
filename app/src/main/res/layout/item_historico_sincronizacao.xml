@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="8dp"
+    app:cardCornerRadius="8dp"
+    app:cardElevation="2dp"
+    app:cardBackgroundColor="#FFFFFF">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:gravity="center_vertical">
+
+        <!-- Ícone de status -->
+        <ImageView
+            android:id="@+id/iconStatus"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginEnd="12dp"
+            android:src="@drawable/ic_check_circle"
+            android:tint="#4CAF50" />
+
+        <!-- Informações da sincronização -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/textDataHora"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="01/01/2024 14:30:25"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="#2E3A59"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/textStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Sincronização realizada com sucesso"
+                android:textSize="12sp"
+                android:textColor="#4CAF50"
+                android:layout_marginBottom="2dp" />
+
+            <TextView
+                android:id="@+id/textDetalhes"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="15 pontos sincronizados • 2.5 segundos"
+                android:textSize="11sp"
+                android:textColor="#8B94A8" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</androidx.cardview.widget.CardView> 

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:layout_marginTop="16dp"
+    android:layout_marginBottom="8dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="12dp"
+        android:background="#E8F4FD"
+        android:layout_marginHorizontal="8dp">
+
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:src="@drawable/ic_time_clock"
+            android:tint="#4A90E2"
+            android:layout_marginEnd="8dp" />
+
+        <TextView
+            android:id="@+id/textData"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="15 de Dezembro de 2024"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="#2E3A59" />
+
+        <TextView
+            android:id="@+id/textQuantidadeDia"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="4 pontos"
+            android:textSize="12sp"
+            android:textColor="#8B94A8"
+            android:background="@drawable/roundend"
+            android:padding="4dp" />
+
+    </LinearLayout>
+
+</LinearLayout> 

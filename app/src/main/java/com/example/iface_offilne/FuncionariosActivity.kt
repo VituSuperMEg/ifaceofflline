@@ -21,11 +21,13 @@ import com.example.iface_offilne.util.SessionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class FuncionariosActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityFuncionariosBinding
     private val listaFuncionarios = mutableListOf<FuncionariosModel>()
+    private val todosFuncionarios = mutableListOf<FuncionariosModel>()
     private lateinit var adapter: FuncionariosAdapter
 
     private var isLoading = false
@@ -46,8 +48,8 @@ class FuncionariosActivity : AppCompatActivity() {
 
         adapter = FuncionariosAdapter(listaFuncionarios) { funcionariosModel ->
             AlertDialog.Builder(this@FuncionariosActivity)
-                .setTitle("Sincronizar Funcionário")
-                .setMessage("Deseja sincronizar ${funcionariosModel.nome} ao sistema?")
+                .setTitle("Importar Funcionário")
+                .setMessage("Deseja importar ${funcionariosModel.nome} ao sistema?")
                 .setPositiveButton("Sim") { dialog, _ ->
                     val cpfLimpo = funcionariosModel.numero_cpf.replace(Regex("[^0-9]"), "")
                     
@@ -55,12 +57,28 @@ class FuncionariosActivity : AppCompatActivity() {
                         id = funcionariosModel.id,
                         codigo = cpfLimpo,
                         nome = funcionariosModel.nome,
-                        ativo = 1
+                        ativo = 1,
+                        matricula = funcionariosModel.matricula,
+                        cpf = cpfLimpo,
+                        cargo = funcionariosModel.cargo_descricao,
+                        secretaria = funcionariosModel.orgao_descricao ?: "N/A",
+                        lotacao = funcionariosModel.setor_descricao ?: "N/A"
                     )
 
                     lifecycleScope.launch(Dispatchers.IO) {
                         daoFunc.insert(funcionario)
-                        Log.d("INSERT_FUNC", "Funcionário inserido: ${funcionario.nome}")
+                        Log.d("INSERT_FUNC", "Funcionário importado: ${funcionario.nome}")
+                        
+                        withContext(Dispatchers.Main) {
+                            AlertDialog.Builder(this@FuncionariosActivity)
+                                .setTitle("Importação Concluída")
+                                .setMessage("${funcionario.nome} foi importado com sucesso!")
+                                .setPositiveButton("OK") { dialog, _ ->
+                                    dialog.dismiss()
+                                }
+                                .setCancelable(false)
+                                .show()
+                        }
                     }
                     dialog.dismiss()
                 }
@@ -96,6 +114,31 @@ class FuncionariosActivity : AppCompatActivity() {
             finish()
         }
 
+        // Botão para atualizar funcionários existentes com dados de exemplo
+        binding.sincronizarListaFunc.setOnLongClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Atualizar Dados")
+                .setMessage("Deseja atualizar os funcionários existentes com dados de exemplo?")
+                .setPositiveButton("Sim") { dialog, _ ->
+                    atualizarFuncionariosExistentes()
+                    dialog.dismiss()
+                }
+                .setNegativeButton("Não") { dialog, _ ->
+                    dialog.dismiss()
+                }
+                .show()
+            true
+        }
+
+        // Configurar busca
+        binding.editTextBusca.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                filtrarFuncionarios(s.toString())
+            }
+        })
+
         loadFuncionarios()
     }
 
@@ -108,6 +151,7 @@ class FuncionariosActivity : AppCompatActivity() {
 
                 if (funcionarios.isNotEmpty()) {
                     listaFuncionarios.addAll(funcionarios)
+                    todosFuncionarios.addAll(funcionarios)
                     adapter.notifyItemRangeInserted(listaFuncionarios.size - funcionarios.size, funcionarios.size)
                     currentPage++
                 }
@@ -115,6 +159,112 @@ class FuncionariosActivity : AppCompatActivity() {
                 Log.e("API_ERROR", "Erro ao carregar página $currentPage: ${e.message}")
             } finally {
                 isLoading = false
+            }
+        }
+    }
+
+    private fun filtrarFuncionarios(query: String) {
+        val queryLower = query.lowercase()
+        val funcionariosFiltrados = if (query.isEmpty()) {
+            todosFuncionarios
+        } else {
+            todosFuncionarios.filter { funcionario ->
+                funcionario.nome.lowercase().contains(queryLower)
+            }
+        }
+        
+        listaFuncionarios.clear()
+        listaFuncionarios.addAll(funcionariosFiltrados)
+        adapter.notifyDataSetChanged()
+    }
+
+    private fun atualizarFuncionariosExistentes() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val daoFunc = AppDatabase.getInstance(this@FuncionariosActivity).funcionarioDao()
+                val funcionariosExistentes = daoFunc.getAll()
+                
+                val cargosExemplo = listOf(
+                    "Analista Administrativo",
+                    "Técnico em Informática", 
+                    "Assistente Administrativo",
+                    "Coordenador",
+                    "Gerente",
+                    "Diretor",
+                    "Supervisor",
+                    "Auxiliar Administrativo"
+                )
+                
+                val secretariasExemplo = listOf(
+                    "SEAD - Secretaria de Administração",
+                    "SEMEF - Secretaria Municipal de Fazenda",
+                    "SEMEC - Secretaria Municipal de Educação",
+                    "SESAU - Secretaria Municipal de Saúde",
+                    "SEMOB - Secretaria Municipal de Mobilidade",
+                    "SEPLAN - Secretaria Municipal de Planejamento"
+                )
+                
+                val lotacoesExemplo = listOf(
+                    "Diretoria Geral",
+                    "Departamento de Recursos Humanos",
+                    "Departamento Financeiro",
+                    "Departamento de TI",
+                    "Coordenadoria de Gestão",
+                    "Assessoria Técnica",
+                    "Núcleo de Apoio"
+                )
+                
+                funcionariosExistentes.forEachIndexed { index, funcionario ->
+                    // Gerar matrícula se não existir
+                    val matricula = if (funcionario.matricula.isEmpty()) {
+                        String.format("%06d", 100000 + funcionario.id)
+                    } else funcionario.matricula
+                    
+                    // Usar CPF existente ou gerar um exemplo
+                    val cpf = if (funcionario.cpf.isEmpty()) {
+                        funcionario.codigo.padStart(11, '0')
+                    } else funcionario.cpf
+                    
+                    // Atribuir cargo, secretaria e lotação de forma cíclica
+                    val cargo = if (funcionario.cargo.isEmpty()) {
+                        cargosExemplo[index % cargosExemplo.size]
+                    } else funcionario.cargo
+                    
+                    val secretaria = if (funcionario.secretaria.isEmpty()) {
+                        secretariasExemplo[index % secretariasExemplo.size]
+                    } else funcionario.secretaria
+                    
+                    val lotacao = if (funcionario.lotacao.isEmpty()) {
+                        lotacoesExemplo[index % lotacoesExemplo.size]
+                    } else funcionario.lotacao
+                    
+                    // Criar funcionário atualizado
+                    val funcionarioAtualizado = funcionario.copy(
+                        matricula = matricula,
+                        cpf = cpf,
+                        cargo = cargo,
+                        secretaria = secretaria,
+                        lotacao = lotacao
+                    )
+                    
+                    // Atualizar no banco
+                    daoFunc.update(funcionarioAtualizado)
+                    Log.d("UPDATE_FUNC", "Funcionário atualizado: ${funcionarioAtualizado.nome}")
+                }
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@FuncionariosActivity, 
+                        "✅ ${funcionariosExistentes.size} funcionários atualizados com sucesso!", 
+                        Toast.LENGTH_LONG).show()
+                }
+                
+            } catch (e: Exception) {
+                Log.e("UPDATE_ERROR", "Erro ao atualizar funcionários: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@FuncionariosActivity, 
+                        "❌ Erro ao atualizar funcionários: ${e.message}", 
+                        Toast.LENGTH_LONG).show()
+                }
             }
         }
     }

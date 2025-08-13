@@ -10,7 +10,10 @@ data class FuncionariosModel(
     val nome_pai: String,
     val numero_cpf: String,
     val matricula: String,
-    val cargo_descricao: String
+    val cargo_descricao: String,
+    val orgao_descricao: String?,
+    val setor_descricao: String?,
+    val localizacao_descricao: String?
 )
 
 data class FuncionariosResponse (

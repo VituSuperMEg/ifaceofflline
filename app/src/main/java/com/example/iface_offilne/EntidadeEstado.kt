@@ -9,13 +9,8 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Spinner
 import android.widget.TextView
-import com.google.android.material.snackbar.Snackbar
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import androidx.navigation.findNavController
-import androidx.navigation.ui.AppBarConfiguration
-import androidx.navigation.ui.navigateUp
-import androidx.navigation.ui.setupActionBarWithNavController
 import com.example.iface_offilne.cities.CodigoIBge
 import com.example.iface_offilne.data.Entidade
 import com.example.iface_offilne.data.api.RetrofitClient
@@ -26,7 +21,6 @@ import kotlinx.coroutines.launch
 
 class EntidadeEstado : AppCompatActivity() {
 
-    private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var binding: ActivityEntidadeEstadoBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,10 +33,9 @@ class EntidadeEstado : AppCompatActivity() {
         SessionManager.estadoBr = estado.toString()
         val cidade = intent.getStringExtra("cidade")
         SessionManager.municipio = cidade.toString()
-        val codigoIbgeCidade = CodigoIBge(cidade)?: "2305506"
+        val codigoIbgeCidade = CodigoIBge(cidade) ?: "2305506"
 
         val spinnerEntidade = findViewById<Spinner>(R.id.spinnerEntidade)
-
 
         lifecycleScope.launch {
             try {
@@ -85,10 +78,11 @@ class EntidadeEstado : AppCompatActivity() {
             override fun onNothingSelected(parent: AdapterView<*>) {}
         }
 
+        binding.btnEntidadeEstadoConfirmar.backgroundTintList = null
+
         binding.btnEntidadeEstadoConfirmar.setOnClickListener {
             val intent = Intent(this, Login::class.java)
             startActivity(intent)
         }
     }
-
 }

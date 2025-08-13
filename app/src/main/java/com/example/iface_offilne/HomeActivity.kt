@@ -2,17 +2,11 @@ package com.example.iface_offilne
 
 import android.content.Intent
 import android.os.Bundle
-import com.google.android.material.snackbar.Snackbar
 import androidx.appcompat.app.AppCompatActivity
-import androidx.navigation.findNavController
-import androidx.navigation.ui.AppBarConfiguration
-import androidx.navigation.ui.navigateUp
-import androidx.navigation.ui.setupActionBarWithNavController
 import com.example.iface_offilne.databinding.ActivityHomeBinding
 
 class HomeActivity : AppCompatActivity() {
 
-    private lateinit var appBarConfiguration: AppBarConfiguration
     private lateinit var binding: ActivityHomeBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,7 +29,6 @@ class HomeActivity : AppCompatActivity() {
 
         // Card Registrar Ponto
         binding.cardRegistrarPonto.setOnClickListener {
-            // Ir para tela de reconhecimento facial para registrar ponto
             val screen = Intent(this@HomeActivity, FaceRecognitionActivity::class.java)
             startActivity(screen)
         }
@@ -46,16 +39,10 @@ class HomeActivity : AppCompatActivity() {
             startActivity(screen)
         }
 
-        // Card Configurações (placeholder - pode implementar depois)
+        // Card Configurações
         binding.cardConfiguracoes.setOnClickListener {
-            // TODO: Implementar tela de configurações
-            android.widget.Toast.makeText(this, "⚙️ Configurações em desenvolvimento", android.widget.Toast.LENGTH_SHORT).show()
+            val screen = Intent(this@HomeActivity, ConfiguracoesActivity::class.java)
+            startActivity(screen)
         }
-    }
-
-    override fun onSupportNavigateUp(): Boolean {
-        val navController = findNavController(R.id.nav_host_fragment_content_home)
-        return navController.navigateUp(appBarConfiguration)
-                || super.onSupportNavigateUp()
     }
 }

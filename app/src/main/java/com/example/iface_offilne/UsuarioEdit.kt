@@ -83,9 +83,9 @@ class UsuarioEdit : AppCompatActivity() {
             
             // Configurar status ativo/inativo
             if (user.ativo == 1) {
-                binding.radioButtonAtivo.isChecked = true
+                binding.chipAtivo.isChecked = true
             } else {
-                binding.radioButtonInativo.isChecked = true
+                binding.chipInativo.isChecked = true
             }
         }
     }
@@ -96,13 +96,13 @@ class UsuarioEdit : AppCompatActivity() {
         
         // Validação básica
         if (codigo.isEmpty()) {
-            Toast.makeText(this, "Por favor, preencha o código", Toast.LENGTH_SHORT).show()
+            binding.layoutCodigo.error = "Código é obrigatório"
             binding.editTextCodigo.requestFocus()
             return
         }
         
-        if (nome.isEmpty()) {
-            Toast.makeText(this, "Por favor, preencha o nome", Toast.LENGTH_SHORT).show()
+                if (nome.isEmpty()) {
+            binding.layoutNome.error = "Nome é obrigatório"
             binding.editTextNome.requestFocus()
             return
         }
@@ -111,7 +111,7 @@ class UsuarioEdit : AppCompatActivity() {
             // Atualizar dados do usuário
             user.codigo = codigo
             user.nome = nome
-            user.ativo = if (binding.radioButtonAtivo.isChecked) 1 else 0
+            user.ativo = if (binding.chipAtivo.isChecked) 1 else 0
 
             // Salvar no banco de dados
             lifecycleScope.launch(Dispatchers.IO) {
@@ -119,7 +119,7 @@ class UsuarioEdit : AppCompatActivity() {
                     val database = AppDatabase.getInstance(applicationContext)
                     val funcionarioDao = database.funcionarioDao()
                     
-                    // Converter FuncionariosLocalModel para FuncionariosEntity
+                    // Converter FuncionariosLocalModel para FuncionariosEntity (funcionário importado)
                     val funcionarioEntity = FuncionariosEntity(
                         id = user.id,
                         codigo = user.codigo,

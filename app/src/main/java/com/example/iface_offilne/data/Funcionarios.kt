@@ -8,6 +8,11 @@ data class FuncionariosEntity (
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val codigo: String,
     val nome: String,
-    val ativo: Int = 1 // Que dizer que ta ativo
+    val ativo: Int = 1, // Que dizer que ta ativo
+    val matricula: String = "",
+    val cpf: String = "",
+    val cargo: String = "",
+    val secretaria: String = "",
+    val lotacao: String = ""
 )
 

@@ -43,7 +43,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:text="Funcionários"
+                android:text="Importar Funcionários"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 app:layout_constraintBottom_toBottomOf="parent"
@@ -52,13 +52,43 @@
                 app:layout_constraintTop_toTopOf="parent" />
         </androidx.constraintlayout.widget.ConstraintLayout>
 
+        <!-- Campo de busca -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/layoutBusca"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="16dp"
+            android:hint="Buscar funcionário para importar..."
+            app:boxStrokeColor="#4A90E2"
+            app:hintTextColor="#4A90E2"
+            app:boxCornerRadiusTopStart="25dp"
+            app:boxCornerRadiusTopEnd="25dp"
+            app:boxCornerRadiusBottomStart="25dp"
+            app:boxCornerRadiusBottomEnd="25dp"
+            app:startIconDrawable="@drawable/ic_search"
+            app:startIconTint="#4A90E2"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+            app:layout_constraintTop_toBottomOf="@id/header"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editTextBusca"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:maxLines="1" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
         <!-- RecyclerView responsivo -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/listaFuncionarios"
             android:layout_width="0dp"
             android:layout_height="0dp"
             android:padding="8dp"
-            app:layout_constraintTop_toBottomOf="@id/header"
+            app:layout_constraintTop_toBottomOf="@id/layoutBusca"
             app:layout_constraintBottom_toTopOf="@id/sincronizarListaFunc"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"

@@ -15,6 +15,10 @@
 
     <!-- Features de hardware -->
     <uses-feature android:name="android.hardware.camera.any" />
+    
+    <!-- Permissões para alarme -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <application
         android:allowBackup="true"
@@ -50,6 +54,20 @@
             android:exported="false"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+        <activity
+            android:name=".ConfiguracoesActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+            
+        <!-- BroadcastReceiver para sincronização -->
+        <receiver
+            android:name=".service.SincronizacaoService$SincronizacaoReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.iface_offilne.SINCRONIZAR" />
+            </intent-filter>
+        </receiver>
         <activity
             android:name=".FaceRecognitionActivity"
             android:exported="false"

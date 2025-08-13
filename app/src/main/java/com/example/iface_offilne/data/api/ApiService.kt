@@ -15,7 +15,6 @@ import retrofit2.http.Query
 
 interface ApiService {
 
-
     @POST("/null/ponto/entidades/entidades")
     suspend fun getEntidade(
         @Body request: EntidadeRequest
@@ -27,4 +26,44 @@ interface ApiService {
         @Query("page") page: Int
     ): FuncionariosResponse
 
+    @POST("/{entidade}/services/util/sincronizar-ponto-table")
+    suspend fun sincronizarPontos(
+        @Path("entidade") entidade: String,
+        @Body pontos: List<PontoSyncRequest>
+    ): Response<PontoSyncResponse>
+
+    @POST("/{entidade}/services/util/sincronizar-ponto-table")
+    suspend fun sincronizarPontosVazio(
+        @Path("entidade") entidade: String,
+        @Body pontos: List<PontoSyncRequest>
+    ): Response<Unit>
+
+    @GET("/{entidade}/services/util/test")
+    suspend fun testConnection(
+        @Path("entidade") entidade: String
+    ): Response<SimpleResponse>
 }
+
+// Modelos para sincronização de pontos
+data class PontoSyncRequest(
+    val funcionarioId: String,
+    val funcionarioNome: String,
+    val dataHora: String, // formato: "dd/MM/yyyy HH:mm:ss"
+    val tipoPonto: String, // "ENTRADA" ou "SAIDA"
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val observacao: String? = null,
+    val fotoBase64: String? = null // Foto da batida em base64
+)
+
+data class PontoSyncResponse(
+    val success: Boolean,
+    val message: String,
+    val pontosSincronizados: Int
+)
+
+// Modelo de resposta simples para teste
+data class SimpleResponse(
+    val status: String,
+    val message: String
+)

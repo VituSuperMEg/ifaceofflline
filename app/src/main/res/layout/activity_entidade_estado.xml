@@ -14,7 +14,6 @@
         app:layout_anchor="@+id/constraintLayout"
         app:layout_anchorGravity="center">
 
-        <!-- Imagem no topo -->
         <ImageView
             android:id="@+id/imageView2"
             android:layout_width="151dp"
@@ -25,30 +24,52 @@
             android:layout_marginTop="24dp"
             app:srcCompat="@drawable/logo_rh247" />
 
-        <!-- Spinner abaixo da imagem -->
-        <Spinner
-            android:id="@+id/spinnerEntidade"
-            android:layout_width="409dp"
+        <TextView
+            android:id="@+id/label_spinner_entidade"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            app:layout_constraintTop_toBottomOf="@id/imageView2"
+            android:layout_marginStart="24dp"
+            android:layout_marginTop="24dp"
+            android:text="Entidade"
+            android:textColor="@android:color/black"
+            android:textSize="16sp"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"
-            android:layout_marginTop="24dp" />
+            app:layout_constraintTop_toBottomOf="@id/imageView2" />
 
-        <!-- Botão abaixo do spinner -->
-        <Button
-            android:id="@+id/btnEntidadeEstadoConfirmar"
+        <FrameLayout
+            android:id="@+id/spinner_container_entidade"
             android:layout_width="0dp"
             android:layout_height="48dp"
             android:layout_marginTop="8dp"
             android:layout_marginStart="24dp"
             android:layout_marginEnd="24dp"
             android:background="@drawable/roudend_border"
-            android:text="Continuar"
-            app:layout_constraintTop_toBottomOf="@id/spinnerEntidade"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-             />
+            app:layout_constraintTop_toBottomOf="@id/label_spinner_entidade">
+
+            <Spinner
+                android:id="@+id/spinnerEntidade"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:spinnerMode="dropdown" />
+        </FrameLayout>
+
+        <Button
+            android:id="@+id/btnEntidadeEstadoConfirmar"
+            android:layout_width="524dp"
+            android:layout_height="54dp"
+            android:background="@drawable/button_background"
+            android:backgroundTint="@null"
+            android:foregroundTint="@null"
+            android:hapticFeedbackEnabled="false"
+            android:text="Continuar"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/spinner_container_entidade" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 

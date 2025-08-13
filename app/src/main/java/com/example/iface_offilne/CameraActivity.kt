@@ -20,6 +20,7 @@ import com.example.iface_offilne.data.FaceEntity
 import com.example.iface_offilne.helpers.Helpers
 import com.example.iface_offilne.helpers.bitmapToFloatArray
 import com.example.iface_offilne.helpers.cropFace
+import com.example.iface_offilne.helpers.fixImageOrientationDefinitive
 import com.example.iface_offilne.helpers.toBitmap
 import com.example.iface_offilne.models.FacesModel
 import com.example.iface_offilne.models.FuncionariosLocalModel
@@ -51,9 +52,9 @@ class CameraActivity : AppCompatActivity() {
     private var interpreter: Interpreter? = null
     private var modelLoaded = false
 
-    private var modelInputWidth = 160
-    private var modelInputHeight = 160
-    private var modelOutputSize = 128
+    private var modelInputWidth = 112
+    private var modelInputHeight = 112
+    private var modelOutputSize = 192
 
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 10
@@ -310,8 +311,8 @@ class CameraActivity : AppCompatActivity() {
         val faceBitmap = currentFaceBitmap
         
         if (faceBitmap != null) {
-            // Criar uma versão otimizada para exibição (250x250 é um bom equilíbrio)
-            val displayBitmap = Bitmap.createScaledBitmap(faceBitmap, 250, 250, true)
+            // Criar uma versão otimizada para exibição (300x300 para melhor qualidade)
+            val displayBitmap = Bitmap.createScaledBitmap(faceBitmap, 300, 300, true)
             
             // Armazenar no TempImageStorage para evitar problema de transação
             TempImageStorage.storeFaceBitmap(displayBitmap)
@@ -337,6 +338,7 @@ class CameraActivity : AppCompatActivity() {
 
             imageAnalyzer = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setTargetResolution(android.util.Size(640, 480)) // Resolução otimizada para velocidade
                 .build().also {
                     it.setAnalyzer(ContextCompat.getMainExecutor(this)) { proxy ->
                         processImage(proxy)
@@ -408,16 +410,14 @@ class CameraActivity : AppCompatActivity() {
             val resized = Bitmap.createScaledBitmap(faceBmp, modelInputWidth, modelInputHeight, true)
             saveImage(resized, "face_${modelInputWidth}x${modelInputHeight}")
 
-            // Corrigir orientação para câmera frontal (rotacionar 180 graus para ficar correto)
-            val matrix = android.graphics.Matrix()
-            matrix.postRotate(180f)
-            val correctedFace = Bitmap.createBitmap(faceBmp, 0, 0, faceBmp.width, faceBmp.height, matrix, true)
+            // Manter orientação natural da imagem
+            val correctedFace = faceBmp
 
-            // Salvar a foto do rosto para mostrar na tela de confirmação (tamanho otimizado para não exceder limite de transação)
-            val faceForDisplay = Bitmap.createScaledBitmap(correctedFace, 200, 200, true)
-            currentFaceBitmap = faceForDisplay
-
-            Log.d(TAG, "💾 Imagens salvas!")
+            // Salvar a foto do rosto para mostrar na tela de confirmação (tamanho otimizado para melhor qualidade)
+            val faceForDisplay = Bitmap.createScaledBitmap(correctedFace, 300, 300, true)
+            currentFaceBitmap = fixImageOrientationDefinitive(faceForDisplay) // Corrigir orientação
+            
+            Log.d(TAG, "💾 Imagens salvas com correção de orientação!")
 
             if (modelLoaded && interpreter != null) {
                 executeInference(resized)
@@ -437,31 +437,50 @@ class CameraActivity : AppCompatActivity() {
         try {
             Log.d(TAG, "🧠 === EXECUTANDO INFERÊNCIA ===")
 
-            val input = bitmapToFloatArray(bitmap)
+            // Usar o mesmo método de conversão que a PontoActivity
+            val inputTensor = convertBitmapToTensorInput(bitmap)
             val output = Array(1) { FloatArray(modelOutputSize) }
 
-            interpreter?.run(input, output)
+            interpreter?.run(inputTensor, output)
 
             val vetorFacial = output[0]
             val usuario = intent.getSerializableExtra("usuario") as? FuncionariosLocalModel
 
             if (usuario != null) {
-                val faces = FaceEntity(
-                    id = usuario.id,
-                    funcionarioId = usuario.codigo,
-                    embedding = vetorFacial.joinToString(","),
-                    synced = true
-                )
-
+                // Primeiro deletar face antiga se existir
                 CoroutineScope(Dispatchers.IO).launch {
-                    val dao = AppDatabase.getInstance(applicationContext).faceDao()
-                    dao.insert(faces)
-
-                    // Mostrar tela de confirmação na thread principal
-                    withContext(Dispatchers.Main) {
-                        showSuccessScreen()
+                    try {
+                        val dao = AppDatabase.getInstance(applicationContext).faceDao()
+                        
+                        // Deletar face antiga
+                        dao.deleteByFuncionarioId(usuario.codigo)
+                        Log.d(TAG, "🗑️ Face antiga deletada para funcionário ${usuario.codigo}")
+                        
+                        // Criar nova face
+                        val faces = FaceEntity(
+                            id = 0, // Deixar o Room gerar o ID
+                            funcionarioId = usuario.codigo,
+                            embedding = vetorFacial.joinToString(","),
+                            synced = true
+                        )
+                        
+                        // Inserir nova face
+                        dao.insert(faces)
+                        Log.d(TAG, "✅ Nova face salva para funcionário ${usuario.codigo}")
+                        
+                        // Mostrar tela de confirmação na thread principal
+                        withContext(Dispatchers.Main) {
+                            showSuccessScreen()
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao salvar face: ${e.message}")
+                        withContext(Dispatchers.Main) {
+                            showToast("Erro ao salvar face: ${e.message}")
+                        }
                     }
                 }
+
+
             } else {
                 Log.e(TAG, "❌ Usuario nulo - não foi possível salvar o vetor facial.")
                 showToast("Erro: usuário não encontrado.")
@@ -472,6 +491,58 @@ class CameraActivity : AppCompatActivity() {
         }
     }
 
+
+    private fun convertBitmapToTensorInput(bitmap: Bitmap): ByteBuffer {
+        try {
+            val inputSize = modelInputWidth // 112
+            Log.d(TAG, "🔧 Preparando tensor para entrada ${inputSize}x${inputSize}")
+            
+            if (bitmap.isRecycled) {
+                throw IllegalStateException("Bitmap foi reciclado")
+            }
+            
+            // Alocar buffer com tamanho correto para float32
+            val byteBuffer = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
+            byteBuffer.order(ByteOrder.nativeOrder())
+
+            val resizedBitmap = if (bitmap.width != inputSize || bitmap.height != inputSize) {
+                Log.d(TAG, "🔧 Redimensionando bitmap de ${bitmap.width}x${bitmap.height} para ${inputSize}x${inputSize}")
+                Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+            } else {
+                bitmap
+            }
+            
+            val intValues = IntArray(inputSize * inputSize)
+            resizedBitmap.getPixels(intValues, 0, inputSize, 0, 0, inputSize, inputSize)
+            Log.d(TAG, "✅ Pixels extraídos: ${intValues.size} pixels")
+
+            var pixelCount = 0
+            for (pixel in intValues) {
+                // Normalizar para [-1, 1] como esperado pelo modelo MobileFaceNet
+                val r = ((pixel shr 16) and 0xFF) / 127.5f - 1.0f
+                val g = ((pixel shr 8) and 0xFF) / 127.5f - 1.0f
+                val b = (pixel and 0xFF) / 127.5f - 1.0f
+
+                byteBuffer.putFloat(r)
+                byteBuffer.putFloat(g)
+                byteBuffer.putFloat(b)
+                pixelCount++
+            }
+            
+            Log.d(TAG, "✅ Tensor preenchido com $pixelCount pixels")
+            
+            // Limpar bitmap temporário se foi criado
+            if (resizedBitmap != bitmap) {
+                resizedBitmap.recycle()
+            }
+
+            return byteBuffer
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro em convertBitmapToTensorInput", e)
+            throw e
+        }
+    }
 
     private fun saveImage(bitmap: Bitmap, prefix: String) {
         try {

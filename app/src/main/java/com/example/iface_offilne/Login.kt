@@ -46,6 +46,9 @@ class Login : AppCompatActivity() {
         // Verificar se usuário já está logado
         checkSavedLogin()
 
+        // Configurar botão para usar o background personalizado
+        binding.btnLogin.backgroundTintList = null
+
         binding.btnLogin.setOnClickListener {
             val cpf = binding.cpfLogin.text.toString().trim()
             val senha = binding.senhaLogin.text.toString().trim()

@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#FFFFFF"
+    android:padding="24dp">
+
+    <!-- Header do Modal -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="24dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Filtros"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="#2E3A59" />
+
+        <ImageButton
+            android:id="@+id/btnFecharFiltros"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:src="@drawable/ic_close"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:tint="#8B94A8" />
+
+    </LinearLayout>
+
+    <!-- Filtro de Período -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Período"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="#2E3A59"
+        android:layout_marginBottom="12dp" />
+
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/chipGroupPeriodo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp"
+        app:singleSelection="true">
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipHoje"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Hoje"
+            android:checked="true"
+            app:chipBackgroundColor="@color/chip_background_selector"
+            app:chipStrokeColor="#4A90E2"
+            app:chipStrokeWidth="1dp"
+            style="@style/Widget.MaterialComponents.Chip.Choice" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipSemana"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Esta Semana"
+            android:checked="false"
+            app:chipBackgroundColor="@color/chip_background_selector"
+            app:chipStrokeColor="#4A90E2"
+            app:chipStrokeWidth="1dp"
+            style="@style/Widget.MaterialComponents.Chip.Choice" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipMes"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Este Mês"
+            android:checked="false"
+            app:chipBackgroundColor="@color/chip_background_selector"
+            app:chipStrokeColor="#4A90E2"
+            app:chipStrokeWidth="1dp"
+            style="@style/Widget.MaterialComponents.Chip.Choice" />
+
+        <com.google.android.material.chip.Chip
+            android:id="@+id/chipTodos"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Todos"
+            android:checked="false"
+            app:chipBackgroundColor="@color/chip_background_selector"
+            app:chipStrokeColor="#4A90E2"
+            app:chipStrokeWidth="1dp"
+            style="@style/Widget.MaterialComponents.Chip.Choice" />
+
+    </com.google.android.material.chip.ChipGroup>
+
+    <!-- Divisor -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#E0E0E0"
+        android:layout_marginBottom="24dp" />
+
+    <!-- Filtro por Funcionário -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Funcionário"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="#2E3A59"
+        android:layout_marginBottom="12dp" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/layoutFuncionario"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp"
+        android:hint="Buscar funcionário"
+        app:boxStrokeColor="#4A90E2"
+        app:hintTextColor="#4A90E2"
+        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+        <AutoCompleteTextView
+            android:id="@+id/autoCompleteFuncionario"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            android:maxLines="1"
+            android:completionThreshold="1" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!-- Divisor -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#E0E0E0"
+        android:layout_marginBottom="24dp" />
+
+    <!-- Filtro de Data Personalizada -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Data Personalizada"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:textColor="#2E3A59"
+        android:layout_marginBottom="12dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="24dp">
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/layoutDataInicio"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:hint="Data Início"
+            app:boxStrokeColor="#4A90E2"
+            app:hintTextColor="#4A90E2"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editTextDataInicio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="date"
+                android:focusable="false"
+                android:clickable="true" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/layoutDataFim"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:hint="Data Fim"
+            app:boxStrokeColor="#4A90E2"
+            app:hintTextColor="#4A90E2"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/editTextDataFim"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="date"
+                android:focusable="false"
+                android:clickable="true" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+    </LinearLayout>
+
+    <!-- Botões de Ação -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="16dp">
+
+        <Button
+            android:id="@+id/btnLimparFiltros"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/button_background_white_blue_selector"
+            android:text="Limpar"
+            android:textColor="#264064"
+            android:textSize="14sp"
+            android:padding="12dp" />
+
+        <Button
+            android:id="@+id/btnAplicarFiltros"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/button_background_blue_selector"
+            android:text="Aplicar"
+            android:textColor="@android:color/white"
+            android:textSize="14sp"
+            android:padding="12dp" />
+
+    </LinearLayout>
+
+</LinearLayout> 

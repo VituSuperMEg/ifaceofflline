@@ -1,24 +1,21 @@
-<!-- res/drawable/button_background_red_selector.xml -->
+<?xml version="1.0" encoding="utf-8"?>
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_pressed="true">
-        <shape>
-            <solid android:color="#8B0000" />
-            <corners android:radius="12dp" />
-            <stroke android:width="2dp" android:color="#8B0000" />
+        <shape android:shape="rectangle">
+            <solid android:color="#D32F2F" />
+            <corners android:radius="8dp" />
         </shape>
     </item>
     <item android:state_focused="true">
-        <shape>
-            <solid android:color="#8B0000" />
-            <corners android:radius="12dp" />
-            <stroke android:width="2dp" android:color="#8B0000" />
+        <shape android:shape="rectangle">
+            <solid android:color="#F44336" />
+            <corners android:radius="8dp" />
         </shape>
     </item>
     <item>
-        <shape>
-            <solid android:color="#DC143C" />
-            <corners android:radius="12dp" />
-            <stroke android:width="2dp" android:color="#DC143C" />
+        <shape android:shape="rectangle">
+            <solid android:color="#F44336" />
+            <corners android:radius="8dp" />
         </shape>
     </item>
 </selector> 

@@ -4,9 +4,13 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.iface_offilne.data.dao.ConfiguracoesDao
 import com.example.iface_offilne.data.dao.FuncionarioDao
+import com.example.iface_offilne.data.dao.HistoricoSincronizacaoDao
 import com.example.iface_offilne.data.dao.OperadorDao
+import com.example.iface_offilne.data.dao.PontoSincronizacaoDao
 import com.example.iface_offilne.data.dao.PontosGenericosDao
 import com.example.iface_offilne.data.dao.UsuarioDao
 import com.example.iface_offilne.data.migrations.operadorMigration
@@ -14,7 +18,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@Database(entities = [FaceEntity::class, OperadorEntity::class, FuncionariosEntity::class, PontosGenericosEntity::class], version = 2)
+@Database(entities = [FaceEntity::class, OperadorEntity::class, FuncionariosEntity::class, PontosGenericosEntity::class, ConfiguracoesEntity::class, PontoSincronizacaoEntity::class, HistoricoSincronizacaoEntity::class], version = 9)
+@TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun faceDao(): FaceDao
     abstract fun operadorDao(): OperadorDao
@@ -24,6 +29,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun usuariosDao(): UsuarioDao
     
     abstract fun pontosGenericosDao(): PontosGenericosDao
+    abstract fun configuracoesDao(): ConfiguracoesDao
+    abstract fun pontoSincronizacaoDao(): PontoSincronizacaoDao
+    abstract fun historicoSincronizacaoDao(): HistoricoSincronizacaoDao
 
 
     companion object {
