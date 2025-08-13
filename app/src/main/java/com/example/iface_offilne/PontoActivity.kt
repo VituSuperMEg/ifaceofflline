@@ -45,6 +45,7 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.TimeoutCancellationException
 
 class PontoActivity : AppCompatActivity() {
 
@@ -544,512 +545,203 @@ class PontoActivity : AppCompatActivity() {
     }
 
     private fun processDetectedFace(bitmap: Bitmap, boundingBox: Rect) {
-        // ✅ CORREÇÃO: Resetar estado a cada nova detecção
-        Log.d(TAG, "🔄 === PROCESSANDO FACE DETECTADA ===")
-        funcionarioReconhecido = null
+        // ✅ SIMPLES: Verificação básica
+        if (processandoFace) {
+            return
+        }
         
-        // ✅ CORREÇÃO: Auto-reset após 15 segundos para evitar travamento
+        if (isFinishing || isDestroyed) {
+            return
+        }
+        
+        processandoFace = true
+        lastProcessingTime = System.currentTimeMillis()
+        
+        Log.d(TAG, "🔄 INICIANDO PROCESSAMENTO SIMPLES")
+        
+        // ✅ SIMPLES: Reset automático em 5 segundos
         Handler(Looper.getMainLooper()).postDelayed({
             if (processandoFace) {
-                Log.w(TAG, "⚠️ Auto-reset do processandoFace após timeout de 15 segundos")
+                Log.w(TAG, "⚠️ RESET POR TIMEOUT")
                 processandoFace = false
                 lastProcessingTime = 0L
-                // ✅ NOVA: Resetar controle de duplicatas em caso de timeout
-                pontoJaRegistrado = false
-                ultimoFuncionarioReconhecido = null
-                Log.d(TAG, "🔄 Reset do controle de duplicatas devido a timeout")
                 try {
-                    if (::statusText.isInitialized && !isFinishing && !isDestroyed) {
+                    if (::statusText.isInitialized && !isFinishing) {
                         statusText.text = "📷 Posicione seu rosto na câmera"
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao resetar status: ${e.message}")
+                    Log.e(TAG, "Erro no reset: ${e.message}")
                 }
             }
-        }, 15000) // 15 segundos
+        }, 5000)
         
-        // ✅ CORREÇÃO: Proteção contra bitmap nulo ou inválido
-        if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
-            Log.e(TAG, "❌ Bitmap inválido ou reciclado")
-            processandoFace = false
-            lastProcessingTime = 0L
-            return
-        }
-        
-        // ✅ CORREÇÃO: Verificar se o boundingBox é válido
-        if (boundingBox.width() <= 0 || boundingBox.height() <= 0) {
-            Log.e(TAG, "❌ BoundingBox inválido: $boundingBox")
-            processandoFace = false
-            lastProcessingTime = 0L
-            return
-        }
-        
+        // ✅ SIMPLES: Processar em background
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // ✅ CORREÇÃO: Verificar se ainda devemos processar
-                if (isFinishing || isDestroyed) {
-                    Log.w(TAG, "⚠️ Activity finalizada, cancelando processamento")
-                    return@launch
-                }
-                
-                // ✅ CORREÇÃO: Verificar se o modelo está carregado
-                if (!modelLoaded || interpreter == null) {
-                    Log.w(TAG, "⚠️ Modelo não carregado, cancelando processamento")
-                    withContext(Dispatchers.Main) {
-                        try {
-                            if (::statusText.isInitialized && !isFinishing && !isDestroyed) {
-                                statusText.text = "❌ Modelo não carregado"
-                            } else {
-                                Log.w(TAG, "⚠️ statusText não disponível para atualizar")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Erro ao atualizar status: ${e.message}")
-                        }
-                    }
-                    processandoFace = false
-                    lastProcessingTime = 0L
-                    return@launch
-                }
-                
-                // ✅ CORREÇÃO: Verificar se o helper está disponível
-                if (faceRecognitionHelper == null) {
-                    Log.w(TAG, "⚠️ Helper de reconhecimento não disponível")
-                    withContext(Dispatchers.Main) {
-                        try {
-                            if (::statusText.isInitialized && !isFinishing && !isDestroyed) {
-                                statusText.text = "❌ Sistema não inicializado"
-                            } else {
-                                Log.w(TAG, "⚠️ statusText não disponível para atualizar")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Erro ao atualizar status: ${e.message}")
-                        }
-                    }
-                    processandoFace = false
-                    lastProcessingTime = 0L
-                    return@launch
-                }
-                
-                try {
-                    withContext(Dispatchers.Main) {
+                // Status simples
+                withContext(Dispatchers.Main) {
+                    try {
                         if (::statusText.isInitialized && !isFinishing) {
-                            statusText.text = "🔍 Reconhecendo funcionário..."
+                            statusText.text = "🔍 Processando..."
                         }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Erro no status: ${e.message}")
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "⚠️ Erro ao atualizar status: ${e.message}")
                 }
 
-                Log.d(TAG, "🔄 === PROCESSANDO FACE PARA RECONHECIMENTO ===")
-
-                // ✅ CORREÇÃO: Verificar se ainda devemos processar
-                if (isFinishing || isDestroyed) {
-                    Log.w(TAG, "⚠️ Activity finalizada no início do processamento, cancelando")
-                    return@launch
+                // Verificações básicas
+                if (!modelLoaded || interpreter == null || faceRecognitionHelper == null) {
+                    throw Exception("Sistema não carregado")
                 }
 
-                // Bitmap já está disponível
-                Log.d(TAG, "✅ Bitmap recebido: ${bitmap.width}x${bitmap.height}")
-
-                // ✅ CORREÇÃO: Verificar se o bitmap ainda é válido
-                if (bitmap.isRecycled) {
-                    throw IllegalStateException("Bitmap foi reciclado durante o processamento")
-                }
-
-                // Recortar face
-                Log.d(TAG, "✂️ Recortando face com boundingBox: $boundingBox")
+                // Processar face
                 val faceBmp = cropFace(bitmap, boundingBox)
+                val resized = Bitmap.createScaledBitmap(faceBmp, modelInputWidth, modelInputHeight, true)
                 
-                // ✅ CORREÇÃO: Verificar se o recorte foi bem-sucedido
-                if (faceBmp.isRecycled || faceBmp.width <= 0 || faceBmp.height <= 0) {
-                    throw IllegalStateException("Face recortada inválida: ${faceBmp.width}x${faceBmp.height}")
-                }
+                // Converter para tensor
+                val inputTensor = convertBitmapToTensorInput(resized)
+                val output = Array(1) { FloatArray(modelOutputSize) }
                 
-                Log.d(TAG, "✅ Face recortada: ${faceBmp.width}x${faceBmp.height}")
+                // ✅ SIMPLES: Executar modelo diretamente
+                interpreter?.run(inputTensor, output)
+                val vetorFacial = output[0]
                 
-                // 🆕 Salvar foto da face para usar no registro do ponto (com correção de orientação)
-                val faceForPoint = try {
-                    Bitmap.createScaledBitmap(faceBmp, 300, 300, true)
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao criar faceForPoint: ${e.message}")
-                    null
-                }
+                Log.d(TAG, "✅ Vetor gerado: ${vetorFacial.size}")
+
+                // ✅ SIMPLES: Reconhecer funcionário
+                val funcionario = faceRecognitionHelper?.recognizeFace(vetorFacial)
                 
-                currentFaceBitmap = faceForPoint?.let { bitmap ->
+                Log.d(TAG, "🔍 Resultado: ${funcionario?.nome ?: "não reconhecido"}")
+                
+                // ✅ SIMPLES: Processar resultado
+                withContext(Dispatchers.Main) {
                     try {
-                        fixImageOrientationDefinitive(bitmap)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro ao corrigir orientação: ${e.message}")
-                        bitmap
-                    }
-                }
-                
-                Log.d(TAG, "📸 Foto da face corrigida e salva: ${currentFaceBitmap?.width}x${currentFaceBitmap?.height}")
-
-                // Redimensionar
-                Log.d(TAG, "🔧 Redimensionando para ${modelInputWidth}x${modelInputHeight}...")
-                val resized = try {
-                    Bitmap.createScaledBitmap(faceBmp, modelInputWidth, modelInputHeight, true)
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao redimensionar: ${e.message}")
-                    throw e
-                }
-                
-                // ✅ CORREÇÃO: Verificar se o redimensionamento foi bem-sucedido
-                if (resized.isRecycled || resized.width != modelInputWidth || resized.height != modelInputHeight) {
-                    throw IllegalStateException("Redimensionamento falhou: ${resized.width}x${resized.height}")
-                }
-                
-                Log.d(TAG, "✅ Face redimensionada: ${resized.width}x${resized.height}")
-
-                if (modelLoaded && interpreter != null) {
-                    Log.d(TAG, "🧠 Processando com modelo de IA...")
-                    
-                    // Gerar vetor facial usando o formato correto
-                    Log.d(TAG, "🔄 Convertendo para formato TensorFlow...")
-                    val inputTensor = convertBitmapToTensorInput(resized)
-                    Log.d(TAG, "✅ Tensor criado com ${inputTensor.capacity()} bytes")
-                    
-                    // Verificar se o tensor tem o tamanho correto
-                    val expectedSize = 4 * modelInputWidth * modelInputHeight * 3
-                    if (inputTensor.capacity() != expectedSize) {
-                        throw IllegalStateException("Tensor tem tamanho incorreto: ${inputTensor.capacity()} vs esperado: $expectedSize")
-                    }
-                    
-                    val output = Array(1) { FloatArray(modelOutputSize) }
-                    
-                    // ✅ CORREÇÃO: Verificar se ainda devemos continuar
-                    if (isFinishing || isDestroyed) {
-                        Log.w(TAG, "⚠️ Activity finalizada antes da inferência, cancelando")
-                        return@launch
-                    }
-                    
-                    // ✅ CORREÇÃO: Proteção ULTRA ROBUSTA na inferência
-                    val vetorFacial = try {
-                        interpreter?.let { interp ->
-                            // ✅ CORREÇÃO: Verificar se o tensor é válido
-                            if (inputTensor.capacity() <= 0) {
-                                throw IllegalStateException("Tensor vazio")
-                            }
+                        if (funcionario != null) {
+                            Log.d(TAG, "✅ RECONHECIDO: ${funcionario.nome}")
                             
-                            // ✅ CORREÇÃO: Verificar se a activity ainda é válida
-                            if (isFinishing || isDestroyed) {
-                                throw IllegalStateException("Activity finalizada durante inferência")
-                            }
-                            
-                            // ✅ CORREÇÃO: Executar inferência com proteção máxima e timeout
-                            try {
-                                Log.d(TAG, "🔄 Executando inferência do modelo...")
-                                
-                                // ✅ CORREÇÃO: Adicionar timeout para evitar travamento
-                                withTimeout(10000L) { // 10 segundos de timeout
-                                    interp.run(inputTensor, output)
-                                }
-                                
-                                Log.d(TAG, "✅ Inferência concluída com sucesso")
-                            } catch (e: Exception) {
-                                Log.e(TAG, "❌ Erro na execução da inferência: ${e.message}")
-                                throw IllegalStateException("Falha na execução do modelo: ${e.message}")
-                            }
-                            
-                            // ✅ CORREÇÃO: Verificar se a saída é válida
-                            if (output[0].isEmpty()) {
-                                throw IllegalStateException("Saída vazia do modelo")
-                            }
-                            
-                            output[0]
-                        } ?: throw IllegalStateException("Interpreter não está disponível")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro crítico na inferência: ${e.message}", e)
-                        throw e
-                    }
-
-                    Log.d(TAG, "✅ Vetor facial gerado: tamanho=${vetorFacial.size}")
-                    Log.d(TAG, "📊 Primeiros valores: [${vetorFacial.take(5).joinToString(", ")}...]")
-
-                    // ✅ CORREÇÃO: Tratar vetor com NaN em vez de quebrar
-                    var vetorFacialFinal = vetorFacial
-                    if (vetorFacial.any { it.isNaN() || it.isInfinite() }) {
-                        Log.w(TAG, "⚠️ Vetor contém NaN/Inf - tentando corrigir...")
-                        
-                        // Tentar gerar vetor novamente com imagem diferente
-                        val vetorCorrigido = FloatArray(vetorFacial.size) { index ->
-                            val valor = vetorFacial[index]
-                            if (valor.isNaN() || valor.isInfinite()) {
-                                0.0f // Substituir NaN por 0
-                            } else {
-                                valor
-                            }
-                        }
-                        
-                        Log.d(TAG, "🔧 Vetor corrigido: [${vetorCorrigido.take(5).joinToString(", ")}...]")
-                        vetorFacialFinal = vetorCorrigido
-                    }
-
-                    // Reconhecer funcionário
-                    Log.d(TAG, "🔍 Iniciando reconhecimento facial...")
-                    
-                    // ✅ CORREÇÃO: Proteção contra crashes no reconhecimento
-                    val funcionario = try {
-                        Log.d(TAG, "🔍 Iniciando chamada para recognizeFace...")
-                        val resultado = faceRecognitionHelper?.recognizeFace(vetorFacialFinal)
-                        Log.d(TAG, "📋 Resultado do recognizeFace: ${resultado?.let { "${it.nome} (${it.codigo})" } ?: "null"}")
-                        resultado
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro crítico no reconhecimento: ${e.message}", e)
-                        null
-                    }
-
-                    // ✅ CORREÇÃO: Proteção robusta ao mostrar resultados
-                    try {
-                        withContext(Dispatchers.Main) {
-                            // ✅ CORREÇÃO: Verificar se a activity ainda é válida
-                            if (isFinishing || isDestroyed) {
-                                Log.w(TAG, "⚠️ Activity finalizada durante reconhecimento")
+                            // Verificar duplicata simples
+                            if (pontoJaRegistrado) {
+                                Log.w(TAG, "⚠️ Já registrado, ignorando")
+                                processandoFace = false
                                 return@withContext
                             }
                             
-                            if (funcionario != null) {
-                                Log.d(TAG, "✅ Funcionário reconhecido: ${funcionario.nome}")
-                                Log.d(TAG, "📊 Dados do funcionário reconhecido:")
-                                Log.d(TAG, "   - Nome: ${funcionario.nome}")
-                                Log.d(TAG, "   - Código: ${funcionario.codigo}")
-                                Log.d(TAG, "   - CPF: ${funcionario.cpf}")
-                                Log.d(TAG, "   - Matrícula: ${funcionario.matricula}")
-                                
-                                // ✅ NOVA: Verificar se já foi registrado ponto para este funcionário
-                                if (pontoJaRegistrado || ultimoFuncionarioReconhecido == funcionario.codigo) {
-                                    Log.w(TAG, "⚠️ PONTO JÁ REGISTRADO para ${funcionario.nome} - ignorando duplicata")
-                                    Log.w(TAG, "   - pontoJaRegistrado: $pontoJaRegistrado")
-                                    Log.w(TAG, "   - ultimoFuncionarioReconhecido: $ultimoFuncionarioReconhecido")
+                            pontoJaRegistrado = true
+                            
+                            // ✅ SIMPLES: Registrar ponto diretamente
+                            CoroutineScope(Dispatchers.IO).launch {
+                                try {
+                                    val horario = System.currentTimeMillis()
+                                    val formato = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
+                                    val dataFormatada = formato.format(Date(horario))
+                                    
+                                    val ponto = PontosGenericosEntity(
+                                        funcionarioId = funcionario.codigo,
+                                        funcionarioNome = funcionario.nome ?: "Funcionário",
+                                        funcionarioMatricula = funcionario.matricula ?: "",
+                                        funcionarioCpf = funcionario.cpf ?: "",
+                                        funcionarioCargo = funcionario.cargo ?: "",
+                                        funcionarioSecretaria = funcionario.secretaria ?: "",
+                                        funcionarioLotacao = funcionario.lotacao ?: "",
+                                        tipoPonto = "PONTO",
+                                        dataHora = horario,
+                                        fotoBase64 = null
+                                    )
+                                    
+                                    AppDatabase.getInstance(this@PontoActivity).pontosGenericosDao().insert(ponto)
+                                    
+                                    withContext(Dispatchers.Main) {
+                                        try {
+                                            Toast.makeText(this@PontoActivity, 
+                                                "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada", 
+                                                Toast.LENGTH_LONG).show()
+                                            
+                                            // Reset em 15 segundos
+                                            Handler(Looper.getMainLooper()).postDelayed({
+                                                pontoJaRegistrado = false
+                                            }, 15000)
+                                            
+                                            // Fechar em 3 segundos
+                                            Handler(Looper.getMainLooper()).postDelayed({
+                                                if (!isFinishing) {
+                                                    finish()
+                                                }
+                                            }, 3000)
+                                            
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "Erro no toast: ${e.message}")
+                                            if (!isFinishing) {
+                                                finish()
+                                            }
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Erro ao salvar: ${e.message}")
+                                    pontoJaRegistrado = false
+                                    
+                                    withContext(Dispatchers.Main) {
+                                        try {
+                                            Toast.makeText(this@PontoActivity, "❌ Erro ao registrar", Toast.LENGTH_SHORT).show()
+                                            statusText.text = "📷 Posicione seu rosto na câmera"
+                                        } catch (e2: Exception) {
+                                            Log.e(TAG, "Erro no fallback: ${e2.message}")
+                                        }
+                                    }
+                                } finally {
                                     processandoFace = false
                                     lastProcessingTime = 0L
-                                    return@withContext
                                 }
-                                
-                                // ✅ NOVA: Marcar como registrado ANTES de iniciar o processo
-                                pontoJaRegistrado = true
-                                ultimoFuncionarioReconhecido = funcionario.codigo
-                                Log.d(TAG, "🔒 Marcando como registrado para evitar duplicatas")
-                                
-                                // ✅ SOLUÇÃO DEFINITIVA: Processar diretamente aqui
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    try {
-                                        // ✅ CORREÇÃO: Verificar se a activity ainda é válida
-                                        if (isFinishing || isDestroyed) {
-                                            Log.w(TAG, "⚠️ Activity finalizada antes do registro do ponto")
-                                            return@launch
-                                        }
-                                        
-                                        // ✅ Registrar ponto diretamente
-                                        val horarioAtual = System.currentTimeMillis()
-                                        val formato = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
-                                        val dataFormatada = formato.format(Date(horarioAtual))
-                                        
-                                        Log.d(TAG, "💾 Criando ponto para funcionário:")
-                                        Log.d(TAG, "   - ID: ${funcionario.codigo}")
-                                        Log.d(TAG, "   - Nome: ${funcionario.nome}")
-                                        Log.d(TAG, "   - Data/Hora: $dataFormatada")
-                                        
-                                        // ✅ Criar ponto
-                                        val ponto = PontosGenericosEntity(
-                                            funcionarioId = funcionario.codigo,
-                                            funcionarioNome = funcionario.nome ?: "Funcionário",
-                                            funcionarioMatricula = funcionario.matricula ?: "",
-                                            funcionarioCpf = funcionario.cpf ?: "",
-                                            funcionarioCargo = funcionario.cargo ?: "",
-                                            funcionarioSecretaria = funcionario.secretaria ?: "",
-                                            funcionarioLotacao = funcionario.lotacao ?: "",
-                                            tipoPonto = "PONTO",
-                                            dataHora = horarioAtual,
-                                            fotoBase64 = null
-                                        )
-                                        
-                                        Log.d(TAG, "💾 Dados do ponto criado:")
-                                        Log.d(TAG, "   - Funcionário ID: ${ponto.funcionarioId}")
-                                        Log.d(TAG, "   - Funcionário Nome: ${ponto.funcionarioNome}")
-                                        Log.d(TAG, "   - Data/Hora: ${ponto.dataHora}")
-                                        
-                                        // ✅ Salvar no banco
-                                        AppDatabase.getInstance(this@PontoActivity).pontosGenericosDao().insert(ponto)
-                                        Log.d(TAG, "💾 Ponto registrado no banco para: ${funcionario.nome} - $dataFormatada")
-                                        
-                                        // ✅ Salvar para sincronização
-                                        try {
-                                            val pontoService = PontoSincronizacaoService()
-                                            pontoService.salvarPontoParaSincronizacao(
-                                                this@PontoActivity,
-                                                funcionario.codigo,
-                                                funcionario.nome ?: "Funcionário",
-                                                "ponto",
-                                                null
-                                            )
-                                            Log.d(TAG, "✅ Ponto salvo para sincronização")
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "❌ Erro ao salvar ponto para sincronização: ${e.message}")
-                                        }
-                                        
-                                        // ✅ Mostrar sucesso e fechar
-                                        withContext(Dispatchers.Main) {
-                                            try {
-                                                Log.d(TAG, "✅ Ponto salvo com sucesso para ${funcionario.nome}")
-                                                Toast.makeText(this@PontoActivity, 
-                                                    "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada", 
-                                                    Toast.LENGTH_LONG).show()
-                                                
-                                                // ✅ NOVA: Agendar reset do controle de duplicatas após 30 segundos
-                                                Handler(Looper.getMainLooper()).postDelayed({
-                                                    Log.d(TAG, "🔄 Reset automático do controle de duplicatas")
-                                                    pontoJaRegistrado = false
-                                                    ultimoFuncionarioReconhecido = null
-                                                }, 30000) // 30 segundos
-                                                
-                                                // ✅ Fechar IMEDIATAMENTE após 2 segundos
-                                                Handler(Looper.getMainLooper()).postDelayed({
-                                                    try {
-                                                        Log.d(TAG, "🔚 Fechando activity após ponto registrado")
-                                                        if (!isFinishing && !isDestroyed) {
-                                                            finish()
-                                                        } else {
-                                                            Log.w(TAG, "⚠️ Activity já finalizada, não fechando")
-                                                        }
-                                                    } catch (e: Exception) {
-                                                        Log.e(TAG, "❌ Erro ao fechar: ${e.message}")
-                                                        android.os.Process.killProcess(android.os.Process.myPid())
-                                                    }
-                                                }, 2000)
-                                                
-                                            } catch (e: Exception) {
-                                                Log.e(TAG, "❌ Erro ao mostrar toast: ${e.message}")
-                                                try {
-                                                    if (!isFinishing && !isDestroyed) {
-                                                        finish()
-                                                    } else {
-                                                        Log.w(TAG, "⚠️ Activity já finalizada, não fechando")
-                                                    }
-                                                } catch (e2: Exception) {
-                                                    Log.e(TAG, "❌ Erro crítico: ${e2.message}")
-                                                    android.os.Process.killProcess(android.os.Process.myPid())
-                                                }
-                                            }
-                                        }
-                                        
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "❌ Erro crítico ao registrar ponto: ${e.message}", e)
-                                        // ✅ NOVA: Resetar controle de duplicatas em caso de erro
-                                        pontoJaRegistrado = false
-                                        ultimoFuncionarioReconhecido = null
-                                        Log.d(TAG, "🔄 Reset do controle de duplicatas devido a erro")
-                                        
-                                        withContext(Dispatchers.Main) {
-                                            try {
-                                                Toast.makeText(this@PontoActivity, 
-                                                    "❌ Erro ao registrar ponto\nTente novamente", 
-                                                    Toast.LENGTH_LONG).show()
-                                                statusText.text = "📷 Posicione seu rosto na câmera"
-                                            } catch (e2: Exception) {
-                                                Log.e(TAG, "❌ Erro no fallback: ${e2.message}")
-                                            }
-                                        }
-                                    } finally {
-                                        processandoFace = false
-                                        lastProcessingTime = 0L
-                                    }
-                                }
-                            } else {
-                                Log.d(TAG, "❌ Funcionário não reconhecido")
-                                
-                                // Executar teste de reconhecimento para debug
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    try {
-                                        faceRecognitionHelper?.testarReconhecimento(vetorFacialFinal)
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "❌ Erro no teste de reconhecimento: ${e.message}")
-                                    }
-                                }
-                                
-                                // ✅ CORREÇÃO: Proteção ao atualizar UI
-                                try {
-                                    statusText.text = "❌ Funcionário não reconhecido\nTente novamente"
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "❌ Erro ao atualizar statusText: ${e.message}")
-                                }
-                                processandoFace = false // Permitir nova tentativa
-                                lastProcessingTime = 0L
                             }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro crítico ao processar resultado: ${e.message}", e)
-                        try {
+                        } else {
+                            Log.d(TAG, "❌ NÃO RECONHECIDO")
+                            statusText.text = "❌ Não reconhecido"
+                            
+                            // Reset em 2 segundos
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                try {
+                                    if (::statusText.isInitialized && !isFinishing) {
+                                        statusText.text = "📷 Posicione seu rosto na câmera"
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Erro no reset status: ${e.message}")
+                                }
+                            }, 2000)
+                            
                             processandoFace = false
                             lastProcessingTime = 0L
-                        } catch (e2: Exception) {
-                            Log.e(TAG, "❌ Erro ao resetar processandoFace: ${e2.message}")
                         }
-                    }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        statusText.text = "❌ Modelo não carregado"
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Erro na UI: ${e.message}")
                         processandoFace = false
                         lastProcessingTime = 0L
                     }
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro no processamento", e)
-                e.printStackTrace() // Log completo do erro
+                Log.e(TAG, "❌ ERRO GERAL: ${e.message}")
                 
-                // ✅ CORREÇÃO: Proteção robusta no tratamento de erro
-                try {
-                    withContext(Dispatchers.Main) {
-                        // ✅ CORREÇÃO: Verificar se ainda podemos atualizar UI
-                        if (!isFinishing && !isDestroyed && ::statusText.isInitialized) {
-                            val errorMsg = when {
-                                e.message?.contains("toBitmap") == true -> "❌ Erro na conversão da imagem"
-                                e.message?.contains("cropFace") == true -> "❌ Erro no recorte da face"
-                                e.message?.contains("model") == true -> "❌ Erro no modelo de IA"
-                                e.message?.contains("ByteBuffer") == true -> "❌ Erro no formato de entrada"
-                                e.message?.contains("reciclado") == true -> "❌ Erro na imagem"
-                                e.message?.contains("inválido") == true -> "❌ Dados inválidos"
-                                e.message?.contains("NaN") == true -> "❌ Erro no processamento da face"
-                                e.message?.contains("IllegalStateException") == true -> "❌ Erro interno do sistema"
-                                else -> "❌ Erro no reconhecimento: ${e.message?.take(50) ?: "Desconhecido"}"
-                            }
+                withContext(Dispatchers.Main) {
+                    try {
+                        if (::statusText.isInitialized && !isFinishing) {
+                            statusText.text = "❌ Erro - Tente novamente"
                             
-                            try {
-                                statusText.text = errorMsg
-                                
-                                // Resetar após 5 segundos
-                                statusText.postDelayed({
-                                    try {
-                                        if (!isFinishing && !isDestroyed && ::statusText.isInitialized) {
-                                            statusText.text = "📷 Posicione seu rosto na câmera"
-                                        }
-                                    } catch (e2: Exception) {
-                                        Log.e(TAG, "❌ Erro no reset UI: ${e2.message}")
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                try {
+                                    if (::statusText.isInitialized && !isFinishing) {
+                                        statusText.text = "📷 Posicione seu rosto na câmera"
                                     }
-                                }, 5000)
-                            } catch (e2: Exception) {
-                                Log.e(TAG, "❌ Erro ao atualizar UI de erro: ${e2.message}")
-                            }
+                                } catch (e2: Exception) {
+                                    Log.e(TAG, "Erro no reset final: ${e2.message}")
+                                }
+                            }, 3000)
                         }
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "Erro na UI final: ${e2.message}")
                     }
-                } catch (e2: Exception) {
-                    Log.e(TAG, "❌ Erro crítico no tratamento de erro: ${e2.message}", e2)
                 }
-            } finally {
-                // ✅ CORREÇÃO: SEMPRE resetar processandoFace no finally
-                try {
-                    Log.d(TAG, "🔄 === ENTRANDO NO FINALLY BLOCK ===")
-                    Log.d(TAG, "📊 Estado antes do reset: processandoFace = $processandoFace")
-                    processandoFace = false
-                    lastProcessingTime = 0L // ✅ NOVA: Resetar tempo de processamento
-                    // ✅ NOTA: NÃO resetar pontoJaRegistrado aqui - apenas em caso de erro ou timeout
-                    Log.d(TAG, "✅ processandoFace resetado para false")
-                    Log.d(TAG, "📊 Estado após reset: processandoFace = $processandoFace")
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao resetar processandoFace: ${e.message}")
-                }
+                
+                processandoFace = false
+                lastProcessingTime = 0L
             }
         }
     }
@@ -1364,31 +1056,34 @@ class PontoActivity : AppCompatActivity() {
     
         private fun convertBitmapToTensorInput(bitmap: Bitmap): ByteBuffer {
         try {
-            val inputSize = modelInputWidth // 112
-            Log.d(TAG, "🔧 Preparando tensor para entrada ${inputSize}x${inputSize}")
-            
-            if (bitmap.isRecycled) {
-                throw IllegalStateException("Bitmap foi reciclado")
+            // ✅ OTIMIZAÇÃO: Verificações mínimas e rápidas
+            if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
+                throw IllegalStateException("Bitmap inválido")
             }
             
-            // Alocar buffer com tamanho correto para float32
-            val byteBuffer = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
+            val inputSize = modelInputWidth // 112
+            val bufferSize = 4 * inputSize * inputSize * 3
+            val byteBuffer = ByteBuffer.allocateDirect(bufferSize)
             byteBuffer.order(ByteOrder.nativeOrder())
 
+            // ✅ OTIMIZAÇÃO: Redimensionamento mais eficiente
             val resizedBitmap = if (bitmap.width != inputSize || bitmap.height != inputSize) {
-                Log.d(TAG, "🔧 Redimensionando bitmap de ${bitmap.width}x${bitmap.height} para ${inputSize}x${inputSize}")
-                Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+                Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, false) // false = mais rápido
             } else {
                 bitmap
             }
             
+            // ✅ OTIMIZAÇÃO: Verificação simples
+            if (resizedBitmap.isRecycled) {
+                throw IllegalStateException("Redimensionamento falhou")
+            }
+            
             val intValues = IntArray(inputSize * inputSize)
             resizedBitmap.getPixels(intValues, 0, inputSize, 0, 0, inputSize, inputSize)
-            Log.d(TAG, "✅ Pixels extraídos: ${intValues.size} pixels")
 
-            var pixelCount = 0
+            // ✅ OTIMIZAÇÃO: Processamento de pixels mais rápido
             for (pixel in intValues) {
-                // Normalizar para [-1, 1] como esperado pelo modelo MobileFaceNet
+                // Normalizar para [-1, 1] de forma mais eficiente
                 val r = ((pixel shr 16) and 0xFF) / 127.5f - 1.0f
                 val g = ((pixel shr 8) and 0xFF) / 127.5f - 1.0f
                 val b = (pixel and 0xFF) / 127.5f - 1.0f
@@ -1396,20 +1091,17 @@ class PontoActivity : AppCompatActivity() {
                 byteBuffer.putFloat(r)
                 byteBuffer.putFloat(g)
                 byteBuffer.putFloat(b)
-                pixelCount++
             }
             
-            Log.d(TAG, "✅ Tensor preenchido com $pixelCount pixels")
-            
-            // Limpar bitmap temporário se foi criado
-            if (resizedBitmap != bitmap) {
+            // ✅ OTIMIZAÇÃO: Limpeza eficiente
+            if (resizedBitmap != bitmap && !resizedBitmap.isRecycled) {
                 resizedBitmap.recycle()
             }
 
             return byteBuffer
             
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro em convertBitmapToTensorInput", e)
+            Log.e(TAG, "❌ Erro na conversão: ${e.message}")
             throw e
         }
     }

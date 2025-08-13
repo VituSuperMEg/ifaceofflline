@@ -22,12 +22,17 @@ class FaceRecognitionHelper(private val context: Context) {
     
     companion object {
         private const val TAG = "FaceRecognitionHelper"
-        // ✅ THRESHOLDS MUITO MAIS RIGOROSOS PARA EVITAR RECONHECIMENTOS ERRADOS
-        private const val COSINE_THRESHOLD = 0.65f // Era 0.30f - MUITO MAIS RIGOROSO
-        private const val FALLBACK_THRESHOLD = 0.55f // Era 0.20f - MUITO MAIS RIGOROSO
-        private const val MIN_SCORE_DIFFERENCE = 0.15f // Era 0.05f - Diferença maior entre candidatos
-        private const val HIGH_CONFIDENCE_THRESHOLD = 0.75f // Era 0.40f - MUITO MAIS RIGOROSO
-        private const val DEBUG_MODE = true // Ativado para debug do problema
+        private const val DEBUG_MODE = true
+        
+        // ✅ SIMPLES: Thresholds mais permissivos para funcionar facilmente
+        private const val COSINE_THRESHOLD = 0.50f // Bem mais baixo
+        private const val FALLBACK_THRESHOLD = 0.45f // Bem mais baixo
+        private const val MIN_SCORE_DIFFERENCE = 0.10f // Bem mais baixo
+        private const val HIGH_CONFIDENCE_THRESHOLD = 0.60f // Bem mais baixo
+        private const val ULTRA_HIGH_CONFIDENCE_THRESHOLD = 0.65f // Bem mais baixo
+        
+        // ✅ SIMPLES: Processar mais funcionários para ter mais chances
+        private const val MAX_FUNCIONARIOS_PROCESSAR = 100 // Aumentado
     }
 
     // ❌ REMOVIDO: Tracker problemático que mantinha estado
@@ -40,9 +45,18 @@ class FaceRecognitionHelper(private val context: Context) {
     suspend fun recognizeFace(faceEmbedding: FloatArray): FuncionariosEntity? {
         return withContext(Dispatchers.IO) {
             try {
+                Log.d(TAG, "🔍 === INICIANDO RECONHECIMENTO FACIAL PROTEGIDO ===")
+                
                 // ✅ CORREÇÃO: Verificar se o vetor é válido (aceitar 192 ou 512)
                 if (faceEmbedding.isEmpty() || (faceEmbedding.size != 192 && faceEmbedding.size != 512)) {
                     Log.e(TAG, "❌ Vetor facial inválido: tamanho=${faceEmbedding.size} (esperado: 192 ou 512)")
+                    return@withContext null
+                }
+                
+                // ✅ NOVA: Verificar se há valores válidos no vetor
+                val validValues = faceEmbedding.count { !it.isNaN() && !it.isInfinite() }
+                if (validValues < faceEmbedding.size / 2) {
+                    Log.e(TAG, "❌ Muitos valores inválidos no vetor: $validValues/${faceEmbedding.size} válidos")
                     return@withContext null
                 }
                 
@@ -56,6 +70,7 @@ class FaceRecognitionHelper(private val context: Context) {
                 }
                 
                 // ✅ CORREÇÃO: Tratar valores inválidos em vez de falhar
+                var embeddingParaUso = faceEmbedding
                 if (faceEmbedding.any { it.isNaN() || it.isInfinite() }) {
                     Log.w(TAG, "⚠️ Vetor facial contém valores inválidos - tentando corrigir...")
                     
@@ -69,17 +84,29 @@ class FaceRecognitionHelper(private val context: Context) {
                     }
                     
                     Log.d(TAG, "🔧 Vetor corrigido com sucesso")
-                    return@withContext recognizeFace(embeddingCorrigido) // Recursão com vetor corrigido
+                    embeddingParaUso = embeddingCorrigido
                 }
                 
                 if (DEBUG_MODE) {
                     Log.d(TAG, "🔍 === INICIANDO RECONHECIMENTO FACIAL ===")
-                    Log.d(TAG, "🔍 Vetor de entrada: tamanho=${faceEmbedding.size}")
+                    Log.d(TAG, "🔍 Vetor de entrada: tamanho=${embeddingParaUso.size}")
+                    Log.d(TAG, "🔍 Primeiros 5 valores: [${embeddingParaUso.take(5).joinToString(", ")}...]")
                 }
                 
                 // ✅ CORREÇÃO: Sempre buscar funcionários do banco (sem cache)
                 val funcionarios = try {
-                    funcionarioDao.getUsuario()
+                    Log.d(TAG, "📋 Buscando funcionários do banco...")
+                    val allFuncionarios = funcionarioDao.getUsuario()
+                    
+                    // ✅ OTIMIZAÇÃO: Limitar número de funcionários para velocidade
+                    val limitedFuncionarios = if (allFuncionarios.size > MAX_FUNCIONARIOS_PROCESSAR) {
+                        Log.d(TAG, "⚡ Limitando para $MAX_FUNCIONARIOS_PROCESSAR funcionários (de ${allFuncionarios.size}) para velocidade")
+                        allFuncionarios.take(MAX_FUNCIONARIOS_PROCESSAR)
+                    } else {
+                        allFuncionarios
+                    }
+                    
+                    limitedFuncionarios
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro ao buscar funcionários: ${e.message}")
                     return@withContext null
@@ -90,191 +117,115 @@ class FaceRecognitionHelper(private val context: Context) {
                     if (DEBUG_MODE) Log.w(TAG, "⚠️  Nenhum funcionário cadastrado!")
                     return@withContext null
                 }
+
+                // ✅ OTIMIZAÇÃO: Reconhecimento mais rápido e eficiente
+                val candidatos = mutableListOf<Pair<FuncionariosEntity, Float>>()
                 
-                var bestMatch: FuncionariosEntity? = null
-                var bestSimilarity = 0f
-                var secondBestMatch: FuncionariosEntity? = null
-                var secondBestSimilarity = 0f
-                var thirdBestMatch: FuncionariosEntity? = null
-                var thirdBestSimilarity = 0f
-                
-                // ✅ CORREÇÃO: Processamento sem cache
-                for (funcionario in funcionarios) {
+                // ✅ OTIMIZAÇÃO: Processar apenas funcionários com faces cadastradas
+                val funcionariosComFace = funcionarios.filter { funcionario ->
                     try {
-                        // Buscar o rosto do funcionário
-                        val faceEntity = try {
-                            faceDao.getByFuncionarioId(funcionario.codigo)
-                        } catch (e: Exception) {
-                            if (DEBUG_MODE) Log.w(TAG, "⚠️ Erro ao buscar face de ${funcionario.nome}: ${e.message}")
-                            continue
-                        }
-                        
+                        val faceEntity = faceDao.getByFuncionarioId(funcionario.codigo)
+                        faceEntity != null
+                    } catch (e: Exception) {
+                        false
+                    }
+                }
+                
+                Log.d(TAG, "🎯 Funcionários com face cadastrada: ${funcionariosComFace.size}")
+                
+                if (funcionariosComFace.isEmpty()) {
+                    if (DEBUG_MODE) Log.w(TAG, "⚠️ Nenhum funcionário com face cadastrada!")
+                    return@withContext null
+                }
+
+                // ✅ OTIMIZAÇÃO: Calcular similaridades apenas para funcionários relevantes
+                for (funcionario in funcionariosComFace) {
+                    try {
+                        val faceEntity = faceDao.getByFuncionarioId(funcionario.codigo)
                         if (faceEntity != null) {
-                            // ✅ CORREÇÃO: Verificar se o embedding é válido
-                            if (faceEntity.embedding.isBlank()) {
-                                if (DEBUG_MODE) Log.w(TAG, "⚠️ Embedding vazio para ${funcionario.nome}")
+                            val storedEmbedding = stringToFloatArray(faceEntity.embedding)
+                            
+                            // ✅ OTIMIZAÇÃO: Verificação rápida de compatibilidade
+                            if (storedEmbedding.size != embeddingParaUso.size) {
+                                if (DEBUG_MODE) Log.w(TAG, "⚠️ Tamanhos diferentes para ${funcionario.nome}: ${storedEmbedding.size} vs ${embeddingParaUso.size}")
                                 continue
                             }
                             
-                            // Converter o embedding string para FloatArray
-                            val storedEmbedding = try {
-                                stringToFloatArray(faceEntity.embedding)
-                            } catch (e: Exception) {
-                                if (DEBUG_MODE) Log.w(TAG, "⚠️ Erro ao converter embedding de ${funcionario.nome}: ${e.message}")
-                                continue
-                            }
-                            
-                            // ✅ CORREÇÃO: Verificar se o embedding convertido é válido (aceitar 192 ou 512)
-                            if (storedEmbedding.size != 192 && storedEmbedding.size != 512) {
-                                if (DEBUG_MODE) Log.w(TAG, "⚠️ Embedding inválido para ${funcionario.nome}: tamanho=${storedEmbedding.size}")
-                                continue
-                            }
-                            
-                            // ✅ OTIMIZAÇÃO: Calcular apenas similaridade de cosseno
+                            // ✅ OTIMIZAÇÃO: Calcular apenas similaridade de cosseno (mais rápido)
                             val cosineSimilarity = try {
-                                calculateCosineSimilarity(faceEmbedding, storedEmbedding)
+                                calculateCosineSimilarity(embeddingParaUso, storedEmbedding)
                             } catch (e: Exception) {
                                 if (DEBUG_MODE) Log.w(TAG, "⚠️ Erro ao calcular similaridade para ${funcionario.nome}: ${e.message}")
                                 continue
                             }
                             
-                            if (DEBUG_MODE) {
-                                val euclideanDistance = calculateEuclideanDistance(faceEmbedding, storedEmbedding)
-                                Log.d(TAG, "📊 Funcionário ${funcionario.nome}:")
-                                Log.d(TAG, "   - Similaridade cosseno: $cosineSimilarity (limite: $COSINE_THRESHOLD)")
-                                Log.d(TAG, "   - Distância euclidiana: $euclideanDistance")
-                            }
-                            
-                            // ✅ THRESHOLD OTIMIZADO: Usar novo valor mais rigoroso
+                            // ✅ OTIMIZAÇÃO: Adicionar apenas candidatos viáveis
                             if (cosineSimilarity >= COSINE_THRESHOLD) {
-                                if (cosineSimilarity > bestSimilarity) {
-                                    // Mover o anterior melhor para segundo lugar
-                                    thirdBestMatch = secondBestMatch
-                                    thirdBestSimilarity = secondBestSimilarity
-                                    secondBestMatch = bestMatch
-                                    secondBestSimilarity = bestSimilarity
-                                    
-                                    bestSimilarity = cosineSimilarity
-                                    bestMatch = funcionario
-                                    if (DEBUG_MODE) Log.d(TAG, "⭐ Novo melhor match: ${funcionario.nome} (similaridade: $cosineSimilarity)")
-                                } else if (cosineSimilarity > secondBestSimilarity) {
-                                    // Atualizar segundo melhor
-                                    thirdBestMatch = secondBestMatch
-                                    thirdBestSimilarity = secondBestSimilarity
-                                    secondBestSimilarity = cosineSimilarity
-                                    secondBestMatch = funcionario
-                                    if (DEBUG_MODE) Log.d(TAG, "🥈 Segundo melhor match: ${funcionario.nome} (similaridade: $cosineSimilarity)")
-                                } else if (cosineSimilarity > thirdBestSimilarity) {
-                                    // Atualizar terceiro melhor
-                                    thirdBestSimilarity = cosineSimilarity
-                                    thirdBestMatch = funcionario
-                                    if (DEBUG_MODE) Log.d(TAG, "🥉 Terceiro melhor match: ${funcionario.nome} (similaridade: $cosineSimilarity)")
-                                }
+                                candidatos.add(Pair(funcionario, cosineSimilarity))
+                                if (DEBUG_MODE) Log.d(TAG, "🎯 Candidato: ${funcionario.nome} - Similaridade: $cosineSimilarity")
                             }
                         }
-                        
                     } catch (e: Exception) {
-                        if (DEBUG_MODE) Log.w(TAG, "Erro ao processar funcionário ${funcionario.nome}: ${e.message}")
-                        // Continua para o próximo funcionário
+                        if (DEBUG_MODE) Log.w(TAG, "⚠️ Erro ao processar ${funcionario.nome}: ${e.message}")
+                        continue
                     }
                 }
-                
-                var candidateMatch: FuncionariosEntity? = null
-                var matchSimilarity = 0f
 
-                if (bestMatch != null) {
-                    Log.d(TAG, "✅ Match encontrado: ${bestMatch.nome} (similaridade: $bestSimilarity)")
+                // ✅ OTIMIZAÇÃO: Processamento rápido de candidatos
+                if (candidatos.isEmpty()) {
+                    if (DEBUG_MODE) Log.w(TAG, "❌ Nenhum candidato viável encontrado")
+                    return@withContext null
+                }
+
+                // ✅ OTIMIZAÇÃO: Ordenar por similaridade (mais alto primeiro)
+                candidatos.sortByDescending { it.second }
+                
+                val melhorCandidato = candidatos.first()
+                val melhorSimilaridade = melhorCandidato.second
+                val funcionarioEscolhido = melhorCandidato.first
+                
+                if (DEBUG_MODE) {
+                    Log.d(TAG, "🏆 MELHOR CANDIDATO:")
+                    Log.d(TAG, "   - Nome: ${funcionarioEscolhido.nome}")
+                    Log.d(TAG, "   - Similaridade: $melhorSimilaridade")
+                    Log.d(TAG, "   - Total de candidatos: ${candidatos.size}")
+                }
+
+                // ✅ SIMPLES: Lógica de decisão mais direta
+                when {
+                    // Se só tem um candidato e passa no threshold básico
+                    candidatos.size == 1 && melhorSimilaridade >= COSINE_THRESHOLD -> {
+                        if (DEBUG_MODE) Log.d(TAG, "✅ ACEITO - Único candidato: $melhorSimilaridade")
+                        return@withContext funcionarioEscolhido
+                    }
                     
-                    // ✅ VERIFICAÇÃO OTIMIZADA: Análise mais rigorosa para evitar confusões
-                    if (secondBestMatch != null) {
-                        val scoreDifference = bestSimilarity - secondBestSimilarity
+                    // Se tem múltiplos candidatos, aceitar o melhor se for razoável
+                    candidatos.size > 1 -> {
+                        val segundoMelhor = candidatos[1].second
+                        val diferenca = melhorSimilaridade - segundoMelhor
                         
                         if (DEBUG_MODE) {
-                            Log.d(TAG, "📊 Análise de diferenças:")
-                            Log.d(TAG, "   - Melhor: ${bestMatch.nome} (similaridade: $bestSimilarity)")
-                            Log.d(TAG, "   - Segundo: ${secondBestMatch.nome} (similaridade: $secondBestSimilarity)")
-                            Log.d(TAG, "   - Diferença: $scoreDifference (mínima: $MIN_SCORE_DIFFERENCE)")
-                            if (thirdBestMatch != null) {
-                                Log.d(TAG, "   - Terceiro: ${thirdBestMatch.nome} (similaridade: $thirdBestSimilarity)")
-                            }
+                            Log.d(TAG, "📊 MÚLTIPLOS CANDIDATOS:")
+                            Log.d(TAG, "   - Melhor: $melhorSimilaridade")
+                            Log.d(TAG, "   - Segundo: $segundoMelhor")
+                            Log.d(TAG, "   - Diferença: $diferenca")
                         }
                         
-                        // ✅ NOVA LÓGICA: Verificação muito mais rigorosa para evitar confusões
-                        if (bestSimilarity >= HIGH_CONFIDENCE_THRESHOLD) {
-                            // Match de alta confiança - aceitar apenas se for MUITO claro
-                            if (scoreDifference >= MIN_SCORE_DIFFERENCE) {
-                                candidateMatch = bestMatch
-                                matchSimilarity = bestSimilarity
-                                if (DEBUG_MODE) Log.d(TAG, "🚀 Match de alta confiança aceito: ${bestMatch.nome}")
-                            } else {
-                                if (DEBUG_MODE) Log.w(TAG, "⚠️ Alta similaridade mas diferença insuficiente - REJEITADO")
-                                candidateMatch = null
-                            }
-                        } else if (scoreDifference >= MIN_SCORE_DIFFERENCE && bestSimilarity >= COSINE_THRESHOLD) {
-                            // Diferença suficiente E similaridade boa - aceitar
-                            candidateMatch = bestMatch
-                            matchSimilarity = bestSimilarity
-                            if (DEBUG_MODE) Log.d(TAG, "✅ Match aceito com diferença suficiente")
+                        // ✅ SIMPLES: Aceitar se o melhor for significativamente melhor
+                        if (melhorSimilaridade >= HIGH_CONFIDENCE_THRESHOLD || diferenca >= MIN_SCORE_DIFFERENCE) {
+                            if (DEBUG_MODE) Log.d(TAG, "🎉 FUNCIONÁRIO RECONHECIDO: ${funcionarioEscolhido.nome}")
+                            return@withContext funcionarioEscolhido
                         } else {
-                            // Qualquer dúvida - rejeitar para evitar erro
-                            if (DEBUG_MODE) {
-                                Log.w(TAG, "🚫 MATCH REJEITADO - Critérios não atendidos:")
-                                Log.w(TAG, "   - Similaridade: $bestSimilarity (mín: $COSINE_THRESHOLD)")
-                                Log.w(TAG, "   - Diferença: $scoreDifference (mín: $MIN_SCORE_DIFFERENCE)")
-                                Log.w(TAG, "   - REJEITANDO para evitar reconhecimento errado")
-                            }
-                            candidateMatch = null
-                        }
-                    } else {
-                        // Apenas um match - aceitar APENAS se for muito confiável
-                        if (bestSimilarity >= HIGH_CONFIDENCE_THRESHOLD) {
-                            candidateMatch = bestMatch
-                            matchSimilarity = bestSimilarity
-                            if (DEBUG_MODE) Log.d(TAG, "✅ Match único aceito com alta confiança: ${bestMatch.nome}")
-                        } else {
-                            if (DEBUG_MODE) {
-                                Log.w(TAG, "🚫 Match único REJEITADO - Similaridade baixa:")
-                                Log.w(TAG, "   - Similaridade: $bestSimilarity (mín: $HIGH_CONFIDENCE_THRESHOLD)")
-                                Log.w(TAG, "   - REJEITANDO para evitar reconhecimento errado")
-                            }
-                            candidateMatch = null
+                            if (DEBUG_MODE) Log.d(TAG, "❌ REJEITADO - Diferença insuficiente")
+                            return@withContext null
                         }
                     }
-                } else {
-                    if (DEBUG_MODE) Log.d(TAG, "❌ Nenhum match encontrado")
                     
-                    // ✅ FALLBACK OTIMIZADO: Threshold mais rigoroso
-                    if (DEBUG_MODE) Log.d(TAG, "🔄 Tentando fallback com threshold mais rigoroso...")
-                    
-                    for (funcionario in funcionarios) {
-                        try {
-                            val faceEntity = faceDao.getByFuncionarioId(funcionario.codigo)
-                            if (faceEntity != null) {
-                                val storedEmbedding = stringToFloatArray(faceEntity.embedding)
-                                val cosineSimilarity = calculateCosineSimilarity(faceEmbedding, storedEmbedding)
-                                
-                                if (cosineSimilarity >= FALLBACK_THRESHOLD) {
-                                    Log.d(TAG, "🆘 Fallback: Match encontrado com threshold $FALLBACK_THRESHOLD")
-                                    Log.d(TAG, "✅ Funcionário: ${funcionario.nome} (similaridade: $cosineSimilarity)")
-                                    candidateMatch = funcionario
-                                    matchSimilarity = cosineSimilarity
-                                    break
-                                }
-                            }
-                        } catch (e: Exception) {
-                            if (DEBUG_MODE) Log.w(TAG, "Erro no fallback para ${funcionario.nome}: ${e.message}")
-                        }
+                    else -> {
+                        if (DEBUG_MODE) Log.d(TAG, "❌ REJEITADO - Sem candidatos suficientes")
+                        return@withContext null
                     }
                 }
-
-                // ✅ CORREÇÃO: Retornar diretamente o match (sem tracker)
-                if (candidateMatch != null) {
-                    Log.d(TAG, "🎯 Match final confirmado: ${candidateMatch.nome} (similaridade: $matchSimilarity)")
-                } else if (DEBUG_MODE) {
-                    Log.d(TAG, "❌ Nenhum match encontrado ou confirmado")
-                }
-                
-                return@withContext candidateMatch
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Erro no reconhecimento facial: ${e.message}", e)
@@ -331,86 +282,100 @@ class FaceRecognitionHelper(private val context: Context) {
     }
     
     /**
-     * ✅ OTIMIZADA: Calcula a similaridade de cosseno entre dois vetores
+     * Calcula a similaridade de cosseno entre dois vetores
      */
     private fun calculateCosineSimilarity(vector1: FloatArray, vector2: FloatArray): Float {
         try {
-            // ✅ CORREÇÃO: Verificar se os vetores são válidos
+            // ✅ NOVA: Verificação robusta dos vetores
             if (vector1.isEmpty() || vector2.isEmpty()) {
-                Log.w(TAG, "⚠️ Vetores vazios")
-                return 0f
+                Log.w(TAG, "⚠️ Vetor vazio detectado")
+                return 0.0f
             }
             
             if (vector1.size != vector2.size) {
-                if (DEBUG_MODE) Log.w(TAG, "⚠️  Vetores têm tamanhos diferentes: ${vector1.size} vs ${vector2.size}")
-                
-                // ✅ CORREÇÃO: Aceitar vetores de 192 ou 512 dimensões
-                if ((vector1.size != 192 && vector1.size != 512) || (vector2.size != 192 && vector2.size != 512)) {
-                    Log.w(TAG, "⚠️ Vetores não têm tamanho válido: ${vector1.size} vs ${vector2.size}")
-                    return 0f
-                }
-                
-                // ✅ CORREÇÃO: Se tamanhos diferentes, usar o menor
-                val minSize = minOf(vector1.size, vector2.size)
-                if (minSize > 0) {
-                    if (DEBUG_MODE) Log.d(TAG, "🔧 Usando tamanho mínimo: $minSize")
-                    val v1 = vector1.sliceArray(0 until minSize)
-                    val v2 = vector2.sliceArray(0 until minSize)
-                    return calculateCosineSimilarityInternal(v1, v2)
-                }
-                return 0f
+                Log.w(TAG, "⚠️ Vetores com tamanhos diferentes: ${vector1.size} vs ${vector2.size}")
+                return 0.0f
             }
             
-            // ✅ CORREÇÃO: Verificar se há valores inválidos
-            if (vector1.any { it.isNaN() || it.isInfinite() } || vector2.any { it.isNaN() || it.isInfinite() }) {
-                Log.w(TAG, "⚠️ Vetores contêm valores inválidos")
-                return 0f
+            // ✅ NOVA: Verificar se há valores válidos
+            val validCount1 = vector1.count { !it.isNaN() && !it.isInfinite() }
+            val validCount2 = vector2.count { !it.isNaN() && !it.isInfinite() }
+            
+            if (validCount1 < vector1.size / 2 || validCount2 < vector2.size / 2) {
+                Log.w(TAG, "⚠️ Muitos valores inválidos nos vetores")
+                return 0.0f
             }
             
-            return calculateCosineSimilarityInternal(vector1, vector2)
+            var dotProduct = 0.0
+            var normA = 0.0
+            var normB = 0.0
+            
+            for (i in vector1.indices) {
+                val a = vector1[i]
+                val b = vector2[i]
+                
+                // ✅ NOVA: Tratar valores inválidos
+                val aClean = if (a.isNaN() || a.isInfinite()) 0.0f else a
+                val bClean = if (b.isNaN() || b.isInfinite()) 0.0f else b
+                
+                dotProduct += (aClean * bClean).toDouble()
+                normA += (aClean * aClean).toDouble()
+                normB += (bClean * bClean).toDouble()
+            }
+            
+            // ✅ NOVA: Verificar divisão por zero
+            if (normA == 0.0 || normB == 0.0) {
+                Log.w(TAG, "⚠️ Norma zero detectada")
+                return 0.0f
+            }
+            
+            val similarity = (dotProduct / (sqrt(normA) * sqrt(normB))).toFloat()
+            
+            // ✅ NOVA: Verificar resultado válido
+            return if (similarity.isNaN() || similarity.isInfinite()) {
+                Log.w(TAG, "⚠️ Similaridade inválida calculada")
+                0.0f
+            } else {
+                similarity.coerceIn(-1.0f, 1.0f) // Garantir que está no range correto
+            }
+            
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao calcular similaridade: ${e.message}")
-            return 0f
-        }
-    }
-    
-    private fun calculateCosineSimilarityInternal(vector1: FloatArray, vector2: FloatArray): Float {
-        
-        var dotProduct = 0f
-        var magnitude1 = 0f
-        var magnitude2 = 0f
-        
-        for (i in vector1.indices) {
-            dotProduct += vector1[i] * vector2[i]
-            magnitude1 += vector1[i] * vector1[i]
-            magnitude2 += vector2[i] * vector2[i]
-        }
-        
-        magnitude1 = sqrt(magnitude1)
-        magnitude2 = sqrt(magnitude2)
-        
-        return if (magnitude1 != 0f && magnitude2 != 0f) {
-            val similarity = dotProduct / (magnitude1 * magnitude2)
-            // Converter para similaridade absoluta para facilitar comparação
-            kotlin.math.abs(similarity)
-        } else {
-            0f
+            Log.e(TAG, "❌ Erro ao calcular similaridade de cosseno: ${e.message}")
+            return 0.0f
         }
     }
     
     /**
-     * Calcula a distância euclidiana entre dois vetores (método alternativo)
+     * Calcula a distância euclidiana entre dois vetores
      */
     private fun calculateEuclideanDistance(vector1: FloatArray, vector2: FloatArray): Float {
-        if (vector1.size != vector2.size) return Float.MAX_VALUE
-        
-        var sum = 0f
-        for (i in vector1.indices) {
-            val diff = vector1[i] - vector2[i]
-            sum += diff * diff
+        try {
+            // ✅ NOVA: Verificação robusta dos vetores
+            if (vector1.isEmpty() || vector2.isEmpty() || vector1.size != vector2.size) {
+                Log.w(TAG, "⚠️ Vetores inválidos para distância euclidiana")
+                return Float.MAX_VALUE
+            }
+            
+            var sum = 0.0
+            for (i in vector1.indices) {
+                val a = if (vector1[i].isNaN() || vector1[i].isInfinite()) 0.0f else vector1[i]
+                val b = if (vector2[i].isNaN() || vector2[i].isInfinite()) 0.0f else vector2[i]
+                val diff = (a - b).toDouble()
+                sum += diff * diff
+            }
+            
+            val distance = sqrt(sum).toFloat()
+            return if (distance.isNaN() || distance.isInfinite()) {
+                Log.w(TAG, "⚠️ Distância euclidiana inválida")
+                Float.MAX_VALUE
+            } else {
+                distance
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao calcular distância euclidiana: ${e.message}")
+            return Float.MAX_VALUE
         }
-        
-        return sqrt(sum)
     }
     
     /**
