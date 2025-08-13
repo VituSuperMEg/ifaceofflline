@@ -22,11 +22,11 @@ class FaceRecognitionHelper(private val context: Context) {
     
     companion object {
         private const val TAG = "FaceRecognitionHelper"
-        // ✅ THRESHOLDS AJUSTADOS PARA VETORES DE 512D
-        private const val COSINE_THRESHOLD = 0.30f // Era 0.80f - ajustado para vetores maiores
-        private const val FALLBACK_THRESHOLD = 0.20f // Era 0.70f - backup ajustado
-        private const val MIN_SCORE_DIFFERENCE = 0.05f // Era 0.25f - diferença ajustada
-        private const val HIGH_CONFIDENCE_THRESHOLD = 0.40f // Era 0.85f - ajustado para vetores maiores
+        // ✅ THRESHOLDS MUITO MAIS RIGOROSOS PARA EVITAR RECONHECIMENTOS ERRADOS
+        private const val COSINE_THRESHOLD = 0.65f // Era 0.30f - MUITO MAIS RIGOROSO
+        private const val FALLBACK_THRESHOLD = 0.55f // Era 0.20f - MUITO MAIS RIGOROSO
+        private const val MIN_SCORE_DIFFERENCE = 0.15f // Era 0.05f - Diferença maior entre candidatos
+        private const val HIGH_CONFIDENCE_THRESHOLD = 0.75f // Era 0.40f - MUITO MAIS RIGOROSO
         private const val DEBUG_MODE = true // Ativado para debug do problema
     }
 
@@ -199,31 +199,45 @@ class FaceRecognitionHelper(private val context: Context) {
                             }
                         }
                         
-                        // ✅ NOVA LÓGICA: Verificação mais rigorosa para evitar confusões
+                        // ✅ NOVA LÓGICA: Verificação muito mais rigorosa para evitar confusões
                         if (bestSimilarity >= HIGH_CONFIDENCE_THRESHOLD) {
-                            // Match de alta confiança - aceitar mesmo com diferença pequena
-                            candidateMatch = bestMatch
-                            matchSimilarity = bestSimilarity
-                            if (DEBUG_MODE) Log.d(TAG, "🚀 Match de alta confiança aceito: ${bestMatch.nome}")
-                        } else if (scoreDifference >= MIN_SCORE_DIFFERENCE) {
-                            // Diferença suficiente - aceitar
+                            // Match de alta confiança - aceitar apenas se for MUITO claro
+                            if (scoreDifference >= MIN_SCORE_DIFFERENCE) {
+                                candidateMatch = bestMatch
+                                matchSimilarity = bestSimilarity
+                                if (DEBUG_MODE) Log.d(TAG, "🚀 Match de alta confiança aceito: ${bestMatch.nome}")
+                            } else {
+                                if (DEBUG_MODE) Log.w(TAG, "⚠️ Alta similaridade mas diferença insuficiente - REJEITADO")
+                                candidateMatch = null
+                            }
+                        } else if (scoreDifference >= MIN_SCORE_DIFFERENCE && bestSimilarity >= COSINE_THRESHOLD) {
+                            // Diferença suficiente E similaridade boa - aceitar
                             candidateMatch = bestMatch
                             matchSimilarity = bestSimilarity
                             if (DEBUG_MODE) Log.d(TAG, "✅ Match aceito com diferença suficiente")
                         } else {
-                            // Diferença insuficiente - rejeitar para evitar confusão
+                            // Qualquer dúvida - rejeitar para evitar erro
                             if (DEBUG_MODE) {
-                                Log.w(TAG, "⚠️  ATENÇÃO: Diferença insuficiente entre matches!")
-                                Log.w(TAG, "   - Rejeitando para evitar confusão entre funcionários")
+                                Log.w(TAG, "🚫 MATCH REJEITADO - Critérios não atendidos:")
+                                Log.w(TAG, "   - Similaridade: $bestSimilarity (mín: $COSINE_THRESHOLD)")
+                                Log.w(TAG, "   - Diferença: $scoreDifference (mín: $MIN_SCORE_DIFFERENCE)")
+                                Log.w(TAG, "   - REJEITANDO para evitar reconhecimento errado")
                             }
                             candidateMatch = null
                         }
                     } else {
-                        // Apenas um match - aceitar se for confiável
-                        if (bestSimilarity >= COSINE_THRESHOLD) {
+                        // Apenas um match - aceitar APENAS se for muito confiável
+                        if (bestSimilarity >= HIGH_CONFIDENCE_THRESHOLD) {
                             candidateMatch = bestMatch
                             matchSimilarity = bestSimilarity
-                            if (DEBUG_MODE) Log.d(TAG, "✅ Match único aceito: ${bestMatch.nome}")
+                            if (DEBUG_MODE) Log.d(TAG, "✅ Match único aceito com alta confiança: ${bestMatch.nome}")
+                        } else {
+                            if (DEBUG_MODE) {
+                                Log.w(TAG, "🚫 Match único REJEITADO - Similaridade baixa:")
+                                Log.w(TAG, "   - Similaridade: $bestSimilarity (mín: $HIGH_CONFIDENCE_THRESHOLD)")
+                                Log.w(TAG, "   - REJEITANDO para evitar reconhecimento errado")
+                            }
+                            candidateMatch = null
                         }
                     }
                 } else {

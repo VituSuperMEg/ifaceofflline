@@ -70,6 +70,8 @@ class PontoActivity : AppCompatActivity() {
     private var currentFaceBitmap: Bitmap? = null // Para armazenar a foto da face
     private var lastProcessingTime = 0L // ✅ NOVA: Controle de timeout
     private var processingTimeout = 10000L // ✅ NOVA: 10 segundos de timeout
+    private var pontoJaRegistrado = false // ✅ NOVA: Controle para evitar registros duplicados
+    private var ultimoFuncionarioReconhecido: String? = null // ✅ NOVA: Controle do último funcionário
 
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 10
@@ -106,6 +108,8 @@ class PontoActivity : AppCompatActivity() {
         // ✅ CORREÇÃO: Garantir que processandoFace começa como false
         processandoFace = false
         lastProcessingTime = 0L // ✅ NOVA: Garantir que o tempo também começa zerado
+        pontoJaRegistrado = false // ✅ NOVA: Garantir que não há registro pendente
+        ultimoFuncionarioReconhecido = null // ✅ NOVA: Limpar último funcionário
         Log.d(TAG, "🚀 === INICIANDO SISTEMA DE PONTO ===")
         Log.d(TAG, "📊 Estado inicial: processandoFace = $processandoFace, lastProcessingTime = $lastProcessingTime")
 
@@ -550,6 +554,10 @@ class PontoActivity : AppCompatActivity() {
                 Log.w(TAG, "⚠️ Auto-reset do processandoFace após timeout de 15 segundos")
                 processandoFace = false
                 lastProcessingTime = 0L
+                // ✅ NOVA: Resetar controle de duplicatas em caso de timeout
+                pontoJaRegistrado = false
+                ultimoFuncionarioReconhecido = null
+                Log.d(TAG, "🔄 Reset do controle de duplicatas devido a timeout")
                 try {
                     if (::statusText.isInitialized && !isFinishing && !isDestroyed) {
                         statusText.text = "📷 Posicione seu rosto na câmera"
@@ -783,7 +791,10 @@ class PontoActivity : AppCompatActivity() {
                     
                     // ✅ CORREÇÃO: Proteção contra crashes no reconhecimento
                     val funcionario = try {
-                        faceRecognitionHelper?.recognizeFace(vetorFacialFinal)
+                        Log.d(TAG, "🔍 Iniciando chamada para recognizeFace...")
+                        val resultado = faceRecognitionHelper?.recognizeFace(vetorFacialFinal)
+                        Log.d(TAG, "📋 Resultado do recognizeFace: ${resultado?.let { "${it.nome} (${it.codigo})" } ?: "null"}")
+                        resultado
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ Erro crítico no reconhecimento: ${e.message}", e)
                         null
@@ -800,6 +811,27 @@ class PontoActivity : AppCompatActivity() {
                             
                             if (funcionario != null) {
                                 Log.d(TAG, "✅ Funcionário reconhecido: ${funcionario.nome}")
+                                Log.d(TAG, "📊 Dados do funcionário reconhecido:")
+                                Log.d(TAG, "   - Nome: ${funcionario.nome}")
+                                Log.d(TAG, "   - Código: ${funcionario.codigo}")
+                                Log.d(TAG, "   - CPF: ${funcionario.cpf}")
+                                Log.d(TAG, "   - Matrícula: ${funcionario.matricula}")
+                                
+                                // ✅ NOVA: Verificar se já foi registrado ponto para este funcionário
+                                if (pontoJaRegistrado || ultimoFuncionarioReconhecido == funcionario.codigo) {
+                                    Log.w(TAG, "⚠️ PONTO JÁ REGISTRADO para ${funcionario.nome} - ignorando duplicata")
+                                    Log.w(TAG, "   - pontoJaRegistrado: $pontoJaRegistrado")
+                                    Log.w(TAG, "   - ultimoFuncionarioReconhecido: $ultimoFuncionarioReconhecido")
+                                    processandoFace = false
+                                    lastProcessingTime = 0L
+                                    return@withContext
+                                }
+                                
+                                // ✅ NOVA: Marcar como registrado ANTES de iniciar o processo
+                                pontoJaRegistrado = true
+                                ultimoFuncionarioReconhecido = funcionario.codigo
+                                Log.d(TAG, "🔒 Marcando como registrado para evitar duplicatas")
+                                
                                 // ✅ SOLUÇÃO DEFINITIVA: Processar diretamente aqui
                                 CoroutineScope(Dispatchers.IO).launch {
                                     try {
@@ -813,6 +845,11 @@ class PontoActivity : AppCompatActivity() {
                                         val horarioAtual = System.currentTimeMillis()
                                         val formato = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
                                         val dataFormatada = formato.format(Date(horarioAtual))
+                                        
+                                        Log.d(TAG, "💾 Criando ponto para funcionário:")
+                                        Log.d(TAG, "   - ID: ${funcionario.codigo}")
+                                        Log.d(TAG, "   - Nome: ${funcionario.nome}")
+                                        Log.d(TAG, "   - Data/Hora: $dataFormatada")
                                         
                                         // ✅ Criar ponto
                                         val ponto = PontosGenericosEntity(
@@ -828,9 +865,14 @@ class PontoActivity : AppCompatActivity() {
                                             fotoBase64 = null
                                         )
                                         
+                                        Log.d(TAG, "💾 Dados do ponto criado:")
+                                        Log.d(TAG, "   - Funcionário ID: ${ponto.funcionarioId}")
+                                        Log.d(TAG, "   - Funcionário Nome: ${ponto.funcionarioNome}")
+                                        Log.d(TAG, "   - Data/Hora: ${ponto.dataHora}")
+                                        
                                         // ✅ Salvar no banco
                                         AppDatabase.getInstance(this@PontoActivity).pontosGenericosDao().insert(ponto)
-                                        Log.d(TAG, "💾 Ponto registrado: ${funcionario.nome} - $dataFormatada")
+                                        Log.d(TAG, "💾 Ponto registrado no banco para: ${funcionario.nome} - $dataFormatada")
                                         
                                         // ✅ Salvar para sincronização
                                         try {
@@ -854,6 +896,13 @@ class PontoActivity : AppCompatActivity() {
                                                 Toast.makeText(this@PontoActivity, 
                                                     "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada", 
                                                     Toast.LENGTH_LONG).show()
+                                                
+                                                // ✅ NOVA: Agendar reset do controle de duplicatas após 30 segundos
+                                                Handler(Looper.getMainLooper()).postDelayed({
+                                                    Log.d(TAG, "🔄 Reset automático do controle de duplicatas")
+                                                    pontoJaRegistrado = false
+                                                    ultimoFuncionarioReconhecido = null
+                                                }, 30000) // 30 segundos
                                                 
                                                 // ✅ Fechar IMEDIATAMENTE após 2 segundos
                                                 Handler(Looper.getMainLooper()).postDelayed({
@@ -887,6 +936,11 @@ class PontoActivity : AppCompatActivity() {
                                         
                                     } catch (e: Exception) {
                                         Log.e(TAG, "❌ Erro crítico ao registrar ponto: ${e.message}", e)
+                                        // ✅ NOVA: Resetar controle de duplicatas em caso de erro
+                                        pontoJaRegistrado = false
+                                        ultimoFuncionarioReconhecido = null
+                                        Log.d(TAG, "🔄 Reset do controle de duplicatas devido a erro")
+                                        
                                         withContext(Dispatchers.Main) {
                                             try {
                                                 Toast.makeText(this@PontoActivity, 
@@ -990,6 +1044,7 @@ class PontoActivity : AppCompatActivity() {
                     Log.d(TAG, "📊 Estado antes do reset: processandoFace = $processandoFace")
                     processandoFace = false
                     lastProcessingTime = 0L // ✅ NOVA: Resetar tempo de processamento
+                    // ✅ NOTA: NÃO resetar pontoJaRegistrado aqui - apenas em caso de erro ou timeout
                     Log.d(TAG, "✅ processandoFace resetado para false")
                     Log.d(TAG, "📊 Estado após reset: processandoFace = $processandoFace")
                 } catch (e: Exception) {
@@ -1459,6 +1514,8 @@ class PontoActivity : AppCompatActivity() {
             funcionarioReconhecido = null
             processandoFace = false
             lastProcessingTime = 0L // ✅ NOVA: Resetar tempo de processamento
+            pontoJaRegistrado = false // ✅ NOVA: Permitir novos registros
+            ultimoFuncionarioReconhecido = null // ✅ NOVA: Limpar último funcionário
             currentFaceBitmap = null
             
             // ✅ CORREÇÃO: Verificar se as views estão inicializadas E activity válida
@@ -1498,6 +1555,8 @@ class PontoActivity : AppCompatActivity() {
             Log.d(TAG, "🚨 === FORÇANDO RESET DO ESTADO ===")
             processandoFace = false
             lastProcessingTime = 0L // ✅ NOVA: Resetar tempo de processamento
+            pontoJaRegistrado = false // ✅ NOVA: Permitir novos registros
+            ultimoFuncionarioReconhecido = null // ✅ NOVA: Limpar último funcionário
             funcionarioReconhecido = null
             currentFaceBitmap = null
             
