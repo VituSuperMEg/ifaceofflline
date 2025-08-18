@@ -18,7 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@Database(entities = [FaceEntity::class, OperadorEntity::class, FuncionariosEntity::class, PontosGenericosEntity::class, ConfiguracoesEntity::class, PontoSincronizacaoEntity::class, HistoricoSincronizacaoEntity::class], version = 9)
+@Database(entities = [FaceEntity::class, OperadorEntity::class, FuncionariosEntity::class, PontosGenericosEntity::class, ConfiguracoesEntity::class, PontoSincronizacaoEntity::class, HistoricoSincronizacaoEntity::class], version = 11)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun faceDao(): FaceDao

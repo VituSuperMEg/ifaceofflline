@@ -46,6 +46,17 @@ class ConfiguracoesTabFragment : Fragment() {
             onSincronizarClick?.invoke()
         }
         
+        // ✅ NOVO: Long press para testar alarme
+        binding.btnSincronizarAgora.setOnLongClickListener {
+            try {
+                (requireActivity() as? com.example.iface_offilne.ConfiguracoesActivity)?.testarAlarmeSincronizacao()
+            } catch (e: Exception) {
+                android.util.Log.e("ConfigTab", "❌ Erro ao testar alarme: ${e.message}")
+                Toast.makeText(context, "❌ Erro ao testar alarme", Toast.LENGTH_SHORT).show()
+            }
+            true
+        }
+        
         // Botão para verificar e marcar duplicatas
         binding.btnVerificarDuplicatas.setOnClickListener {
             verificarDuplicatas()

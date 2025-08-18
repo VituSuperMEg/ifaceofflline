@@ -38,6 +38,16 @@ class SyncService(private val context: Context) {
 
                 Log.d(TAG, "📊 Encontrados ${pontosNaoSincronizados.size} pontos para sincronizar")
 
+                // ✅ CORREÇÃO: Obter configurações para incluir no request
+                val configuracoes = AppDatabase.getInstance(context)
+                    .configuracoesDao()
+                    .getConfiguracoes()
+                
+                if (configuracoes == null) {
+                    Log.e(TAG, "❌ Configurações não encontradas")
+                    return@withContext SyncResult.Error("Configurações não encontradas")
+                }
+                
                 // Converter pontos para formato do servidor
                 val pontosParaEnviar = pontosNaoSincronizados.map { ponto ->
                     val formato = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
@@ -48,15 +58,26 @@ class SyncService(private val context: Context) {
                         tipoPonto = ponto.tipoPonto,
                         latitude = ponto.latitude,
                         longitude = ponto.longitude,
-                        observacao = ponto.observacao
+                        observacao = ponto.observacao,
+                        fotoBase64 = ponto.fotoBase64 // ✅ NOVA: Incluir foto
                     )
                 }
 
+                // ✅ NOVO: Criar request completo com configurações
+                val requestCompleto = PontoSyncCompleteRequest(
+                    localizacao_id = configuracoes.localizacaoId,
+                    cod_sincroniza = configuracoes.codigoSincronizacao,
+                    pontos = pontosParaEnviar
+                )
+                
                 Log.d(TAG, "📤 Enviando ${pontosParaEnviar.size} pontos para o servidor")
+                Log.d(TAG, "📤 Configurações:")
+                Log.d(TAG, "📤   - localizacao_id: ${requestCompleto.localizacao_id}")
+                Log.d(TAG, "📤   - cod_sincroniza: ${requestCompleto.cod_sincroniza}")
                 
                 // Log do JSON que será enviado
                 val gson = com.google.gson.Gson()
-                val jsonEnviado = gson.toJson(pontosParaEnviar)
+                val jsonEnviado = gson.toJson(requestCompleto)
                 Log.d(TAG, "📤 JSON sendo enviado para o servidor:")
                 Log.d(TAG, "📤 $jsonEnviado")
                 
@@ -84,16 +105,16 @@ class SyncService(private val context: Context) {
                 // Enviar para o servidor
                 val apiService = RetrofitClient.instance
                 
-                // Primeiro tentar com resposta vazia
+                // ✅ NOVO: Primeiro tentar com formato completo e resposta vazia
                 try {
-                    Log.d(TAG, "🔄 Tentando sincronização com resposta vazia...")
-                    val responseVazio: Response<Unit> = apiService.sincronizarPontosVazio(entidade, pontosParaEnviar)
+                    Log.d(TAG, "🔄 Tentando sincronização com formato completo e resposta vazia...")
+                    val responseVazio: Response<Unit> = apiService.sincronizarPontosCompletoVazio(entidade, requestCompleto)
                     
                     Log.d(TAG, "📡 Resposta vazia - Código: ${responseVazio.code()}")
                     Log.d(TAG, "📡 Resposta vazia - Sucesso: ${responseVazio.isSuccessful}")
                     
                     if (responseVazio.isSuccessful) {
-                        Log.d(TAG, "✅ Sincronização com resposta vazia bem-sucedida")
+                        Log.d(TAG, "✅ Sincronização com formato completo e resposta vazia bem-sucedida")
                         
                         // Marcar pontos como sincronizados
                         pontosNaoSincronizados.forEach { ponto ->
@@ -104,17 +125,17 @@ class SyncService(private val context: Context) {
                         
                         return@withContext SyncResult.Success(
                             pontosNaoSincronizados.size,
-                            "Pontos sincronizados com sucesso"
+                            "Pontos sincronizados com sucesso (formato completo)"
                         )
                     } else {
                         Log.d(TAG, "⚠️ Resposta vazia falhou, tentando com resposta completa...")
                     }
                 } catch (e: Exception) {
-                    Log.d(TAG, "⚠️ Erro com resposta vazia: ${e.message}, tentando com resposta completa...")
+                    Log.d(TAG, "⚠️ Erro com formato completo: ${e.message}, tentando formato antigo...")
                 }
                 
-                // Se falhou, tentar com resposta completa
-                val response: Response<PontoSyncResponse> = apiService.sincronizarPontos(entidade, pontosParaEnviar)
+                // ✅ NOVO: Se falhou, tentar com formato completo e resposta completa
+                val response: Response<PontoSyncResponse> = apiService.sincronizarPontosCompleto(entidade, requestCompleto)
 
                 Log.d(TAG, "📡 Resposta do servidor - Código: ${response.code()}")
                 Log.d(TAG, "📡 Resposta do servidor - Mensagem: ${response.message()}")

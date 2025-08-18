@@ -27,7 +27,9 @@ class PontoSincronizacaoService {
         funcionarioId: String,
         funcionarioNome: String,
         tipo: String, // "entrada" ou "saida"
-        fotoBase64: String? = null // 🆕 Foto da batida em base64
+        fotoBase64: String? = null, // 🆕 Foto da batida em base64
+        latitude: Double? = null, // ✅ NOVA: Latitude
+        longitude: Double? = null // ✅ NOVA: Longitude
     ) {
         withContext(Dispatchers.IO) {
             try {
@@ -60,7 +62,9 @@ class PontoSincronizacaoService {
                     sincronizado = false,
                     localizacaoId = localizacaoId,
                     codigoSincronizacao = codigoSincronizacao,
-                    fotoBase64 = fotoBase64 // 🆕 Incluir foto
+                    fotoBase64 = fotoBase64, // 🆕 Incluir foto
+                    latitude = latitude, // ✅ NOVA: Incluir latitude
+                    longitude = longitude // ✅ NOVA: Incluir longitude
                 )
                 
                 // Salvar no Room
@@ -323,20 +327,33 @@ class PontoSincronizacaoService {
                     Log.d(TAG, "🔗 Entidade corrigida: '$entidade'")
                     Log.d(TAG, "🔗 SessionManager.entidade.name: '${com.example.iface_offilne.util.SessionManager.entidade?.name}'")
                     
-                    // Converter pontos para o formato da API
-                    val pontosParaAPI = pontos.map { ponto ->
-                        com.example.iface_offilne.data.api.PontoSyncRequest(
-                            funcionarioId = ponto.funcionarioId,
-                            funcionarioNome = ponto.funcionarioNome,
-                            dataHora = ponto.dataHora,
-                            tipoPonto = ponto.tipo.uppercase(), // "PONTO"
-                            fotoBase64 = ponto.fotoBase64 // 🆕 Incluir foto
-                        )
-                    }
+                                    // ✅ CORREÇÃO: Converter pontos para o formato da API com geolocalização
+                val pontosParaAPI = pontos.map { ponto ->
+                    com.example.iface_offilne.data.api.PontoSyncRequest(
+                        funcionarioId = ponto.funcionarioId,
+                        funcionarioNome = ponto.funcionarioNome,
+                        dataHora = ponto.dataHora,
+                        tipoPonto = ponto.tipo.uppercase(), // "PONTO"
+                        latitude = ponto.latitude, // ✅ NOVA: Incluir latitude
+                        longitude = ponto.longitude, // ✅ NOVA: Incluir longitude
+                        fotoBase64 = ponto.fotoBase64 // 🆕 Incluir foto
+                    )
+                }
                     
-                    // ✅ NOVO: Mostrar formato para API
-                    Log.d(TAG, "📋 === FORMATO PARA API (PontoSyncRequest) ===")
-                    pontosParaAPI.forEachIndexed { index, pontoAPI ->
+                    // ✅ NOVO: Criar request completo com configurações no nível raiz
+                    val requestCompleto = com.example.iface_offilne.data.api.PontoSyncCompleteRequest(
+                        localizacao_id = configuracoes.localizacaoId,
+                        cod_sincroniza = configuracoes.codigoSincronizacao,
+                        pontos = pontosParaAPI
+                    )
+                    
+                    // ✅ NOVO: Mostrar formato completo para API
+                    Log.d(TAG, "📋 === FORMATO COMPLETO PARA API ===")
+                    Log.d(TAG, "  localizacao_id: '${requestCompleto.localizacao_id}'")
+                    Log.d(TAG, "  cod_sincroniza: '${requestCompleto.cod_sincroniza}'")
+                    Log.d(TAG, "  pontos: ${requestCompleto.pontos.size} pontos")
+                    
+                    requestCompleto.pontos.forEachIndexed { index, pontoAPI ->
                         Log.d(TAG, "Ponto API #${index + 1}:")
                         Log.d(TAG, "  funcionarioId: '${pontoAPI.funcionarioId}'")
                         Log.d(TAG, "  funcionarioNome: '${pontoAPI.funcionarioNome}'")
@@ -350,9 +367,10 @@ class PontoSincronizacaoService {
                     }
                     
                     val apiService = RetrofitClient.instance
-                    Log.d(TAG, "🔄 Executando chamada HTTP...")
+                    Log.d(TAG, "🔄 Executando chamada HTTP com formato completo...")
                     
-                    val response = apiService.sincronizarPontos(entidade, pontosParaAPI)
+                    // ✅ NOVO: Usar o novo endpoint com formato completo
+                    val response = apiService.sincronizarPontosCompleto(entidade, requestCompleto)
                     
                     Log.d(TAG, "📡 === RESPOSTA DA API ===")
                     Log.d(TAG, "  📈 Status Code: ${response.code()}")

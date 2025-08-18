@@ -37,12 +37,32 @@ interface ApiService {
         @Path("entidade") entidade: String,
         @Body pontos: List<PontoSyncRequest>
     ): Response<Unit>
+    
+    // ✅ NOVO: Endpoint com formato completo (configurações + pontos)
+    @POST("/{entidade}/services/util/sincronizar-ponto-table")
+    suspend fun sincronizarPontosCompleto(
+        @Path("entidade") entidade: String,
+        @Body request: PontoSyncCompleteRequest
+    ): Response<PontoSyncResponse>
+    
+    @POST("/{entidade}/services/util/sincronizar-ponto-table")
+    suspend fun sincronizarPontosCompletoVazio(
+        @Path("entidade") entidade: String,
+        @Body request: PontoSyncCompleteRequest
+    ): Response<Unit>
 
     @GET("/{entidade}/services/util/test")
     suspend fun testConnection(
         @Path("entidade") entidade: String
     ): Response<SimpleResponse>
 }
+
+// ✅ NOVO: Modelo completo para sincronização com configurações no nível raiz
+data class PontoSyncCompleteRequest(
+    val localizacao_id: String,
+    val cod_sincroniza: String,
+    val pontos: List<PontoSyncRequest>
+)
 
 // Modelos para sincronização de pontos
 data class PontoSyncRequest(

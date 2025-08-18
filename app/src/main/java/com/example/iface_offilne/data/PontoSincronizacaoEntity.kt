@@ -21,5 +21,7 @@ data class PontoSincronizacaoEntity(
     val dataSincronizacao: String? = null,
     val localizacaoId: String,
     val codigoSincronizacao: String,
-    val fotoBase64: String? = null // Foto da batida em base64
+    val fotoBase64: String? = null, // Foto da batida em base64
+    val latitude: Double? = null, // ✅ NOVA: Latitude da localização
+    val longitude: Double? = null // ✅ NOVA: Longitude da localização
 ) 

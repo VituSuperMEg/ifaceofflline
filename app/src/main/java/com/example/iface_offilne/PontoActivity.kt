@@ -22,6 +22,7 @@ import com.example.iface_offilne.data.FuncionariosEntity
 import com.example.iface_offilne.data.PontosGenericosEntity
 import com.example.iface_offilne.service.PontoSincronizacaoService
 import com.example.iface_offilne.helpers.FaceRecognitionHelper
+import com.example.iface_offilne.helpers.LocationHelper
 import com.example.iface_offilne.helpers.bitmapToBase64
 import com.example.iface_offilne.helpers.bitmapToFloatArray
 import com.example.iface_offilne.helpers.cropFace
@@ -65,25 +66,52 @@ class PontoActivity : AppCompatActivity() {
     private var modelOutputSize = 512 // ✅ CORREÇÃO: Ajustar para o tamanho real do modelo
 
     private var faceRecognitionHelper: com.example.iface_offilne.helpers.FaceRecognitionHelper? = null
+    private var locationHelper: LocationHelper? = null
     private var funcionarioReconhecido: FuncionariosEntity? = null
     private var processandoFace = false
     private var currentFaceBitmap: Bitmap? = null // Para armazenar a foto da face
+    private var cameraProvider: ProcessCameraProvider? = null // ✅ NOVO: Referência para limpar camera
     private var lastProcessingTime = 0L // ✅ NOVA: Controle de timeout
     private var processingTimeout = 5000L // ✅ OTIMIZAÇÃO: 5 segundos de timeout
     private var pontoJaRegistrado = false // ✅ NOVA: Controle para evitar registros duplicados
     private var ultimoFuncionarioReconhecido: String? = null // ✅ NOVA: Controle do último funcionário
     
-    // ✅ NOVO: Sistema de timeout para voltar à tela inicial
+    // ✅ SISTEMA DE TIMEOUT MELHORADO: Mais estável e robusto
     private var lastFaceDetectionTime = 0L // Última vez que detectou uma face
-    private var noFaceTimeout = 120000L // 2 minutos sem detectar face
+    private var noFaceTimeout = 300000L // ✅ CORREÇÃO: 5 minutos sem detectar face (aumentado)
     private var activityStartTime = 0L // Tempo de início da activity
-    private var maxActivityTime = 300000L // 5 minutos máximo na tela
+    private var maxActivityTime = 600000L // ✅ CORREÇÃO: 10 minutos máximo na tela (aumentado)
     private var timeoutPausado = false // Para pausar timeout durante processamento importante
+    private var monitorHandler: Handler? = null // ✅ NOVA: Handler dedicado para controle
 
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 10
+        private const val REQUEST_CODE_LOCATION_PERMISSIONS = 20
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
+        private val LOCATION_PERMISSIONS = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
         private const val TAG = "PontoActivity"
+        
+        // ✅ NOVA: Função para monitorar memória
+        private fun logMemoryUsage(context: String) {
+            try {
+                val runtime = Runtime.getRuntime()
+                val usedMemory = runtime.totalMemory() - runtime.freeMemory()
+                val maxMemory = runtime.maxMemory()
+                val percentUsed = (usedMemory * 100) / maxMemory
+                
+                Log.d(TAG, "🧠 Memória [$context]: ${usedMemory/1024/1024}MB/${maxMemory/1024/1024}MB (${percentUsed}%)")
+                
+                if (percentUsed > 80) {
+                    Log.w(TAG, "⚠️ ATENÇÃO: Uso de memória alto (${percentUsed}%)")
+                    System.gc() // Forçar garbage collection
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao verificar memória: ${e.message}")
+            }
+        }
     }
 
     private var faceDetector = FaceDetection.getClient(
@@ -126,9 +154,15 @@ class PontoActivity : AppCompatActivity() {
         Log.d(TAG, "📊 Estado inicial: processandoFace = $processandoFace, lastProcessingTime = $lastProcessingTime")
         Log.d(TAG, "⏱️ Timeout configurado: ${noFaceTimeout/1000}s sem face, ${maxActivityTime/1000}s máximo total")
         Log.d(TAG, "📸 Sistema de captura de foto RESTAURADO - fotos serão enviadas com os pontos")
+        
+        // ✅ NOVA: Monitorar memória inicial
+        logMemoryUsage("Inicialização")
 
         // Inicializar helper de reconhecimento facial
         faceRecognitionHelper = com.example.iface_offilne.helpers.FaceRecognitionHelper(this)
+        
+        // ✅ NOVA: Inicializar helper de localização
+        locationHelper = LocationHelper(this)
         
         // ✅ OTIMIZAÇÃO: Limpar cache inicial para garantir dados atualizados
         faceRecognitionHelper?.clearCache()
@@ -144,6 +178,10 @@ class PontoActivity : AppCompatActivity() {
 
         // Solicitar permissões
         if (allPermissionsGranted()) {
+            // ✅ NOVA: Verificar permissões de localização também
+            if (!allLocationPermissionsGranted()) {
+                ActivityCompat.requestPermissions(this, LOCATION_PERMISSIONS, REQUEST_CODE_LOCATION_PERMISSIONS)
+            }
             startCamera()
         } else {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
@@ -182,66 +220,105 @@ class PontoActivity : AppCompatActivity() {
     }
     
     /**
-     * ✅ OTIMIZADA: Monitor de estado eficiente para evitar travamento + Timeout para tela inicial
+     * ✅ MONITOR DE ESTADO CORRIGIDO: Evita crashes e memory leaks
      */
     private fun startStateMonitor() {
-        Handler(Looper.getMainLooper()).postDelayed(object : Runnable {
-            override fun run() {
-                try {
-                    val currentTime = System.currentTimeMillis()
-                    
-                    // ✅ OTIMIZAÇÃO: Verificações de timeout mais eficientes
-                    val timeSinceLastFace = currentTime - lastFaceDetectionTime
-                    val totalActivityTime = currentTime - activityStartTime
-                    
-                    // Aviso de timeout (apenas uma vez quando próximo)
-                    val warningTime = noFaceTimeout - 15000L // 15 segundos antes
-                    if (timeSinceLastFace > warningTime && timeSinceLastFace <= noFaceTimeout) {
-                        val tempoRestante = (noFaceTimeout - timeSinceLastFace) / 1000
-                        runOnUiThread {
-                            try {
-                                if (::statusText.isInitialized && !isFinishing && !isDestroyed) {
-                                    statusText.text = "⚠️ Posicione seu rosto (${tempoRestante}s)"
-                                }
-                            } catch (e: Exception) {
-                                // Ignorar erro silenciosamente
-                            }
-                        }
-                    }
-                    
-                    // ✅ OTIMIZAÇÃO: Verificar timeouts apenas se não pausado
-                    if (!timeoutPausado) {
-                        if (timeSinceLastFace > noFaceTimeout || totalActivityTime > maxActivityTime) {
-                            val motivo = if (timeSinceLastFace > noFaceTimeout) "Sem detectar rosto" else "Tempo máximo atingido"
-                            voltarParaTelaInicial(motivo)
+        try {
+            // ✅ CORREÇÃO: Parar monitor anterior se existir
+            stopStateMonitor()
+            
+            // ✅ CORREÇÃO: Criar handler dedicado
+            monitorHandler = Handler(Looper.getMainLooper())
+            
+            val monitorRunnable = object : Runnable {
+                override fun run() {
+                    try {
+                        // ✅ CORREÇÃO: Verificar se activity ainda é válida
+                        if (isFinishing || isDestroyed) {
+                            Log.d(TAG, "🔄 Activity finalizada - parando monitor")
                             return
                         }
-                    }
-                    
-                    // ✅ OTIMIZAÇÃO: Verificar travamento apenas se processando
-                    if (processandoFace) {
-                        val timeSinceStart = currentTime - lastProcessingTime
-                        if (timeSinceStart > processingTimeout) {
-                            Log.w(TAG, "⚠️ Processamento travado há ${timeSinceStart}ms - resetando")
-                            forcarResetEstado()
+                        
+                        val currentTime = System.currentTimeMillis()
+                        
+                        // ✅ CORREÇÃO: Verificações básicas apenas
+                        val timeSinceLastFace = currentTime - lastFaceDetectionTime
+                        val totalActivityTime = currentTime - activityStartTime
+                        
+                        // ✅ CORREÇÃO: Timeout mais longo e menos agressivo
+                        if (!timeoutPausado && !processandoFace) {
+                            if (totalActivityTime > maxActivityTime) {
+                                Log.w(TAG, "⏱️ Tempo máximo da activity atingido (${totalActivityTime/1000}s)")
+                                voltarParaTelaInicial("Tempo máximo atingido")
+                                return
+                            }
+                            
+                            // ✅ CORREÇÃO: Só verificar timeout de face se não estiver processando há muito tempo
+                            if (timeSinceLastFace > noFaceTimeout) {
+                                Log.w(TAG, "⏱️ Timeout sem detectar face (${timeSinceLastFace/1000}s)")
+                                voltarParaTelaInicial("Sem detectar rosto")
+                                return
+                            }
                         }
+                        
+                        // ✅ CORREÇÃO: Verificar travamento com timeout maior
+                        if (processandoFace) {
+                            val timeSinceStart = currentTime - lastProcessingTime
+                            if (timeSinceStart > processingTimeout * 2) { // Dobrar o timeout para ser menos agressivo
+                                Log.w(TAG, "⚠️ Processamento travado há ${timeSinceStart}ms - resetando")
+                                runOnUiThread {
+                                    forcarResetEstado()
+                                }
+                            }
+                        }
+                        
+                        // ✅ CORREÇÃO: Verificar modelo com menos frequência
+                        if (!modelLoaded && (currentTime % 30000 < 5000)) { // A cada 30s por 5s
+                            CoroutineScope(Dispatchers.IO).launch {
+                                try {
+                                    loadTensorFlowModel()
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "❌ Erro ao recarregar modelo: ${e.message}")
+                                }
+                            }
+                        }
+                        
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro no monitor (ignorando): ${e.message}")
                     }
                     
-                    // ✅ OTIMIZAÇÃO: Verificar modelo apenas ocasionalmente
-                    if (!modelLoaded && currentTime % 10000 < 3000) { // A cada 10s por 3s
-                        loadTensorFlowModel()
+                    // ✅ CORREÇÃO: Reagendar apenas se activity ainda for válida
+                    try {
+                        if (!isFinishing && !isDestroyed && monitorHandler != null) {
+                            monitorHandler?.postDelayed(this, 5000) // ✅ CORREÇÃO: 5 segundos (menos frequente)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao reagendar monitor: ${e.message}")
                     }
-                    
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro no monitor: ${e.message}")
-                }
-                
-                // ✅ OTIMIZAÇÃO: Próxima verificação em 3 segundos (mais rápido)
-                if (!isFinishing && !isDestroyed) {
-                    Handler(Looper.getMainLooper()).postDelayed(this, 3000)
                 }
             }
-        }, 3000) // Primeira verificação em 3 segundos
+            
+            // ✅ CORREÇÃO: Iniciar primeiro check após 5 segundos
+            monitorHandler?.postDelayed(monitorRunnable, 5000)
+            
+            Log.d(TAG, "✅ Monitor de estado iniciado com timeouts aumentados")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao iniciar monitor: ${e.message}")
+        }
+    }
+    
+    /**
+     * ✅ NOVA: Parar monitor de estado para evitar memory leaks
+     */
+    private fun stopStateMonitor() {
+        try {
+            monitorHandler?.removeCallbacksAndMessages(null)
+            monitorHandler = null
+            Log.d(TAG, "✅ Monitor de estado parado")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao parar monitor: ${e.message}")
+        }
     }
 
     private fun setupUI() {
@@ -471,36 +548,69 @@ class PontoActivity : AppCompatActivity() {
 
     private fun startCamera() {
         Log.d(TAG, "📷 === INICIANDO CÂMERA ===")
+        
+        // ✅ CORREÇÃO: Limpar camera anterior se existir
+        stopCamera()
+        
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
         cameraProviderFuture.addListener({
-            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
-
-            imageAnalyzer = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-                .also {
-                    it.setAnalyzer(ContextCompat.getMainExecutor(this)) { imageProxy ->
-                        // ✅ CORREÇÃO: SEMPRE processar imagem, deixar a lógica interna decidir
-                        processImage(imageProxy)
-                    }
-                }
-
-            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
-
             try {
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
-                Log.d(TAG, "✅ Câmera iniciada com sucesso")
-            } catch (exc: Exception) {
-                Log.e(TAG, "❌ Falha ao iniciar câmera", exc)
+                // ✅ CORREÇÃO: Verificar se activity ainda é válida
+                if (isFinishing || isDestroyed) {
+                    Log.w(TAG, "⚠️ Activity finalizada, cancelando inicialização da câmera")
+                    return@addListener
+                }
+                
+                cameraProvider = cameraProviderFuture.get()
+
+                val preview = Preview.Builder()
+                    .setTargetResolution(android.util.Size(800, 600)) // ✅ CORREÇÃO: Resolução menor para economizar memória
+                    .build().also {
+                        it.setSurfaceProvider(previewView.surfaceProvider)
+                    }
+
+                imageAnalyzer = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setTargetResolution(android.util.Size(640, 480)) // ✅ CORREÇÃO: Resolução menor para análise
+                    .build()
+                    .also {
+                        it.setAnalyzer(ContextCompat.getMainExecutor(this)) { imageProxy ->
+                            // ✅ CORREÇÃO: Verificar se activity ainda é válida antes de processar
+                            if (!isFinishing && !isDestroyed) {
+                                processImage(imageProxy)
+                            } else {
+                                imageProxy.close()
+                            }
+                        }
+                    }
+
+                val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+
+                try {
+                    cameraProvider?.unbindAll()
+                    cameraProvider?.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
+                    Log.d(TAG, "✅ Câmera iniciada com sucesso")
+                } catch (exc: Exception) {
+                    Log.e(TAG, "❌ Falha ao iniciar câmera", exc)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro crítico ao iniciar câmera: ${e.message}")
+                e.printStackTrace()
             }
 
         }, ContextCompat.getMainExecutor(this))
+    }
+    
+    // ✅ NOVA FUNÇÃO: Parar câmera de forma segura
+    private fun stopCamera() {
+        try {
+            cameraProvider?.unbindAll()
+            cameraProvider = null
+            Log.d(TAG, "📷 Câmera parada com sucesso")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao parar câmera: ${e.message}")
+        }
     }
 
     private fun processImage(imageProxy: ImageProxy) {
@@ -580,10 +690,14 @@ class PontoActivity : AppCompatActivity() {
                                         return@addOnSuccessListener
                                     }
                                     
-                                    processandoFace = true
-                                    lastProcessingTime = System.currentTimeMillis()
-                                    Log.d(TAG, "👤 === INICIANDO RECONHECIMENTO FACIAL ===")
-                                    statusText.text = "🔍 Reconhecendo..."
+                                                        processandoFace = true
+                    lastProcessingTime = System.currentTimeMillis()
+                    Log.d(TAG, "👤 === INICIANDO RECONHECIMENTO FACIAL ===")
+                    
+                    // ✅ NOVA: Monitorar memória antes do processamento
+                    logMemoryUsage("Antes reconhecimento")
+                    
+                    statusText.text = "🔍 Reconhecendo..."
                                     
                                     try {
                                         // Converter para bitmap antes de fechar o proxy
@@ -711,12 +825,14 @@ class PontoActivity : AppCompatActivity() {
                 // ✅ OTIMIZAÇÃO: Verificação rápida do modelo
                 if (!modelLoaded || interpreter == null) {
                     Log.w(TAG, "⚠️ Modelo não carregado")
-                    withContext(Dispatchers.Main) {
-                        try {
-                            if (::statusText.isInitialized && !isFinishing && !isDestroyed) {
-                                statusText.text = "❌ Carregando modelo..."
-                            }
-                        } catch (e: Exception) {
+                                            withContext(Dispatchers.Main) {
+                            try {
+                                if (::statusText.isInitialized && !isFinishing && !isDestroyed) {
+                                    statusText.text = "❌ Carregando modelo..."
+                                } else {
+                                    // Activity finalizada, não fazer nada
+                                }
+                            } catch (e: Exception) {
                             Log.e(TAG, "❌ Erro ao atualizar status: ${e.message}")
                         }
                     }
@@ -758,6 +874,13 @@ class PontoActivity : AppCompatActivity() {
                     throw IllegalStateException("Face recortada inválida")
                 }
                 
+                // ✅ CORREÇÃO: Limpar bitmap anterior para evitar memory leak
+                currentFaceBitmap?.let { oldBitmap ->
+                    if (!oldBitmap.isRecycled) {
+                        oldBitmap.recycle()
+                    }
+                }
+                
                 // Salvar foto da face para registro do ponto
                 val faceForPoint = try {
                     Bitmap.createScaledBitmap(faceBmp, 300, 300, true)
@@ -768,7 +891,12 @@ class PontoActivity : AppCompatActivity() {
                 
                 currentFaceBitmap = faceForPoint?.let { bitmap ->
                     try {
-                        fixImageOrientationDefinitive(bitmap)
+                        val fixedBitmap = fixImageOrientationDefinitive(bitmap)
+                        // ✅ CORREÇÃO: Reciclar bitmap original se diferente do corrigido
+                        if (fixedBitmap != bitmap && !bitmap.isRecycled) {
+                            bitmap.recycle()
+                        }
+                        fixedBitmap
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ Erro ao corrigir orientação: ${e.message}")
                         bitmap
@@ -786,10 +914,21 @@ class PontoActivity : AppCompatActivity() {
                     Bitmap.createScaledBitmap(faceBmp, modelInputWidth, modelInputHeight, true)
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro ao redimensionar: ${e.message}")
+                    // ✅ CORREÇÃO: Limpar bitmap de face antes de lançar exceção
+                    if (!faceBmp.isRecycled) {
+                        faceBmp.recycle()
+                    }
                     throw e
                 }
                 
                 if (resized.isRecycled || resized.width != modelInputWidth || resized.height != modelInputHeight) {
+                    // ✅ CORREÇÃO: Limpar bitmaps antes de lançar exceção
+                    if (!faceBmp.isRecycled) {
+                        faceBmp.recycle()
+                    }
+                    if (!resized.isRecycled) {
+                        resized.recycle()
+                    }
                     throw IllegalStateException("Redimensionamento falhou")
                 }
 
@@ -843,6 +982,18 @@ class PontoActivity : AppCompatActivity() {
                             val valor = vetorFacial[index]
                             if (valor.isNaN() || valor.isInfinite()) 0.0f else valor
                         }
+                    }
+
+                    // ✅ CORREÇÃO: Limpar bitmap redimensionado após uso do modelo
+                    try {
+                        if (!resized.isRecycled) {
+                            resized.recycle()
+                        }
+                        if (!faceBmp.isRecycled) {
+                            faceBmp.recycle()
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "⚠️ Erro ao limpar bitmaps temporários: ${e.message}")
                     }
 
                     // ✅ OTIMIZAÇÃO: Reconhecimento facial otimizado
@@ -901,6 +1052,23 @@ class PontoActivity : AppCompatActivity() {
                                         val formato = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
                                         val dataFormatada = formato.format(Date(horarioAtual))
                                         
+                                        // ✅ NOVA: Capturar geolocalização
+                                        var latitude: Double? = null
+                                        var longitude: Double? = null
+                                        
+                                        try {
+                                            val locationData = locationHelper?.getCurrentLocationForPoint()
+                                            if (locationData != null) {
+                                                latitude = locationData.latitude
+                                                longitude = locationData.longitude
+                                                Log.d(TAG, "🌍 Localização capturada: $latitude, $longitude")
+                                            } else {
+                                                Log.w(TAG, "⚠️ Localização não disponível para este ponto")
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "❌ Erro ao capturar localização: ${e.message}")
+                                        }
+                                        
                                         // ✅ RESTAURADO: Converter foto para base64
                                         val fotoBase64 = try {
                                             currentFaceBitmap?.let { bitmap ->
@@ -933,6 +1101,8 @@ class PontoActivity : AppCompatActivity() {
                                             funcionarioLotacao = funcionario.lotacao ?: "",
                                             tipoPonto = "PONTO",
                                             dataHora = horarioAtual,
+                                            latitude = latitude,  // ✅ NOVA: Incluir localização
+                                            longitude = longitude, // ✅ NOVA: Incluir localização
                                             fotoBase64 = fotoBase64
                                         )
                                         
@@ -948,7 +1118,9 @@ class PontoActivity : AppCompatActivity() {
                                                 funcionario.codigo,
                                                 funcionario.nome ?: "Funcionário",
                                                 "ponto",
-                                                fotoBase64
+                                                fotoBase64,
+                                                latitude, // ✅ NOVA: Incluir latitude
+                                                longitude // ✅ NOVA: Incluir longitude
                                             )
                                         } catch (e: Exception) {
                                             Log.e(TAG, "❌ Erro na sincronização: ${e.message}")
@@ -957,8 +1129,15 @@ class PontoActivity : AppCompatActivity() {
                                         // ✅ OTIMIZAÇÃO: Mostrar sucesso e sair rapidamente
                                         withContext(Dispatchers.Main) {
                                             try {
+                                                // ✅ NOVA: Incluir localização no Toast se disponível
+                                                val toastLocationText = if (latitude != null && longitude != null) {
+                                                    "\n📍 ${String.format("%.4f", latitude)}, ${String.format("%.4f", longitude)}"
+                                                } else {
+                                                    ""
+                                                }
+                                                
                                                 Toast.makeText(this@PontoActivity, 
-                                                    "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada", 
+                                                    "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada$toastLocationText", 
                                                     Toast.LENGTH_LONG).show()
                                                 
                                                 // Reset automático após 20 segundos
@@ -967,7 +1146,14 @@ class PontoActivity : AppCompatActivity() {
                                                     ultimoFuncionarioReconhecido = null
                                                 }, 20000)
                                                 
-                                                statusText.text = "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada\n\nClique 'Voltar' para sair"
+                                                // ✅ NOVA: Incluir localização no status se disponível
+                                                val locationText = if (latitude != null && longitude != null) {
+                                                    "\n📍 ${String.format("%.6f", latitude)}, ${String.format("%.6f", longitude)}"
+                                                } else {
+                                                    "\n⚠️ Sem localização"
+                                                }
+                                                
+                                                statusText.text = "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada$locationText\n\nClique 'Voltar' para sair"
                                                 
                                             } catch (e: Exception) {
                                                 Log.e(TAG, "❌ Erro ao mostrar sucesso: ${e.message}")
@@ -1163,7 +1349,9 @@ class PontoActivity : AppCompatActivity() {
                     funcionario.codigo,
                     funcionario.nome ?: "Funcionário",
                     tipoPonto.lowercase(),
-                    fotoBase64
+                    fotoBase64,
+                    null, // ✅ NOVA: Sem latitude nesta função (legacy)
+                    null  // ✅ NOVA: Sem longitude nesta função (legacy)
                 )
                 Log.d(TAG, "✅ Ponto salvo para sincronização")
             } catch (e: Exception) {
@@ -1662,6 +1850,19 @@ class PontoActivity : AppCompatActivity() {
             pontoJaRegistrado = false // ✅ NOVA: Permitir novos registros
             ultimoFuncionarioReconhecido = null // ✅ NOVA: Limpar último funcionário
             funcionarioReconhecido = null
+            
+            // ✅ CORREÇÃO: Limpar bitmap de forma segura
+            currentFaceBitmap?.let { bitmap ->
+                try {
+                    if (!bitmap.isRecycled) {
+                        bitmap.recycle()
+                    } else {
+                        // Bitmap já foi reciclado
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ Erro ao reciclar bitmap: ${e.message}")
+                }
+            }
             currentFaceBitmap = null
             
             // ✅ NOVO: Resetar tempos de timeout e retomar
@@ -1694,6 +1895,11 @@ class PontoActivity : AppCompatActivity() {
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
     }
+    
+    // ✅ NOVA: Verificar permissões de localização
+    private fun allLocationPermissionsGranted() = LOCATION_PERMISSIONS.any {
+        ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
+    }
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -1701,12 +1907,27 @@ class PontoActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_CODE_PERMISSIONS) {
-            if (allPermissionsGranted()) {
-                startCamera()
-            } else {
-                Toast.makeText(this, "Permissões de câmera necessárias", Toast.LENGTH_LONG).show()
-                finish()
+        when (requestCode) {
+            REQUEST_CODE_PERMISSIONS -> {
+                if (allPermissionsGranted()) {
+                    // ✅ NOVA: Verificar permissões de localização também
+                    if (!allLocationPermissionsGranted()) {
+                        ActivityCompat.requestPermissions(this, LOCATION_PERMISSIONS, REQUEST_CODE_LOCATION_PERMISSIONS)
+                    }
+                    startCamera()
+                } else {
+                    Toast.makeText(this, "Permissões de câmera necessárias", Toast.LENGTH_LONG).show()
+                    finish()
+                }
+            }
+            REQUEST_CODE_LOCATION_PERMISSIONS -> {
+                if (allLocationPermissionsGranted()) {
+                    Log.d(TAG, "✅ Permissões de localização concedidas")
+                    Toast.makeText(this, "✅ Localização habilitada para pontos", Toast.LENGTH_SHORT).show()
+                } else {
+                    Log.w(TAG, "⚠️ Permissões de localização negadas - pontos serão registrados sem coordenadas")
+                    Toast.makeText(this, "⚠️ Localização negada - pontos sem coordenadas", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -1714,47 +1935,117 @@ class PontoActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         try {
+            Log.d(TAG, "🗑️ === LIMPANDO RECURSOS NO onDestroy ===")
+            
+            // ✅ CORREÇÃO: Parar monitor de estado para evitar memory leaks
+            stopStateMonitor()
+            
+            // ✅ NOVA: Parar câmera para evitar memory leaks
+            stopCamera()
+            
+            // ✅ CORREÇÃO: Limpar bitmap atual
+            currentFaceBitmap?.let { bitmap ->
+                try {
+                    if (!bitmap.isRecycled) {
+                        bitmap.recycle()
+                    } else {
+                        // Bitmap já foi reciclado
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ Erro ao reciclar bitmap no onDestroy: ${e.message}")
+                }
+            }
+            currentFaceBitmap = null
+            
             // ✅ OTIMIZAÇÃO: Limpar cache do helper para liberar memória
             faceRecognitionHelper?.clearCache()
+            faceRecognitionHelper = null
             
+            // ✅ NOVA: Limpar helper de localização
+            locationHelper = null
+            
+            // ✅ CORREÇÃO: Limpar interpreter
             interpreter?.close()
             interpreter = null
+            
+            // ✅ NOVA: Limpar face detector
+            faceDetector = FaceDetection.getClient(
+                FaceDetectorOptions.Builder()
+                    .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+                    .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
+                    .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
+                    .build()
+            )
+            
+            // ✅ NOVA: Forçar garbage collection e monitorar memória final
+            logMemoryUsage("Antes limpeza final")
+            System.gc()
+            
+            // Aguardar um pouco e verificar novamente
+            Handler(Looper.getMainLooper()).postDelayed({
+                logMemoryUsage("Após limpeza final")
+            }, 100)
+            
+            Log.d(TAG, "✅ Todos os recursos liberados no onDestroy")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao fechar recursos: ${e.message}")
+            e.printStackTrace()
         }
     }
     
     override fun onPause() {
         super.onPause()
-        // ✅ CORREÇÃO: NÃO pausar processamento para evitar interrupção
-        Log.d(TAG, "📱 onPause - mantendo processamento ativo")
+        Log.d(TAG, "📱 onPause - pausando câmera para economizar recursos")
+        
+        try {
+            // ✅ CORREÇÃO: Parar câmera para economizar memória e recursos
+            stopCamera()
+            
+            // ✅ NOVA: Pausar timeout para evitar fechamento durante pausa
+            pausarTimeout("Activity pausada")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro no onPause: ${e.message}")
+        }
     }
     
     override fun onResume() {
         super.onResume()
-        // ✅ CORREÇÃO: Resetar estado completo quando activity volta
-        Log.d(TAG, "📱 onResume - resetando estado completo")
+        Log.d(TAG, "📱 onResume - retomando atividade")
         
-        // ✅ CORREÇÃO: Reset imediato se processandoFace está travado
-        if (processandoFace) {
-            Log.w(TAG, "⚠️ processandoFace travado no onResume, resetando imediatamente")
-            forcarResetEstado()
-        }
-        
-        // ✅ CORREÇÃO: Aguardar um pouco antes de resetar para evitar conflitos
-        Handler(Looper.getMainLooper()).postDelayed({
-            try {
+        try {
+            // ✅ CORREÇÃO: Reset imediato se processandoFace está travado
+            if (processandoFace) {
+                Log.w(TAG, "⚠️ processandoFace travado no onResume, resetando imediatamente")
                 forcarResetEstado()
-                Log.d(TAG, "📊 Estado no onResume: processandoFace = $processandoFace")
-                
-                // ✅ CORREÇÃO: Verificar se o modelo está carregado
-                if (!modelLoaded) {
-                    Log.w(TAG, "⚠️ Modelo não carregado no onResume, recarregando...")
-                    loadTensorFlowModel()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro no onResume: ${e.message}")
             }
-        }, 500) // Aguardar 500ms
+            
+            // ✅ NOVA: Retomar timeout
+            retomarTimeout("Activity retomada")
+            
+            // ✅ CORREÇÃO: Reiniciar câmera se permissões estão ok
+            if (allPermissionsGranted()) {
+                startCamera()
+            }
+            
+            // ✅ CORREÇÃO: Aguardar um pouco antes de resetar para evitar conflitos
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    forcarResetEstado()
+                    Log.d(TAG, "📊 Estado no onResume: processandoFace = $processandoFace")
+                    
+                    // ✅ CORREÇÃO: Verificar se o modelo está carregado
+                    if (!modelLoaded) {
+                        Log.w(TAG, "⚠️ Modelo não carregado no onResume, recarregando...")
+                        loadTensorFlowModel()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro no reset no onResume: ${e.message}")
+                }
+            }, 500) // Aguardar 500ms
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro no onResume: ${e.message}")
+        }
     }
 } 

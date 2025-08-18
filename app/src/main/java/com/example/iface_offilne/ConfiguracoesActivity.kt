@@ -241,9 +241,13 @@ class ConfiguracoesActivity : AppCompatActivity() {
             // Configurar alarme para sincronização se estiver ativa
             val sincronizacaoService = SincronizacaoService()
             if (sincronizacaoAtiva) {
-                sincronizacaoService.configurarAlarme(this, 8, 0, intervalo)
+                Log.d("ConfiguracoesActivity", "✅ Configurando alarme: sincronização ativa com intervalo de $intervalo horas")
+                sincronizacaoService.configurarAlarme(this, 0, 0, intervalo) // ✅ CORREÇÃO: Usar tempo atual
+                Toast.makeText(this, "⏰ Alarme configurado para $intervalo hora(s)", Toast.LENGTH_LONG).show()
             } else {
+                Log.d("ConfiguracoesActivity", "❌ Cancelando alarme: sincronização desativada")
                 sincronizacaoService.cancelarAlarme(this)
+                Toast.makeText(this, "🛑 Sincronização automática desativada", Toast.LENGTH_SHORT).show()
             }
 
             finish()
@@ -272,6 +276,18 @@ class ConfiguracoesActivity : AppCompatActivity() {
             getCurrentHistoricoFragment()?.atualizarHistorico()
             Toast.makeText(this, "🔄 Histórico atualizado", Toast.LENGTH_SHORT).show()
         }, 2000)
+    }
+    
+    // ✅ NOVA FUNÇÃO: Testar alarme de sincronização
+    fun testarAlarmeSincronizacao() {
+        Toast.makeText(this, "🧪 Testando alarme em 10 segundos...", Toast.LENGTH_LONG).show()
+        Log.d("ConfiguracoesActivity", "🧪 Testando alarme de sincronização")
+        
+        val sincronizacaoService = SincronizacaoService()
+        sincronizacaoService.verificarStatusSincronizacao(this)
+        sincronizacaoService.testarAlarmeImediato(this)
+        
+        Toast.makeText(this, "⏰ Alarme configurado! Veja os logs em 10s", Toast.LENGTH_LONG).show()
     }
 
     override fun onSupportNavigateUp(): Boolean {
