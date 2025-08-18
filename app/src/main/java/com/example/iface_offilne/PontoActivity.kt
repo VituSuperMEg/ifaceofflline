@@ -46,6 +46,7 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlinx.coroutines.TimeoutCancellationException
 
 class PontoActivity : AppCompatActivity() {
 
@@ -155,20 +156,63 @@ class PontoActivity : AppCompatActivity() {
         Log.d(TAG, "⏱️ Timeout configurado: ${noFaceTimeout/1000}s sem face, ${maxActivityTime/1000}s máximo total")
         Log.d(TAG, "📸 Sistema de captura de foto RESTAURADO - fotos serão enviadas com os pontos")
         
-        // ✅ NOVA: Monitorar memória inicial
+        // ✅ OTIMIZAÇÃO: Monitorar memória inicial
         logMemoryUsage("Inicialização")
 
-        // Inicializar helper de reconhecimento facial
-        faceRecognitionHelper = com.example.iface_offilne.helpers.FaceRecognitionHelper(this)
+        // ✅ OTIMIZAÇÃO: Inicializar helper de reconhecimento facial com tratamento de erro
+        try {
+            faceRecognitionHelper = com.example.iface_offilne.helpers.FaceRecognitionHelper(this)
+            Log.d(TAG, "✅ Face recognition helper inicializado")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao inicializar face recognition helper: ${e.message}")
+            // Tentar inicializar novamente após um delay
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    faceRecognitionHelper = com.example.iface_offilne.helpers.FaceRecognitionHelper(this)
+                    Log.d(TAG, "✅ Face recognition helper inicializado na segunda tentativa")
+                } catch (e2: Exception) {
+                    Log.e(TAG, "❌ Falha na segunda tentativa: ${e2.message}")
+                }
+            }, 2000)
+        }
         
-        // ✅ NOVA: Inicializar helper de localização
-        locationHelper = LocationHelper(this)
+        // ✅ OTIMIZAÇÃO: Inicializar helper de localização com tratamento de erro
+        try {
+            locationHelper = LocationHelper(this)
+            Log.d(TAG, "✅ Location helper inicializado")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao inicializar location helper: ${e.message}")
+            // Tentar inicializar novamente após um delay
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    locationHelper = LocationHelper(this)
+                    Log.d(TAG, "✅ Location helper inicializado na segunda tentativa")
+                } catch (e2: Exception) {
+                    Log.e(TAG, "❌ Falha na segunda tentativa: ${e2.message}")
+                }
+            }, 2000)
+        }
         
         // ✅ OTIMIZAÇÃO: Limpar cache inicial para garantir dados atualizados
         faceRecognitionHelper?.clearCache()
 
-        // Carregar modelo TensorFlow
-        loadTensorFlowModel()
+        // ✅ OTIMIZAÇÃO: Carregar modelo TensorFlow com tratamento de erro
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                loadTensorFlowModel()
+                Log.d(TAG, "✅ Modelo TensorFlow carregado com sucesso")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao carregar modelo TensorFlow: ${e.message}")
+                // Tentar carregar novamente após um delay
+                delay(3000)
+                try {
+                    loadTensorFlowModel()
+                    Log.d(TAG, "✅ Modelo TensorFlow carregado na segunda tentativa")
+                } catch (e2: Exception) {
+                    Log.e(TAG, "❌ Falha na segunda tentativa: ${e2.message}")
+                }
+            }
+        }
         
         // Criar funcionário de teste se não existir
         createTestEmployeeIfNeeded()
@@ -220,7 +264,7 @@ class PontoActivity : AppCompatActivity() {
     }
     
     /**
-     * ✅ MONITOR DE ESTADO CORRIGIDO: Evita crashes e memory leaks
+     * ✅ MONITOR DE ESTADO OTIMIZADO: Menos agressivo e mais estável
      */
     private fun startStateMonitor() {
         try {
@@ -241,39 +285,41 @@ class PontoActivity : AppCompatActivity() {
                         
                         val currentTime = System.currentTimeMillis()
                         
-                        // ✅ CORREÇÃO: Verificações básicas apenas
+                        // ✅ OTIMIZAÇÃO: Verificações menos frequentes e mais suaves
                         val timeSinceLastFace = currentTime - lastFaceDetectionTime
                         val totalActivityTime = currentTime - activityStartTime
                         
-                        // ✅ CORREÇÃO: Timeout mais longo e menos agressivo
+                        // ✅ OTIMIZAÇÃO: Timeout mais longo e menos agressivo
                         if (!timeoutPausado && !processandoFace) {
                             if (totalActivityTime > maxActivityTime) {
-                                Log.w(TAG, "⏱️ Tempo máximo da activity atingido (${totalActivityTime/1000}s)")
-                                voltarParaTelaInicial("Tempo máximo atingido")
-                                return
+                                Log.w(TAG, "⏱️ Tempo máximo da activity atingido (${totalActivityTime/1000}s) - mantendo na tela de ponto")
+                                // Apenas informar e manter na tela
+                                statusText.text = "⏱️ Sessão longa. Continue posicionando o rosto."
                             }
-                            
-                            // ✅ CORREÇÃO: Só verificar timeout de face se não estiver processando há muito tempo
+                            // Verificar timeout de face e apenas resetar dicas, sem navegar
                             if (timeSinceLastFace > noFaceTimeout) {
-                                Log.w(TAG, "⏱️ Timeout sem detectar face (${timeSinceLastFace/1000}s)")
-                                voltarParaTelaInicial("Sem detectar rosto")
-                                return
+                                Log.w(TAG, "⏱️ Timeout sem detectar face (${timeSinceLastFace/1000}s) - permanecendo na tela")
+                                statusText.text = "📷 Não detectei rosto há um tempo. Posicione seu rosto na câmera."
                             }
                         }
                         
-                        // ✅ CORREÇÃO: Verificar travamento com timeout maior
+                        // ✅ OTIMIZAÇÃO: Verificar travamento com timeout maior e menos agressivo
                         if (processandoFace) {
                             val timeSinceStart = currentTime - lastProcessingTime
-                            if (timeSinceStart > processingTimeout * 2) { // Dobrar o timeout para ser menos agressivo
-                                Log.w(TAG, "⚠️ Processamento travado há ${timeSinceStart}ms - resetando")
+                            if (timeSinceStart > processingTimeout * 3) { // Triplicar o timeout para ser menos agressivo
+                                Log.w(TAG, "⚠️ Processamento travado há ${timeSinceStart}ms - resetando suavemente")
                                 runOnUiThread {
-                                    forcarResetEstado()
+                                    try {
+                                        forcarResetEstado()
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "❌ Erro ao resetar estado: ${e.message}")
+                                    }
                                 }
                             }
                         }
                         
-                        // ✅ CORREÇÃO: Verificar modelo com menos frequência
-                        if (!modelLoaded && (currentTime % 30000 < 5000)) { // A cada 30s por 5s
+                        // ✅ OTIMIZAÇÃO: Verificar modelo com menos frequência
+                        if (!modelLoaded && (currentTime % 60000 < 10000)) { // A cada 60s por 10s
                             CoroutineScope(Dispatchers.IO).launch {
                                 try {
                                     loadTensorFlowModel()
@@ -283,14 +329,19 @@ class PontoActivity : AppCompatActivity() {
                             }
                         }
                         
+                        // ✅ NOVA: Verificar uso de memória periodicamente
+                        if (currentTime % 30000 < 5000) { // A cada 30s
+                            logMemoryUsage("Monitor")
+                        }
+                        
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ Erro no monitor (ignorando): ${e.message}")
                     }
                     
-                    // ✅ CORREÇÃO: Reagendar apenas se activity ainda for válida
+                    // ✅ OTIMIZAÇÃO: Reagendar apenas se activity ainda for válida
                     try {
                         if (!isFinishing && !isDestroyed && monitorHandler != null) {
-                            monitorHandler?.postDelayed(this, 5000) // ✅ CORREÇÃO: 5 segundos (menos frequente)
+                            monitorHandler?.postDelayed(this, 10000) // ✅ OTIMIZAÇÃO: 10 segundos (menos frequente)
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ Erro ao reagendar monitor: ${e.message}")
@@ -298,10 +349,8 @@ class PontoActivity : AppCompatActivity() {
                 }
             }
             
-            // ✅ CORREÇÃO: Iniciar primeiro check após 5 segundos
-            monitorHandler?.postDelayed(monitorRunnable, 5000)
-            
-            Log.d(TAG, "✅ Monitor de estado iniciado com timeouts aumentados")
+            // ✅ OTIMIZAÇÃO: Iniciar monitor com delay inicial
+            monitorHandler?.postDelayed(monitorRunnable, 10000)
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao iniciar monitor: ${e.message}")
@@ -343,77 +392,9 @@ class PontoActivity : AppCompatActivity() {
                 voltarParaTelaInicial("Botão voltar pressionado")
             }
             
-            // ✅ NOVA: Botão de reset de emergência (long press no botão voltar)
+            // Removido: long press que abria AlertDialogs de análise para manter a tela limpa
             binding.btnVoltar.setOnLongClickListener {
-                Log.d(TAG, "🚨 Long press detectado - menu de análise")
-                
-                AlertDialog.Builder(this)
-                    .setTitle("🔬 Análise do Sistema")
-                    .setMessage("Escolha uma opção de análise:")
-                    .setPositiveButton("📊 Analisar Critérios") { _, _ ->
-                        CoroutineScope(Dispatchers.IO).launch {
-                            try {
-                                val relatorio = faceRecognitionHelper?.testarRigorosidadeCriterios()
-                                Log.d(TAG, "📋 Critérios: $relatorio")
-                                runOnUiThread {
-                                    AlertDialog.Builder(this@PontoActivity)
-                                        .setTitle("📊 Critérios Ativos")
-                                        .setMessage(relatorio)
-                                        .setPositiveButton("OK", null)
-                                        .show()
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "❌ Erro na análise: ${e.message}")
-                            }
-                        }
-                    }
-                    .setNeutralButton("🔍 Verificar Confusão") { _, _ ->
-                        CoroutineScope(Dispatchers.IO).launch {
-                            try {
-                                val relatorio = faceRecognitionHelper?.validarEmbeddingsParaConfusao()
-                                Log.d(TAG, "🔍 Confusão: $relatorio")
-                                runOnUiThread {
-                                    AlertDialog.Builder(this@PontoActivity)
-                                        .setTitle("🔍 Análise de Confusão")
-                                        .setMessage(relatorio)
-                                        .setPositiveButton("OK", null)
-                                        .show()
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "❌ Erro na análise: ${e.message}")
-                            }
-                        }
-                    }
-                    .setNegativeButton("🔄 Reset Sistema") { _, _ ->
-                        Log.d(TAG, "🔄 Reset manual do sistema")
-                        resetarEstadoReconhecimento()
-                        // ✅ CORREÇÃO: Limpar cache também
-                        faceRecognitionHelper?.clearCache()
-                        ultimoFuncionarioReconhecido = null // Reset manual
-                        pontoJaRegistrado = false
-                        lastProcessingTime = 0L
-                        Toast.makeText(this, "🔄 Sistema resetado completamente", Toast.LENGTH_SHORT).show()
-                    }
-                    .setNeutralButton("🔍 Diagnóstico") { _, _ ->
-                        CoroutineScope(Dispatchers.IO).launch {
-                            try {
-                                val diagnostico = faceRecognitionHelper?.diagnosticarQualidadeCadastro()
-                                Log.d(TAG, "🔍 Diagnóstico de Qualidade:\\n$diagnostico")
-                                runOnUiThread {
-                                    AlertDialog.Builder(this@PontoActivity)
-                                        .setTitle("🔍 Diagnóstico de Cadastros")
-                                        .setMessage(diagnostico)
-                                        .setPositiveButton("OK", null)
-                                        .show()
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "❌ Erro no diagnóstico: ${e.message}")
-                            }
-                        }
-                    }
-                    .setNeutralButton("❌ Cancelar", null)
-                    .show()
-                
+                Log.d(TAG, "🔕 Long press desativado nesta tela")
                 true
             }
             
@@ -935,10 +916,64 @@ class PontoActivity : AppCompatActivity() {
                 if (modelLoaded && interpreter != null) {
                     // ✅ OTIMIZAÇÃO: Processamento direto sem logs excessivos
                     val inputTensor = convertBitmapToTensorInput(resized)
+                    // Rebobinar buffer para garantir posição no início
+                    inputTensor.rewind()
                     val expectedSize = 4 * modelInputWidth * modelInputHeight * 3
                     if (inputTensor.capacity() != expectedSize) {
                         throw IllegalStateException("Tensor tem tamanho incorreto")
                     }
+                    
+                    // ✅ PROTEÇÃO CRÍTICA: Validar input antes da inferência
+                    if (inputTensor.capacity() <= 0) {
+                        throw IllegalStateException("Tensor vazio")
+                    }
+                    
+                    // ✅ PROTEÇÃO: Verificar se todos os valores são zero (indica problema)
+                    val position = inputTensor.position()
+                    inputTensor.rewind()
+                    var allZeros = true
+                    for (i in 0 until minOf(100, inputTensor.capacity() / 4)) { // Verificar primeiros 100 floats
+                        if (inputTensor.getFloat() != 0.0f) {
+                            allZeros = false
+                            break
+                        }
+                    }
+                    inputTensor.position(position) // Restaurar posição
+                    
+                    if (allZeros) {
+                        throw IllegalStateException("Tensor contém apenas zeros - problema na normalização")
+                    }
+                    
+                    					// ✅ PROTEÇÃO CRÍTICA: Verificar alinhamento de memória
+					if (inputTensor.capacity() % 4 != 0) {
+						throw IllegalStateException("Tensor não está alinhado corretamente")
+					}
+					
+					// ✅ PROTEÇÃO: Verificar se há valores NaN/Infinitos no input
+					inputTensor.rewind()
+					var hasInvalidValues = false
+					for (i in 0 until minOf(50, inputTensor.capacity() / 4)) {
+						val value = inputTensor.getFloat()
+						if (value.isNaN() || value.isInfinite()) {
+							hasInvalidValues = true
+							break
+						}
+					}
+					inputTensor.position(position)
+					
+					if (hasInvalidValues) {
+						throw IllegalStateException("Tensor contém valores inválidos (NaN/Infinito)")
+					}
+					
+					// ✅ PROTEÇÃO CRÍTICA: Verificar se o buffer está acessível
+					if (!inputTensor.hasRemaining()) {
+						throw IllegalStateException("Tensor não tem dados restantes")
+					}
+					
+					// ✅ PROTEÇÃO: Verificar se o tamanho está correto (usando variável já declarada)
+					if (inputTensor.capacity() != expectedSize) {
+						throw IllegalStateException("Tensor com tamanho incorreto: ${inputTensor.capacity()} vs $expectedSize")
+					}
                     
                     val output = Array(1) { FloatArray(modelOutputSize) }
                     
@@ -956,9 +991,48 @@ class PontoActivity : AppCompatActivity() {
                             // ✅ OTIMIZAÇÃO: Timeout reduzido para 5 segundos
                             try {
                                 withTimeout(5000L) { // Reduzido de 10 para 5 segundos
-                                    interp.run(inputTensor, output)
+                                    // ✅ PROTEÇÃO CRÍTICA: Capturar crashes nativos do TFLite
+                                    try {
+                                        // Verificar se o interpreter ainda é válido
+                                        if (interp == null) {
+                                            throw IllegalStateException("Interpreter é null")
+                                        }
+                                        
+                                        // ✅ PROTEÇÃO: Verificar se o modelo está carregado corretamente
+                                        try {
+                                            interp.allocateTensors()
+                                        } catch (e: Exception) {
+                                            throw IllegalStateException("Falha ao alocar tensores: ${e.message}")
+                                        }
+                                        
+                                        // Executar inferência com proteção nativa
+                                        interp.run(inputTensor, output)
+                                        
+                                        // ✅ VALIDAÇÃO: Verificar se o output é válido
+                                        if (output[0].all { it == 0.0f || it.isNaN() || it.isInfinite() }) {
+                                            throw IllegalStateException("Output inválido - todos zeros ou valores inválidos")
+                                        }
+                                        
+                                        // ✅ VALIDAÇÃO ADICIONAL: Verificar se há pelo menos alguns valores não-zero
+                                        val nonZeroCount = output[0].count { it != 0.0f && !it.isNaN() && !it.isInfinite() }
+                                        if (nonZeroCount < 10) {
+                                            throw IllegalStateException("Output insuficiente - apenas $nonZeroCount valores válidos")
+                                        }
+                                        
+                                    } catch (e: UnsatisfiedLinkError) {
+                                        Log.e(TAG, "❌ Erro nativo do TFLite: ${e.message}")
+                                        throw IllegalStateException("Erro nativo do TensorFlow Lite")
+                                    } catch (e: UnsatisfiedLinkError) {
+                                        Log.e(TAG, "❌ Erro de link nativo: ${e.message}")
+                                        throw IllegalStateException("Erro de biblioteca nativa")
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "❌ Erro durante inferência: ${e.message}")
+                                        throw e
+                                    }
+                                    
+                                    output[0]
                                 }
-                            } catch (e: Exception) {
+							} catch (e: TimeoutCancellationException) {
                                 Log.e(TAG, "❌ Erro na inferência: ${e.message}")
                                 throw IllegalStateException("Falha na execução do modelo")
                             }
@@ -1001,10 +1075,11 @@ class PontoActivity : AppCompatActivity() {
                         faceRecognitionHelper?.recognizeFace(vetorFacialFinal)
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ Erro no reconhecimento: ${e.message}")
+                        // ✅ CORREÇÃO: Não deixar crashar, apenas retornar null
                         null
                     }
 
-                    // ✅ OTIMIZAÇÃO: Processamento de resultado simplificado
+                    // ✅ OTIMIZAÇÃO: Processamento de resultado com tratamento de erro
                     try {
                         withContext(Dispatchers.Main) {
                             if (isFinishing || isDestroyed) {
@@ -1048,188 +1123,36 @@ class PontoActivity : AppCompatActivity() {
                                             return@launch
                                         }
                                         
-                                        val horarioAtual = System.currentTimeMillis()
-                                        val formato = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
-                                        val dataFormatada = formato.format(Date(horarioAtual))
-                                        
-                                        // ✅ NOVA: Capturar geolocalização
-                                        var latitude: Double? = null
-                                        var longitude: Double? = null
-                                        
+                                        // ✅ CORREÇÃO: Capturar exceções no registro de ponto
                                         try {
-                                            val locationData = locationHelper?.getCurrentLocationForPoint()
-                                            if (locationData != null) {
-                                                latitude = locationData.latitude
-                                                longitude = locationData.longitude
-                                                Log.d(TAG, "🌍 Localização capturada: $latitude, $longitude")
-                                            } else {
-                                                Log.w(TAG, "⚠️ Localização não disponível para este ponto")
-                                            }
+                                            registrarPonto(funcionario)
                                         } catch (e: Exception) {
-                                            Log.e(TAG, "❌ Erro ao capturar localização: ${e.message}")
-                                        }
-                                        
-                                        // ✅ RESTAURADO: Converter foto para base64
-                                        val fotoBase64 = try {
-                                            currentFaceBitmap?.let { bitmap ->
-                                                if (!bitmap.isRecycled) {
-                                                    bitmapToBase64(bitmap, 80)
-                                                } else {
-                                                    Log.w(TAG, "⚠️ Bitmap da face foi reciclado")
-                                                    null
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "❌ Erro ao converter foto para base64: ${e.message}")
-                                            null
-                                        }
-                                        
-                                        if (fotoBase64 != null) {
-                                            Log.d(TAG, "📸 Foto convertida para base64: ${fotoBase64.length} caracteres")
-                                        } else {
-                                            Log.w(TAG, "⚠️ Nenhuma foto será enviada com o ponto")
-                                        }
-                                        
-                                        // Criar ponto
-                                        val ponto = PontosGenericosEntity(
-                                            funcionarioId = funcionario.codigo,
-                                            funcionarioNome = funcionario.nome ?: "Funcionário",
-                                            funcionarioMatricula = funcionario.matricula ?: "",
-                                            funcionarioCpf = funcionario.cpf ?: "",
-                                            funcionarioCargo = funcionario.cargo ?: "",
-                                            funcionarioSecretaria = funcionario.secretaria ?: "",
-                                            funcionarioLotacao = funcionario.lotacao ?: "",
-                                            tipoPonto = "PONTO",
-                                            dataHora = horarioAtual,
-                                            latitude = latitude,  // ✅ NOVA: Incluir localização
-                                            longitude = longitude, // ✅ NOVA: Incluir localização
-                                            fotoBase64 = fotoBase64
-                                        )
-                                        
-                                        // Salvar no banco
-                                        AppDatabase.getInstance(this@PontoActivity).pontosGenericosDao().insert(ponto)
-                                        Log.d(TAG, "💾 Ponto registrado: ${funcionario.nome}")
-                                        
-                                        // Salvar para sincronização
-                                        try {
-                                            val pontoService = PontoSincronizacaoService()
-                                            pontoService.salvarPontoParaSincronizacao(
-                                                this@PontoActivity,
-                                                funcionario.codigo,
-                                                funcionario.nome ?: "Funcionário",
-                                                "ponto",
-                                                fotoBase64,
-                                                latitude, // ✅ NOVA: Incluir latitude
-                                                longitude // ✅ NOVA: Incluir longitude
-                                            )
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "❌ Erro na sincronização: ${e.message}")
-                                        }
-                                        
-                                        // ✅ OTIMIZAÇÃO: Mostrar sucesso e sair rapidamente
-                                        withContext(Dispatchers.Main) {
-                                            try {
-                                                // ✅ NOVA: Incluir localização no Toast se disponível
-                                                val toastLocationText = if (latitude != null && longitude != null) {
-                                                    "\n📍 ${String.format("%.4f", latitude)}, ${String.format("%.4f", longitude)}"
-                                                } else {
-                                                    ""
-                                                }
-                                                
-                                                Toast.makeText(this@PontoActivity, 
-                                                    "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada$toastLocationText", 
-                                                    Toast.LENGTH_LONG).show()
-                                                
-                                                // Reset automático após 20 segundos
-                                                Handler(Looper.getMainLooper()).postDelayed({
-                                                    pontoJaRegistrado = false
-                                                    ultimoFuncionarioReconhecido = null
-                                                }, 20000)
-                                                
-                                                // ✅ NOVA: Incluir localização no status se disponível
-                                                val locationText = if (latitude != null && longitude != null) {
-                                                    "\n📍 ${String.format("%.6f", latitude)}, ${String.format("%.6f", longitude)}"
-                                                } else {
-                                                    "\n⚠️ Sem localização"
-                                                }
-                                                
-                                                statusText.text = "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada$locationText\n\nClique 'Voltar' para sair"
-                                                
-                                            } catch (e: Exception) {
-                                                Log.e(TAG, "❌ Erro ao mostrar sucesso: ${e.message}")
-                                                try {
-                                                    voltarParaTelaInicial("Erro na interface")
-                                                } catch (e2: Exception) {
-                                                    Log.e(TAG, "❌ Erro crítico: ${e2.message}")
-                                                    if (!isFinishing && !isDestroyed) {
-                                                        finish()
-                                                    }
+                                            Log.e(TAG, "❌ Erro ao registrar ponto: ${e.message}")
+                                            // ✅ CORREÇÃO: Não deixar crashar, apenas logar o erro
+                                            withContext(Dispatchers.Main) {
+                                                if (!isFinishing && !isDestroyed) {
+                                                    Toast.makeText(this@PontoActivity, "Erro ao registrar ponto. Tente novamente.", Toast.LENGTH_SHORT).show()
                                                 }
                                             }
                                         }
-                                        
                                     } catch (e: Exception) {
-                                        Log.e(TAG, "❌ Erro ao registrar ponto: ${e.message}")
-                                        pontoJaRegistrado = false
-                                        ultimoFuncionarioReconhecido = null
-                                        
-                                        withContext(Dispatchers.Main) {
-                                            try {
-                                                Toast.makeText(this@PontoActivity, 
-                                                    "❌ Erro ao registrar ponto\nTente novamente", 
-                                                    Toast.LENGTH_LONG).show()
-                                                statusText.text = "📷 Posicione seu rosto na câmera"
-                                            } catch (e2: Exception) {
-                                                Log.e(TAG, "❌ Erro no fallback: ${e2.message}")
-                                            }
-                                        }
-                                    } finally {
-                                        processandoFace = false
-                                        lastProcessingTime = 0L
-                                        retomarTimeout("Processamento de ponto concluído")
+                                        Log.e(TAG, "❌ Erro crítico no registro: ${e.message}")
+                                        // ✅ CORREÇÃO: Não deixar crashar
                                     }
                                 }
+                                
                             } else {
-                                Log.d(TAG, "❌ Funcionário não reconhecido")
-                                
-                                // ✅ NOVA: Executar análise detalhada para mostrar motivo da rejeição
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    try {
-                                        // ✅ TESTE ULTRA RIGOROSO: Verificar se é falso positivo
-                                        val relatorioTeste = faceRecognitionHelper?.testarAntiFalsoPositivo(vetorFacialFinal)
-                                        Log.w(TAG, "🛡️ TESTE ANTI-FALSO POSITIVO:\n$relatorioTeste")
-                                        
-                                        // Análise detalhada completa
-                                        val relatorioCompleto = faceRecognitionHelper?.analisarEmbeddingsCompleta(vetorFacialFinal)
-                                        Log.w(TAG, "�� RELATÓRIO COMPLETO:\n$relatorioCompleto")
-                                        
-                                        // Análise de rejeição simplificada
-                                        faceRecognitionHelper?.analisarRejeicao(vetorFacialFinal)
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "❌ Erro na análise: ${e.message}")
-                                    }
-                                }
-                                
-                                // ✅ OTIMIZAÇÃO: Feedback mais específico
-                                try {
-                                    statusText.text = "❌ Pessoa não cadastrada ou\nsimilaridade insuficiente\n\n🛡️ Critérios rigorosos ativos"
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "❌ Erro ao atualizar status: ${e.message}")
-                                }
+                                // ✅ CORREÇÃO: Quando não reconhece, apenas continuar sem crashar
+                                Log.w(TAG, "❌ Nenhum funcionário reconhecido")
                                 processandoFace = false
-                                lastProcessingTime = 0L
-                                retomarTimeout("Funcionário não reconhecido")
+                                retomarTimeout("Nenhum funcionário reconhecido")
                             }
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro ao processar resultado: ${e.message}")
-                        try {
-                            processandoFace = false
-                            lastProcessingTime = 0L
-                            retomarTimeout("Erro no processamento")
-                        } catch (e2: Exception) {
-                            Log.e(TAG, "❌ Erro ao resetar: ${e2.message}")
-                        }
+                        Log.e(TAG, "❌ Erro no processamento do resultado: ${e.message}")
+                        // ✅ CORREÇÃO: Não deixar crashar, apenas resetar estado
+                        processandoFace = false
+                        retomarTimeout("Erro no processamento")
                     }
                 } else {
                     withContext(Dispatchers.Main) {
@@ -1481,100 +1404,33 @@ class PontoActivity : AppCompatActivity() {
                 return
             }
             
-            // ✅ ABORDAGEM MAIS SIMPLES: Usar AlertDialog que é mais estável
-            try {
-                val builder = AlertDialog.Builder(this)
-                builder.setTitle("✅ Ponto Registrado!")
-                builder.setMessage("👤 ${funcionario.nome}\n🕐 $horario\n\n✅ Ponto salvo com sucesso!")
-                builder.setIcon(android.R.drawable.ic_dialog_info)
-                builder.setCancelable(false)
-                
-                builder.setPositiveButton("OK") { dialog, _ ->
-                    try {
-                        Log.d(TAG, "👆 Confirmação OK pressionada - fechando app")
-                        dialog.dismiss()
-                        // ✅ CORREÇÃO: Fechar imediatamente sem delay
-                        try {
-                            if (!isFinishing && !isDestroyed) {
-                                Log.d(TAG, "🔚 Finalizando activity após confirmação")
-                                finish()
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Erro ao fechar activity: ${e.message}")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro no botão OK: ${e.message}")
-                        try {
-                            if (!isFinishing && !isDestroyed) {
-                                finish()
-                            }
-                        } catch (e2: Exception) {
-                            Log.e(TAG, "❌ Erro crítico ao fechar: ${e2.message}")
-                        }
-                    }
-                }
-                
-                // ✅ CORREÇÃO: Verificar novamente antes de criar o dialog
-                if (!isFinishing && !isDestroyed) {
-                    val dialog = builder.create()
-                    dialog.show()
+            // ✅ NOVA ABORDAGEM: Toast e manter tela ativa
+            Toast.makeText(this, "✅ Ponto registrado!\n${funcionario.nome}\n$horario", Toast.LENGTH_LONG).show()
+            
+            // ✅ RESETAR ESTADO E MANTER TELA ATIVA
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    Log.d(TAG, "🔄 Resetando estado após registro de ponto")
                     
-                    // Auto-fechar após 5 segundos como backup
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        try {
-                            if (dialog.isShowing && !isFinishing && !isDestroyed) {
-                                Log.d(TAG, "⏰ Auto-fechando dialog e app após 5 segundos")
-                                dialog.dismiss()
-                                // ✅ CORREÇÃO: Fechar imediatamente sem delay adicional
-                                try {
-                                    if (!isFinishing && !isDestroyed) {
-                                        Log.d(TAG, "🔚 Finalizando activity automaticamente")
-                                        finish()
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "❌ Erro no auto-close finish: ${e.message}")
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Erro no auto-close dialog: ${e.message}")
-                        }
-                    }, 5000)
+                    // ✅ CORREÇÃO: Limpar estado sem fechar activity
+                    forcarResetEstado()
                     
-                    Log.d(TAG, "✅ Dialog de confirmação exibido com sucesso")
-                } else {
-                    Log.w(TAG, "⚠️ Activity finalizada antes de mostrar dialog")
-                    throw IllegalStateException("Activity finalizada")
+                    // ✅ MANTER TELA ATIVA - NÃO FECHAR
+                    Log.d(TAG, "✅ Tela mantida ativa para novos registros")
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro ao resetar estado: ${e.message}")
                 }
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao criar dialog: ${e.message}")
-                throw e
-            }
+            }, 2000) // Aguardar 2 segundos
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao mostrar confirmação", e)
             
-            // ✅ FALLBACK: Toast simples e fechar imediatamente
+            // ✅ FALLBACK: Resetar estado mesmo com erro
             try {
-                if (!isFinishing && !isDestroyed) {
-                    Toast.makeText(this, "✅ Ponto registrado!\n${funcionario.nome}\n$horario", Toast.LENGTH_SHORT).show()
-                    
-                    // ✅ CORREÇÃO: Fechar imediatamente após toast
-                    Log.d(TAG, "🔚 Finalizando activity via fallback")
-                    finish()
-                } else {
-                    Log.w(TAG, "⚠️ Activity finalizada, não exibindo fallback")
-                }
+                forcarResetEstado()
             } catch (e2: Exception) {
-                Log.e(TAG, "❌ Erro no fallback: ${e2.message}")
-                // Último recurso: apenas fechar
-                try {
-                    if (!isFinishing && !isDestroyed) {
-                        finish()
-                    }
-                } catch (e3: Exception) {
-                    Log.e(TAG, "❌ Erro crítico final: ${e3.message}")
-                }
+                Log.e(TAG, "❌ Erro crítico ao resetar: ${e2.message}")
             }
         }
     }
@@ -1599,7 +1455,7 @@ class PontoActivity : AppCompatActivity() {
         return result
     }
     
-        private fun convertBitmapToTensorInput(bitmap: Bitmap): ByteBuffer {
+    private fun convertBitmapToTensorInput(bitmap: Bitmap): ByteBuffer {
         try {
             val inputSize = modelInputWidth // 112
             Log.d(TAG, "🔧 Preparando tensor para entrada ${inputSize}x${inputSize}")
@@ -1625,14 +1481,20 @@ class PontoActivity : AppCompatActivity() {
 
             var pixelCount = 0
             for (pixel in intValues) {
-                // Normalizar para [-1, 1] como esperado pelo modelo MobileFaceNet
+                // ✅ CORREÇÃO: Usar EXATAMENTE a mesma normalização do cadastro
+                // Normalizar para [-1, 1] como no CameraActivity (cadastro)
                 val r = ((pixel shr 16) and 0xFF) / 127.5f - 1.0f
                 val g = ((pixel shr 8) and 0xFF) / 127.5f - 1.0f
                 val b = (pixel and 0xFF) / 127.5f - 1.0f
+                
+                // ✅ VALIDAÇÃO: Garantir que não são NaN ou infinitos
+                val rFinal = if (r.isNaN() || r.isInfinite()) 0.0f else r
+                val gFinal = if (g.isNaN() || g.isInfinite()) 0.0f else g
+                val bFinal = if (b.isNaN() || b.isInfinite()) 0.0f else b
 
-                byteBuffer.putFloat(r)
-                byteBuffer.putFloat(g)
-                byteBuffer.putFloat(b)
+                byteBuffer.putFloat(rFinal)
+                byteBuffer.putFloat(gFinal)
+                byteBuffer.putFloat(bFinal)
                 pixelCount++
             }
             
@@ -1821,9 +1683,10 @@ class PontoActivity : AppCompatActivity() {
                         // Limpar estado
                         forcarResetEstado()
                         
-                        // Voltar para HomeActivity
+                        // Voltar para HomeActivity de forma mais segura
                         val intent = Intent(this, HomeActivity::class.java)
-                        intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+                        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
                         startActivity(intent)
                         finish()
                     }
@@ -1937,19 +1800,18 @@ class PontoActivity : AppCompatActivity() {
         try {
             Log.d(TAG, "🗑️ === LIMPANDO RECURSOS NO onDestroy ===")
             
-            // ✅ CORREÇÃO: Parar monitor de estado para evitar memory leaks
+            // ✅ OTIMIZAÇÃO: Parar monitor de estado para evitar memory leaks
             stopStateMonitor()
             
-            // ✅ NOVA: Parar câmera para evitar memory leaks
+            // ✅ OTIMIZAÇÃO: Parar câmera para evitar memory leaks
             stopCamera()
             
-            // ✅ CORREÇÃO: Limpar bitmap atual
+            // ✅ OTIMIZAÇÃO: Limpar bitmap atual de forma mais segura
             currentFaceBitmap?.let { bitmap ->
                 try {
                     if (!bitmap.isRecycled) {
                         bitmap.recycle()
-                    } else {
-                        // Bitmap já foi reciclado
+                        Log.d(TAG, "🖼️ Bitmap reciclado")
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "⚠️ Erro ao reciclar bitmap no onDestroy: ${e.message}")
@@ -1958,26 +1820,37 @@ class PontoActivity : AppCompatActivity() {
             currentFaceBitmap = null
             
             // ✅ OTIMIZAÇÃO: Limpar cache do helper para liberar memória
-            faceRecognitionHelper?.clearCache()
-            faceRecognitionHelper = null
+            try {
+                faceRecognitionHelper?.clearCache()
+                faceRecognitionHelper = null
+                Log.d(TAG, "🧠 Cache do face recognition limpo")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao limpar cache: ${e.message}")
+            }
             
-            // ✅ NOVA: Limpar helper de localização
+            // ✅ OTIMIZAÇÃO: Limpar helper de localização
             locationHelper = null
             
-            // ✅ CORREÇÃO: Limpar interpreter
-            interpreter?.close()
-            interpreter = null
+            // ✅ OTIMIZAÇÃO: Limpar interpreter de forma mais segura
+            try {
+                if (interpreter != null) {
+                    interpreter?.close()
+                    interpreter = null
+                    Log.d(TAG, "🤖 TensorFlow interpreter fechado")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao fechar interpreter: ${e.message}")
+            }
             
-            // ✅ NOVA: Limpar face detector
-            faceDetector = FaceDetection.getClient(
-                FaceDetectorOptions.Builder()
-                    .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
-                    .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
-                    .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
-                    .build()
-            )
+            // ✅ OTIMIZAÇÃO: Limpar face detector de forma mais segura
+            try {
+                faceDetector.close()
+                Log.d(TAG, "👤 Face detector fechado")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao fechar face detector: ${e.message}")
+            }
             
-            // ✅ NOVA: Forçar garbage collection e monitorar memória final
+            // ✅ OTIMIZAÇÃO: Forçar garbage collection e monitorar memória final
             logMemoryUsage("Antes limpeza final")
             System.gc()
             
@@ -2046,6 +1919,131 @@ class PontoActivity : AppCompatActivity() {
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro no onResume: ${e.message}")
+        }
+    }
+
+    /**
+     * ✅ FUNÇÃO SIMPLIFICADA: Registrar ponto com tratamento de erro
+     */
+    private suspend fun registrarPonto(funcionario: FuncionariosEntity) {
+        try {
+            val horarioAtual = System.currentTimeMillis()
+            val formato = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
+            val dataFormatada = formato.format(Date(horarioAtual))
+            
+            // ✅ Capturar geolocalização
+            var latitude: Double? = null
+            var longitude: Double? = null
+            
+            try {
+                val locationData = locationHelper?.getCurrentLocationForPoint()
+                if (locationData != null) {
+                    latitude = locationData.latitude
+                    longitude = locationData.longitude
+                    Log.d(TAG, "🌍 Localização capturada: $latitude, $longitude")
+                } else {
+                    Log.w(TAG, "⚠️ Localização não disponível para este ponto")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao capturar localização: ${e.message}")
+            }
+            
+            // ✅ Converter foto para base64
+            val fotoBase64 = try {
+                currentFaceBitmap?.let { bitmap ->
+                    if (!bitmap.isRecycled) {
+                        bitmapToBase64(bitmap, 80)
+                    } else {
+                        Log.w(TAG, "⚠️ Bitmap da face foi reciclado")
+                        null
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao converter foto para base64: ${e.message}")
+                null
+            }
+            
+            if (fotoBase64 != null) {
+                Log.d(TAG, "📸 Foto convertida para base64: ${fotoBase64.length} caracteres")
+            } else {
+                Log.w(TAG, "⚠️ Nenhuma foto será enviada com o ponto")
+            }
+            
+            // Criar ponto
+            val ponto = PontosGenericosEntity(
+                funcionarioId = funcionario.codigo,
+                funcionarioNome = funcionario.nome ?: "Funcionário",
+                funcionarioMatricula = funcionario.matricula ?: "",
+                funcionarioCpf = funcionario.cpf ?: "",
+                funcionarioCargo = funcionario.cargo ?: "",
+                funcionarioSecretaria = funcionario.secretaria ?: "",
+                funcionarioLotacao = funcionario.lotacao ?: "",
+                tipoPonto = "PONTO",
+                dataHora = horarioAtual,
+                latitude = latitude,
+                longitude = longitude,
+                fotoBase64 = fotoBase64
+            )
+            
+            // Salvar no banco
+            AppDatabase.getInstance(this@PontoActivity).pontosGenericosDao().insert(ponto)
+            Log.d(TAG, "💾 Ponto registrado: ${funcionario.nome}")
+            
+            // Salvar para sincronização
+            try {
+                val pontoService = PontoSincronizacaoService()
+                pontoService.salvarPontoParaSincronizacao(
+                    this@PontoActivity,
+                    funcionario.codigo,
+                    funcionario.nome ?: "Funcionário",
+                    "ponto",
+                    fotoBase64,
+                    latitude,
+                    longitude
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro na sincronização: ${e.message}")
+            }
+            
+            // ✅ Mostrar sucesso
+            withContext(Dispatchers.Main) {
+                try {
+                    val toastLocationText = if (latitude != null && longitude != null) {
+                        "\n📍 ${String.format("%.4f", latitude)}, ${String.format("%.4f", longitude)}"
+                    } else {
+                        ""
+                    }
+                    
+                    Toast.makeText(this@PontoActivity, 
+                        "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada$toastLocationText", 
+                        Toast.LENGTH_LONG).show()
+                    
+                    // Reset automático após 20 segundos
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        pontoJaRegistrado = false
+                        ultimoFuncionarioReconhecido = null
+                    }, 20000)
+                    
+                    val locationText = if (latitude != null && longitude != null) {
+                        "\n📍 ${String.format("%.6f", latitude)}, ${String.format("%.6f", longitude)}"
+                    } else {
+                        "\n⚠️ Sem localização"
+                    }
+                    
+                    statusText.text = "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada$locationText\n\nClique 'Voltar' para sair"
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro ao mostrar sucesso: ${e.message}")
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao registrar ponto: ${e.message}")
+            throw e
+        } finally {
+            processandoFace = false
+            lastProcessingTime = 0L
+            retomarTimeout("Processamento de ponto concluído")
         }
     }
 } 

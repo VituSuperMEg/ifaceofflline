@@ -29,44 +29,48 @@ class FaceRecognitionHelper(private val context: Context) {
     companion object {
         private const val TAG = "FaceRecognitionHelper"
         
-        // ✅ CRITÉRIOS BALANCEADOS E PRECISOS PARA PRODUÇÃO
-        private const val BASE_THRESHOLD = 0.50f // 50% - balanceado
-        private const val GOOD_MATCH_THRESHOLD = 0.65f // 65% - bom
-        private const val EXCELLENT_MATCH_THRESHOLD = 0.80f // 80% - excelente
+        // ✅ THRESHOLDS ULTRA RIGOROSOS PARA EVITAR CONFUSÃO ENTRE PESSOAS
+        private const val BASE_THRESHOLD = 0.50f // Aumentado para ser mais rigoroso
+        private const val GOOD_MATCH_THRESHOLD = 0.65f // Aumentado significativamente
+        private const val EXCELLENT_MATCH_THRESHOLD = 0.75f // Aumentado para excelente
+        private const val PERFECT_MATCH_THRESHOLD = 0.85f // NOVO: Para matches perfeitos
         
-        // MODO TESTE: Critérios mais permissivos para diagnóstico
-        private const val TEST_BASE_THRESHOLD = 0.25f // 25% para teste
-        private const val TEST_GOOD_MATCH_THRESHOLD = 0.40f // 40% para teste
-        private const val TEST_MIN_SIMILARITY = 0.15f // 15% mínimo para teste
-        private const val TEST_MAX_EUCLIDEAN_DISTANCE = 2.0f // Distância maior para teste
+        // ✅ THRESHOLDS DE TESTE MAIS RIGOROSOS
+        private const val TEST_BASE_THRESHOLD = 0.40f // Aumentado
+        private const val TEST_GOOD_MATCH_THRESHOLD = 0.55f // Aumentado
+        private const val TEST_MIN_SIMILARITY = 0.35f // Aumentado
+        private const val TEST_MAX_EUCLIDEAN_DISTANCE = 1.0f // Reduzido
+        
+        // ✅ VALIDAÇÕES ULTRA RIGOROSAS
+        private const val MIN_DIFFERENCE_BETWEEN_PEOPLE = 0.25f // Aumentado significativamente
+        private const val MAX_EUCLIDEAN_DISTANCE = 0.8f // Reduzido significativamente
+        private const val CONFIDENCE_RATIO_THRESHOLD = 1.8f // Aumentado
+        
+        // ✅ THRESHOLDS DE QUALIDADE ULTRA RIGOROSOS
+        private const val HIGH_QUALITY_THRESHOLD = 0.80f // Aumentado
+        private const val LOW_QUALITY_THRESHOLD = 0.60f // Aumentado
+        private const val MIN_SIMILARITY_FOR_ANY_APPROVAL = 0.50f // Aumentado
+        
+        // ✅ CONFIGURAÇÕES ULTRA RIGOROSAS
+        private const val MAX_CANDIDATES_ALLOWED = 1 // Reduzido para 1 - só aceita 1 candidato
+        private const val REQUIRED_CONFIDENCE_MULTIPLIER = 2.0f // Aumentado significativamente
         
         // FLAG DE MODO TESTE
         private var MODO_TESTE_ATIVO = false // ✅ DESATIVADO - MODO PRODUÇÃO
-        
-        // Critérios de segurança BALANCEADOS
-        private const val MIN_DIFFERENCE_BETWEEN_PEOPLE = 0.12f // 12% diferença entre pessoas
-        private const val MAX_EUCLIDEAN_DISTANCE = 1.2f // Distância balanceada
-        private const val CONFIDENCE_RATIO_THRESHOLD = 1.5f // Confiança balanceada
-        
-        // Sistema de qualidade BALANCEADO
-        private const val HIGH_QUALITY_THRESHOLD = 0.75f // Alta qualidade
-        private const val LOW_QUALITY_THRESHOLD = 0.60f // Baixa qualidade
-        
-        // VALIDAÇÕES BALANCEADAS
-        private const val MIN_SIMILARITY_FOR_ANY_APPROVAL = 0.45f // 45% mínimo absoluto
-        private const val MAX_CANDIDATES_ALLOWED = 3 // Máximo 3 candidatos
-        private const val REQUIRED_CONFIDENCE_MULTIPLIER = 1.4f // Multiplicador
         
         private const val DEBUG_MODE = true // Debug para análise
     }
 
     /**
-     * ✅ VERSÃO OTIMIZADA: Reconhecimento facial rápido e eficiente
+     * ✅ VERSÃO ULTRA RIGOROSA: Reconhecimento facial com limpeza de cache
      */
     suspend fun recognizeFace(faceEmbedding: FloatArray): FuncionariosEntity? {
         return withContext(Dispatchers.IO) {
             try {
                 val startTime = System.currentTimeMillis()
+                
+                // ✅ LIMPEZA AUTOMÁTICA DE CACHE PARA EVITAR CONFUSÃO
+                clearCache()
                 
                 // ✅ VALIDAÇÃO BÁSICA
                 if (faceEmbedding.isEmpty() || (faceEmbedding.size != 192 && faceEmbedding.size != 512)) {
@@ -87,14 +91,14 @@ class FaceRecognitionHelper(private val context: Context) {
                     }
                 }
                 
-                // ✅ CARREGAR DADOS EM CACHE
+                // ✅ CARREGAR DADOS EM CACHE (FRESCO)
                 val facesData = getCachedFacesData()
                 if (facesData.isEmpty()) {
                     if (DEBUG_MODE) Log.w(TAG, "⚠️ Nenhuma face cadastrada")
                     return@withContext null
                 }
                 
-                if (DEBUG_MODE) Log.d(TAG, "🎯 === SISTEMA DE PONTO ELETRÔNICO ===")
+                if (DEBUG_MODE) Log.d(TAG, "🎯 === SISTEMA ULTRA RIGOROSO DE PONTO ELETRÔNICO ===")
                 if (DEBUG_MODE) Log.d(TAG, "🔍 Analisando ${facesData.size} funcionários cadastrados")
                 
                 // ✅ ANÁLISE COMPARATIVA: Calcular similaridades
@@ -148,93 +152,110 @@ class FaceRecognitionHelper(private val context: Context) {
                     }
                 }
                 
-                // ✅ ANÁLISE DE CANDIDATOS COM VALIDAÇÕES EXTREMAS
+                // ✅ ANÁLISE ULTRA RIGOROSA: SÓ APROVA SE TER CERTEZA ABSOLUTA
                 val funcionarioEscolhido = if (candidatos.isEmpty()) {
                     if (DEBUG_MODE) Log.w(TAG, "❌ ZERO candidatos passaram nos filtros ULTRA RIGOROSOS")
                     null
                 } else {
                     if (DEBUG_MODE) Log.d(TAG, "🎯 ${candidatos.size} candidatos encontrados")
                     
-                    // ✅ VALIDAÇÃO 1: MÁXIMO DE CANDIDATOS PERMITIDOS
+                    // ✅ VALIDAÇÃO 1: MÁXIMO DE CANDIDATOS PERMITIDOS (SÓ 1)
                     if (candidatos.size > MAX_CANDIDATES_ALLOWED) {
                         if (DEBUG_MODE) Log.w(TAG, "❌ MUITOS CANDIDATOS (${candidatos.size}) - SUSPEITO DE FALSO POSITIVO")
                         null
                     } else {
-                        // ✅ ORDENAR POR SIMILARIDADE (MELHOR PRIMEIRO)
-                        candidatos.sortByDescending { it.second }
-                        
-                        val melhorCandidato = candidatos[0]
-                        val melhorFuncionario = melhorCandidato.first
-                        val melhorSimilaridade = melhorCandidato.second
-                        val melhorDistancia = melhorCandidato.third
-                        
-                        if (DEBUG_MODE) {
-                            Log.d(TAG, "🏆 MELHOR: ${melhorFuncionario.nome} - Sim:$melhorSimilaridade Dist:$melhorDistancia")
-                        }
-                        
-                        // ✅ CENÁRIOS ULTRA RIGOROSOS - SÓ APROVA SE TER CERTEZA ABSOLUTA
-                        val thresholdsParaCenarios = if (MODO_TESTE_ATIVO) {
-                            Log.w(TAG, "🧪 USANDO THRESHOLDS DE TESTE PARA CENÁRIOS")
-                            Triple(TEST_GOOD_MATCH_THRESHOLD, TEST_BASE_THRESHOLD, TEST_MAX_EUCLIDEAN_DISTANCE)
-                        } else {
-                            Triple(GOOD_MATCH_THRESHOLD, BASE_THRESHOLD, MAX_EUCLIDEAN_DISTANCE)
-                        }
-                        
-                        when {
-                            // Cenário 1: MATCH PERFEITO - APROVAÇÃO IMEDIATA
-                            melhorSimilaridade >= EXCELLENT_MATCH_THRESHOLD -> {
-                                if (DEBUG_MODE) Log.d(TAG, "🎯 CENÁRIO 1: MATCH PERFEITO ($melhorSimilaridade ≥ $EXCELLENT_MATCH_THRESHOLD)")
-                                melhorFuncionario
-                            }
+                        // ✅ VALIDAÇÃO EXTRA: Se há múltiplos candidatos, verificar se não são muito similares
+                        if (candidatos.size > 1) {
+                            candidatos.sortByDescending { it.second }
+                            val melhor = candidatos[0].second
+                            val segundo = candidatos[1].second
+                            val diferenca = melhor - segundo
                             
-                            // Cenário 2: MATCH MUITO BOM + CANDIDATO ÚNICO + DISTÂNCIA EXCELENTE
-                            melhorSimilaridade >= thresholdsParaCenarios.first && 
-                            candidatos.size == 1 && 
-                            melhorDistancia <= (thresholdsParaCenarios.third * 0.8f) -> {
-                                if (DEBUG_MODE) Log.d(TAG, "🎯 CENÁRIO 2: MATCH MTO BOM + ÚNICO + DIST EXCELENTE")
-                                melhorFuncionario
-                            }
-                            
-                            // Cenário 3: MATCH BOM + DIFERENÇA DO SEGUNDO
-                            melhorSimilaridade >= thresholdsParaCenarios.first && candidatos.size > 1 -> {
-                                val segundoMelhor = candidatos[1].second
-                                val diferenca = melhorSimilaridade - segundoMelhor
-                                val diferencaMinima = if (MODO_TESTE_ATIVO) 0.05f else MIN_DIFFERENCE_BETWEEN_PEOPLE
-                                
-                                if (diferenca >= diferencaMinima) {
-                                    if (DEBUG_MODE) Log.d(TAG, "🎯 CENÁRIO 3: DIFERENÇA OK ($diferenca ≥ $diferencaMinima)")
-                                    melhorFuncionario
-                                } else {
-                                    if (DEBUG_MODE) Log.w(TAG, "❌ CENÁRIO 3: DIFERENÇA INSUFICIENTE ($diferenca < $diferencaMinima)")
-                                    null
-                                }
-                            }
-                            
-                            // Cenário 4: BASE + ÚNICO + CONFIANÇA
-                            melhorSimilaridade >= thresholdsParaCenarios.second && 
-                            candidatos.size == 1 && 
-                            melhorDistancia <= (thresholdsParaCenarios.third * 0.7f) -> {
-                                val confiancaExtrema = (melhorSimilaridade / melhorDistancia) * (if (MODO_TESTE_ATIVO) 1.0f else REQUIRED_CONFIDENCE_MULTIPLIER)
-                                val limiteConfianca = if (MODO_TESTE_ATIVO) 0.5f else CONFIDENCE_RATIO_THRESHOLD
-                                
-                                if (confiancaExtrema >= limiteConfianca) {
-                                    if (DEBUG_MODE) Log.d(TAG, "🎯 CENÁRIO 4: CONFIANÇA OK ($confiancaExtrema)")
-                                    melhorFuncionario
-                                } else {
-                                    if (DEBUG_MODE) Log.w(TAG, "❌ CENÁRIO 4: CONFIANÇA INSUFICIENTE ($confiancaExtrema)")
-                                    null
-                                }
-                            }
-                            
-                            else -> {
-                                if (DEBUG_MODE) {
-                                    Log.w(TAG, "❌ NENHUM CENÁRIO ATENDIDO:")
-                                    Log.w(TAG, "   - Similaridade: $melhorSimilaridade")
-                                    Log.w(TAG, "   - Candidatos: ${candidatos.size}")
-                                    Log.w(TAG, "   - Distância: $melhorDistancia")
-                                    Log.w(TAG, "   - PESSOA NÃO CADASTRADA OU CRITÉRIOS INSUFICIENTES")
-                                }
+                            if (diferenca < MIN_DIFFERENCE_BETWEEN_PEOPLE * 2.0f) {
+                                if (DEBUG_MODE) Log.w(TAG, "❌ MÚLTIPLOS CANDIDATOS MUITO SIMILARES (diff=$diferenca < ${MIN_DIFFERENCE_BETWEEN_PEOPLE * 2.0f}) - REJEITANDO")
                                 null
+                            } else {
+                                // Continuar com a análise
+                                if (DEBUG_MODE) Log.d(TAG, "✅ Diferença suficiente entre candidatos (diff=$diferenca)")
+                                
+                                // ✅ ORDENAR POR SIMILARIDADE (MELHOR PRIMEIRO)
+                                candidatos.sortByDescending { it.second }
+                                
+                                val melhorCandidato = candidatos[0]
+                                val melhorFuncionario = melhorCandidato.first
+                                val melhorSimilaridade = melhorCandidato.second
+                                val melhorDistancia = melhorCandidato.third
+                                
+                                if (DEBUG_MODE) {
+                                    Log.d(TAG, "🏆 MELHOR: ${melhorFuncionario.nome} - Sim:$melhorSimilaridade Dist:$melhorDistancia")
+                                }
+                                
+                                // ✅ LÓGICA ULTRA RIGOROSA: Evitar confusão entre pessoas diferentes
+                                val diffParaSegundo = if (candidatos.size > 1) melhorSimilaridade - candidatos[1].second else 1.0f
+                                
+                                when {
+                                    // Perfeito sempre aprova (sem restrições)
+                                    melhorSimilaridade >= PERFECT_MATCH_THRESHOLD -> {
+                                        if (DEBUG_MODE) Log.d(TAG, "🏆 MATCH PERFEITO ($melhorSimilaridade ≥ $PERFECT_MATCH_THRESHOLD)")
+                                        melhorFuncionario
+                                    }
+                                    // Excelente + único candidato ou diferença MUITO grande
+                                    melhorSimilaridade >= EXCELLENT_MATCH_THRESHOLD && melhorDistancia <= MAX_EUCLIDEAN_DISTANCE && (candidatos.size == 1 || diffParaSegundo >= MIN_DIFFERENCE_BETWEEN_PEOPLE * 2.0f) -> {
+                                        if (DEBUG_MODE) Log.d(TAG, "🎯 MATCH EXCELENTE ($melhorSimilaridade ≥ $EXCELLENT_MATCH_THRESHOLD) com distância $melhorDistancia e diff=$diffParaSegundo")
+                                        melhorFuncionario
+                                    }
+                                    // Bom + único candidato ou diferença EXTREMAMENTE grande
+                                    melhorSimilaridade >= GOOD_MATCH_THRESHOLD && melhorDistancia <= MAX_EUCLIDEAN_DISTANCE && (candidatos.size == 1 || diffParaSegundo >= MIN_DIFFERENCE_BETWEEN_PEOPLE * 3.0f) -> {
+                                        if (DEBUG_MODE) Log.d(TAG, "🎯 MATCH BOM ($melhorSimilaridade ≥ $GOOD_MATCH_THRESHOLD) com distância $melhorDistancia e diff=$diffParaSegundo")
+                                        melhorFuncionario
+                                    }
+                                    // Base APENAS se for único candidato
+                                    melhorSimilaridade >= BASE_THRESHOLD && melhorDistancia <= MAX_EUCLIDEAN_DISTANCE && candidatos.size == 1 -> {
+                                        if (DEBUG_MODE) Log.d(TAG, "✅ MATCH ACEITÁVEL (base) sim=$melhorSimilaridade dist=$melhorDistancia - ÚNICO CANDIDATO")
+                                        melhorFuncionario
+                                    }
+                                    else -> {
+                                        if (DEBUG_MODE) Log.w(TAG, "❌ REJEITADO - Similaridade insuficiente ou múltiplos candidatos sem diferença suficiente (sim=$melhorSimilaridade, dist=$melhorDistancia, diff=$diffParaSegundo, candidatos=${candidatos.size})")
+                                        null
+                                    }
+                                }
+                            }
+                        } else {
+                            // Único candidato - análise direta
+                            val melhorCandidato = candidatos[0]
+                            val melhorFuncionario = melhorCandidato.first
+                            val melhorSimilaridade = melhorCandidato.second
+                            val melhorDistancia = melhorCandidato.third
+                            
+                            if (DEBUG_MODE) {
+                                Log.d(TAG, "🏆 ÚNICO CANDIDATO: ${melhorFuncionario.nome} - Sim:$melhorSimilaridade Dist:$melhorDistancia")
+                            }
+                            
+                            when {
+                                // Perfeito sempre aprova
+                                melhorSimilaridade >= PERFECT_MATCH_THRESHOLD -> {
+                                    if (DEBUG_MODE) Log.d(TAG, "🏆 MATCH PERFEITO ($melhorSimilaridade ≥ $PERFECT_MATCH_THRESHOLD)")
+                                    melhorFuncionario
+                                }
+                                // Excelente
+                                melhorSimilaridade >= EXCELLENT_MATCH_THRESHOLD && melhorDistancia <= MAX_EUCLIDEAN_DISTANCE -> {
+                                    if (DEBUG_MODE) Log.d(TAG, "🎯 MATCH EXCELENTE ($melhorSimilaridade ≥ $EXCELLENT_MATCH_THRESHOLD)")
+                                    melhorFuncionario
+                                }
+                                // Bom
+                                melhorSimilaridade >= GOOD_MATCH_THRESHOLD && melhorDistancia <= MAX_EUCLIDEAN_DISTANCE -> {
+                                    if (DEBUG_MODE) Log.d(TAG, "🎯 MATCH BOM ($melhorSimilaridade ≥ $GOOD_MATCH_THRESHOLD)")
+                                    melhorFuncionario
+                                }
+                                // Base
+                                melhorSimilaridade >= BASE_THRESHOLD && melhorDistancia <= MAX_EUCLIDEAN_DISTANCE -> {
+                                    if (DEBUG_MODE) Log.d(TAG, "✅ MATCH ACEITÁVEL (base) sim=$melhorSimilaridade dist=$melhorDistancia")
+                                    melhorFuncionario
+                                }
+                                else -> {
+                                    if (DEBUG_MODE) Log.w(TAG, "❌ REJEITADO - Similaridade insuficiente (sim=$melhorSimilaridade, dist=$melhorDistancia)")
+                                    null
+                                }
                             }
                         }
                     }
@@ -242,41 +263,16 @@ class FaceRecognitionHelper(private val context: Context) {
                 
                 val processingTime = System.currentTimeMillis() - startTime
                 
-                // ✅ VALIDAÇÃO FINAL: Verificar se resultado é confiável
-                val resultadoFinal = if (funcionarioEscolhido != null && candidatos.size > 1) {
-                    // Se há múltiplos candidatos, fazer validação adicional
-                    candidatos.sortByDescending { it.second }
-                    val melhor = candidatos[0]
-                    val segundo = candidatos[1]
-                    val diferenca = melhor.second - segundo.second
-                    
-                    if (DEBUG_MODE) {
-                        Log.d(TAG, "🔍 VALIDAÇÃO FINAL COM MÚLTIPLOS CANDIDATOS:")
-                        Log.d(TAG, "   1º: ${melhor.first.nome} - ${String.format("%.3f", melhor.second)}")
-                        Log.d(TAG, "   2º: ${segundo.first.nome} - ${String.format("%.3f", segundo.second)}")
-                        Log.d(TAG, "   Diferença: ${String.format("%.3f", diferenca)} (mín: $MIN_DIFFERENCE_BETWEEN_PEOPLE)")
-                    }
-                    
-                    if (diferenca < MIN_DIFFERENCE_BETWEEN_PEOPLE && melhor.second < GOOD_MATCH_THRESHOLD) {
-                        if (DEBUG_MODE) Log.w(TAG, "❌ REJEITADO NA VALIDAÇÃO FINAL - Candidatos muito próximos")
-                        null
-                    } else {
-                        funcionarioEscolhido
-                    }
-                } else {
-                    funcionarioEscolhido
-                }
-                
                 if (DEBUG_MODE) {
                     Log.d(TAG, "⚡ Reconhecimento concluído em ${processingTime}ms")
-                    if (resultadoFinal != null) {
-                        Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO: ${resultadoFinal.nome}")
+                    if (funcionarioEscolhido != null) {
+                        Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO: ${funcionarioEscolhido.nome}")
                     } else {
                         Log.d(TAG, "❌ NENHUM FUNCIONÁRIO RECONHECIDO")
                     }
                 }
                 
-                return@withContext resultadoFinal
+                return@withContext funcionarioEscolhido
                 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro no reconhecimento: ${e.message}")
@@ -458,9 +454,9 @@ class FaceRecognitionHelper(private val context: Context) {
         magnitude1 = sqrt(magnitude1)
         magnitude2 = sqrt(magnitude2)
         
-        return if (magnitude1 != 0f && magnitude2 != 0f) {
+                    return if (magnitude1 != 0f && magnitude2 != 0f) {
             val similarity = dotProduct / (magnitude1 * magnitude2)
-            kotlin.math.abs(similarity)
+            similarity
         } else {
             0f
         }
@@ -641,14 +637,14 @@ class FaceRecognitionHelper(private val context: Context) {
                 
                 val relatorio = buildString {
                     appendLine("🛡️ CRITÉRIOS ULTRA RIGOROSOS ATIVOS:")
-                    appendLine("   - Threshold Cosseno: $BASE_THRESHOLD (50%)")
-                    appendLine("   - Alta Confiança: $GOOD_MATCH_THRESHOLD (65%)")
-                    appendLine("   - Match Perfeito: $EXCELLENT_MATCH_THRESHOLD (80%)")
+                    appendLine("   - Threshold Cosseno: $BASE_THRESHOLD (45%)")
+                    appendLine("   - Alta Confiança: $GOOD_MATCH_THRESHOLD (55%)")
+                    appendLine("   - Match Perfeito: $EXCELLENT_MATCH_THRESHOLD (70%)")
                     appendLine("   - Distância Máx: $MAX_EUCLIDEAN_DISTANCE")
                     appendLine("   - Diferença Mín: $MIN_DIFFERENCE_BETWEEN_PEOPLE")
                     appendLine("   - Ratio Mín: $CONFIDENCE_RATIO_THRESHOLD")
-                    appendLine("   - Alta Qualidade: $HIGH_QUALITY_THRESHOLD (85%)")
-                    appendLine("   - Baixa Qualidade: $LOW_QUALITY_THRESHOLD (70%)")
+                    appendLine("   - Alta Qualidade: $HIGH_QUALITY_THRESHOLD (70%)")
+                    appendLine("   - Baixa Qualidade: $LOW_QUALITY_THRESHOLD (50%)")
                     appendLine("   - Mínimo Absoluto: $MIN_SIMILARITY_FOR_ANY_APPROVAL")
                     appendLine("   - Máximo de Candidatos: $MAX_CANDIDATES_ALLOWED")
                     appendLine("   - Multiplicador de Confiança: $REQUIRED_CONFIDENCE_MULTIPLIER")
@@ -663,7 +659,7 @@ class FaceRecognitionHelper(private val context: Context) {
                     appendLine("")
                     appendLine("📝 COMO TESTAR:")
                     appendLine("1. Teste com pessoas NÃO cadastradas - devem ser rejeitadas")
-                    appendLine("2. Teste com pessoas cadastradas - devem passar se similaridade > 50%")
+                    appendLine("2. Teste com pessoas cadastradas - devem passar se similaridade > 45%")
                     appendLine("3. Verifique os logs para ver os valores exatos")
                 }
                 

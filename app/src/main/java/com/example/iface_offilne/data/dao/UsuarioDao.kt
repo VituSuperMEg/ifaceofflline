@@ -8,7 +8,7 @@ import com.example.iface_offilne.data.FuncionariosEntity
 @Dao
 interface UsuarioDao {
 
-    @Query("SELECT * FROM funcionarios")
+    @Query("SELECT * FROM funcionarios ORDER BY nome ASC")
     suspend fun getUsuario(): List<FuncionariosEntity>
 
     @Insert

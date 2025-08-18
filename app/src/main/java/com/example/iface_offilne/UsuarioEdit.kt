@@ -90,27 +90,23 @@ class UsuarioEdit : AppCompatActivity() {
         }
     }
 
-    private fun saveUserChanges() {
+        private fun saveUserChanges() {
         val codigo = binding.editTextCodigo.text.toString().trim()
         val nome = binding.editTextNome.text.toString().trim()
         
-        // Validação básica
+        // Validação básica - campos agora são somente leitura, mas mantemos a validação por segurança
         if (codigo.isEmpty()) {
             binding.layoutCodigo.error = "Código é obrigatório"
-            binding.editTextCodigo.requestFocus()
             return
         }
         
-                if (nome.isEmpty()) {
+        if (nome.isEmpty()) {
             binding.layoutNome.error = "Nome é obrigatório"
-            binding.editTextNome.requestFocus()
             return
         }
 
         usuario?.let { user ->
-            // Atualizar dados do usuário
-            user.codigo = codigo
-            user.nome = nome
+            // Atualizar apenas o status ativo/inativo (código e nome são somente leitura)
             user.ativo = if (binding.chipAtivo.isChecked) 1 else 0
 
             // Salvar no banco de dados
@@ -120,6 +116,7 @@ class UsuarioEdit : AppCompatActivity() {
                     val funcionarioDao = database.funcionarioDao()
                     
                     // Converter FuncionariosLocalModel para FuncionariosEntity (funcionário importado)
+                    // Código e nome permanecem inalterados (somente leitura)
                     val funcionarioEntity = FuncionariosEntity(
                         id = user.id,
                         codigo = user.codigo,
