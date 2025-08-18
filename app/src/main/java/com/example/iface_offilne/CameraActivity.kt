@@ -58,11 +58,31 @@ class CameraActivity : AppCompatActivity() {
 
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 10
-        private val REQUIRED_PERMISSIONS = arrayOf(
-            Manifest.permission.CAMERA,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE,
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        )
+        private val REQUIRED_PERMISSIONS = when {
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+                // Android 14+ (API 34+)
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.READ_MEDIA_IMAGES,
+                    Manifest.permission.POST_NOTIFICATIONS
+                )
+            }
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU -> {
+                // Android 13+ (API 33+)
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.READ_MEDIA_IMAGES
+                )
+            }
+            else -> {
+                // Android 12 e abaixo
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                )
+            }
+        }
         private const val TAG = "CameraActivity"
 
         // Assinatura de arquivo TFLite válido
@@ -91,9 +111,17 @@ class CameraActivity : AppCompatActivity() {
         loadTensorFlowModel()
 
         // Solicita permissões
+        Log.d(TAG, "🔐 Verificando permissões...")
+        Log.d(TAG, "📱 Versão Android: ${android.os.Build.VERSION.SDK_INT}")
+        Log.d(TAG, "📋 Permissões necessárias: ${REQUIRED_PERMISSIONS.joinToString(", ")}")
+        
         if (allPermissionsGranted()) {
+            Log.d(TAG, "✅ Todas as permissões já concedidas")
             startCamera()
         } else {
+            Log.d(TAG, "❌ Permissões pendentes - solicitando...")
+            // Mostrar mensagem informativa antes de solicitar permissões
+            Toast.makeText(this, "📷 O app precisa de permissão para câmera e armazenamento para registrar sua face", Toast.LENGTH_LONG).show()
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
         }
     }
@@ -598,8 +626,34 @@ class CameraActivity : AppCompatActivity() {
             if (allPermissionsGranted()) {
                 startCamera()
             } else {
-                Toast.makeText(this, "Permissões negadas", Toast.LENGTH_LONG).show()
-                finish()
+                // Verificar quais permissões foram negadas
+                val deniedPermissions = mutableListOf<String>()
+                for (i in permissions.indices) {
+                    if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
+                        deniedPermissions.add(permissions[i])
+                    }
+                }
+                
+                Log.e(TAG, "❌ Permissões negadas: ${deniedPermissions.joinToString(", ")}")
+                
+                                    val message = when {
+                        deniedPermissions.contains(Manifest.permission.CAMERA) -> 
+                            "❌ Permissão de câmera negada!\n\nPara registrar sua face, você precisa permitir o acesso à câmera.\n\nVá em Configurações > Apps > iFace Offline > Permissões e ative a câmera."
+                        deniedPermissions.contains(Manifest.permission.READ_MEDIA_IMAGES) -> 
+                            "❌ Permissão de mídia negada!\n\nPara salvar fotos, você precisa permitir o acesso às imagens.\n\nVá em Configurações > Apps > iFace Offline > Permissões e ative 'Fotos e vídeos'."
+                        deniedPermissions.contains(Manifest.permission.POST_NOTIFICATIONS) -> 
+                            "❌ Permissão de notificação negada!\n\nPara receber avisos do app, você precisa permitir notificações.\n\nVá em Configurações > Apps > iFace Offline > Permissões e ative 'Notificações'."
+                        deniedPermissions.contains(Manifest.permission.WRITE_EXTERNAL_STORAGE) -> 
+                            "❌ Permissão de armazenamento negada!\n\nPara salvar fotos, você precisa permitir o acesso ao armazenamento.\n\nVá em Configurações > Apps > iFace Offline > Permissões e ative 'Armazenamento'."
+                        else -> "❌ Permissões necessárias foram negadas!\n\nVá em Configurações > Apps > iFace Offline > Permissões e ative todas as permissões."
+                    }
+                
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                
+                // Aguardar um pouco antes de fechar para o usuário ler a mensagem
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    finish()
+                }, 3000)
             }
         }
     }

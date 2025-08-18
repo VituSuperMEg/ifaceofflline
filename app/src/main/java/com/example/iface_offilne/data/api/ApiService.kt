@@ -38,7 +38,6 @@ interface ApiService {
         @Body pontos: List<PontoSyncRequest>
     ): Response<Unit>
     
-    // ✅ NOVO: Endpoint com formato completo (configurações + pontos)
     @POST("/{entidade}/services/util/sincronizar-ponto-table")
     suspend fun sincronizarPontosCompleto(
         @Path("entidade") entidade: String,
@@ -55,6 +54,12 @@ interface ApiService {
     suspend fun testConnection(
         @Path("entidade") entidade: String
     ): Response<SimpleResponse>
+
+    @POST("/{entidade}/services/util/permissao")
+    suspend fun getPermissao(
+        @Path("entidade") entidade: String,
+        @Body request: PermissaoRequest
+    ): Response<PermissaoResponse>
 }
 
 // ✅ NOVO: Modelo completo para sincronização com configurações no nível raiz
@@ -86,4 +91,18 @@ data class PontoSyncResponse(
 data class SimpleResponse(
     val status: String,
     val message: String
+)
+
+// ✅ NOVO: Modelos para sistema de permissões
+data class PermissaoRequest(
+    val entidade: String,
+    val menu: String
+)
+
+data class PermissaoResponse(
+    val success: Boolean,
+    val message: String,
+    val permissao: Boolean,
+    val menu: String,
+    val entidade: String
 )

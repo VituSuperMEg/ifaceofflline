@@ -65,16 +65,8 @@ class SincronizacaoService {
                                 e.printStackTrace()
                             }
                             
-                            // ✅ CORREÇÃO CRÍTICA: Reagendar próximo alarme para Android 6+
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                                try {
-                                    Log.d(TAG, "🔄 Reagendando próximo alarme (Android 6+)...")
-                                    val service = SincronizacaoService()
-                                    service.configurarAlarme(it, 0, 0, intervalo) // Usar hora atual + intervalo
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "❌ Erro ao reagendar alarme: ${e.message}")
-                                }
-                        }
+                            // ✅ REMOVIDO: Reagendamento manual - agora usa setRepeating automático
+                            Log.d(TAG, "✅ Sincronização executada - próximo alarme automático em $intervalo hora(s)")
                         
                     } else {
                         Log.d(TAG, "❌ Sincronização desativada, cancelando alarme...")
@@ -111,27 +103,31 @@ class SincronizacaoService {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            // ✅ CORREÇÃO: Usar intervalo baseado no momento atual, não no horário específico
+            // ✅ CORREÇÃO: Usar setRepeating para execução automática contínua
             val intervaloMillis = intervalo * 60 * 60 * 1000L // Converter horas para milissegundos
-            val proximaExecucao = System.currentTimeMillis() + intervaloMillis
+            
+            // ✅ NOVO: Calcular próxima execução baseada no horário atual
+            val agora = System.currentTimeMillis()
+            val proximaExecucao = agora + intervaloMillis
             
             Log.d(TAG, "🕐 Primeira execução em: ${java.text.SimpleDateFormat("dd/MM HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(proximaExecucao))}")
+            Log.d(TAG, "🔄 Próximas execuções a cada $intervalo hora(s)")
             
-            // ✅ CORREÇÃO: Usar setInexactRepeating para economia de bateria
-            // Android otimiza automaticamente os alarmes inexatos
+            // ✅ CORREÇÃO: Usar setRepeating para execução automática contínua
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    // Para Android 6+, usar setExactAndAllowWhileIdle com reagendamento manual
-                    alarmManager.setExactAndAllowWhileIdle(
+                    // Para Android 6+, usar setRepeating com reagendamento automático
+                    alarmManager.setRepeating(
                         AlarmManager.RTC_WAKEUP,
                         proximaExecucao,
+                        intervaloMillis,
                         pendingIntent
                     )
-                    Log.d(TAG, "✅ Alarme configurado com setExactAndAllowWhileIdle (Android 6+)")
+                    Log.d(TAG, "✅ Alarme configurado com setRepeating (Android 6+)")
                 } else {
                     // Para versões mais antigas
-            alarmManager.setRepeating(
-                AlarmManager.RTC_WAKEUP,
+                    alarmManager.setRepeating(
+                        AlarmManager.RTC_WAKEUP,
                         proximaExecucao,
                         intervaloMillis,
                         pendingIntent
@@ -139,21 +135,70 @@ class SincronizacaoService {
                     Log.d(TAG, "✅ Alarme configurado com setRepeating (Android < 6)")
                 }
             } catch (e: SecurityException) {
-                Log.w(TAG, "⚠️ Permissão de alarme exato negada, usando inexact repeating")
+                Log.w(TAG, "⚠️ Permissão de alarme negada, usando inexact repeating")
                 // Fallback para alarme inexato
                 alarmManager.setInexactRepeating(
                     AlarmManager.RTC_WAKEUP,
                     proximaExecucao,
-                intervaloMillis,
-                pendingIntent
-            )
+                    intervaloMillis,
+                    pendingIntent
+                )
                 Log.d(TAG, "✅ Alarme configurado com setInexactRepeating (fallback)")
             }
 
-            Log.d(TAG, "✅ Alarme configurado com sucesso!")
+            Log.d(TAG, "✅ Alarme configurado com sucesso para execução automática!")
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao configurar alarme: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    // ✅ NOVO: Método para iniciar sincronização imediatamente
+    fun iniciarSincronizacaoImediata(context: Context) {
+        try {
+            Log.d(TAG, "🚀 === INICIANDO SINCRONIZAÇÃO IMEDIATA ===")
+            
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val sincronizacaoAtiva = ConfiguracoesManager.isSincronizacaoAtiva(context)
+                    val intervalo = ConfiguracoesManager.getIntervaloSincronizacao(context)
+                    
+                    Log.d(TAG, "🔍 Status da sincronização: ativa=$sincronizacaoAtiva, intervalo=${intervalo}h")
+                    
+                    if (sincronizacaoAtiva) {
+                        Log.d(TAG, "✅ Sincronização ativa, executando imediatamente...")
+                        
+                        // Executar sincronização usando PontoSincronizacaoService
+                        try {
+                            val pontoService = PontoSincronizacaoService()
+                            
+                            // Verificar se há pontos para sincronizar
+                            val pontosPendentes = pontoService.getQuantidadePontosPendentes(context)
+                            Log.d(TAG, "📊 Pontos pendentes: $pontosPendentes")
+                            
+                            if (pontosPendentes > 0) {
+                                val resultado = pontoService.sincronizarPontosPendentesComHistorico(context, "Sincronização imediata")
+                                Log.d(TAG, "📤 Resultado da sincronização imediata: $resultado")
+                            } else {
+                                Log.d(TAG, "📭 Nenhum ponto para sincronizar")
+                            }
+                            
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro na sincronização imediata: ${e.message}")
+                            e.printStackTrace()
+                        }
+                    } else {
+                        Log.d(TAG, "❌ Sincronização desativada")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro crítico na sincronização imediata: ${e.message}")
+                    e.printStackTrace()
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao iniciar sincronização imediata: ${e.message}")
             e.printStackTrace()
         }
     }
@@ -215,6 +260,50 @@ class SincronizacaoService {
         }
     }
     
+    // ✅ NOVO: Verificar status atual do alarme
+    fun verificarStatusAlarme(context: Context) {
+        try {
+            Log.d(TAG, "🔍 === VERIFICANDO STATUS DO ALARME ===")
+            
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(context, SincronizacaoReceiver::class.java).apply {
+                action = ACTION_SINCRONIZAR
+            }
+            
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            if (pendingIntent != null) {
+                Log.d(TAG, "✅ Alarme ativo - PendingIntent encontrado")
+                
+                // Tentar obter informações do alarme (Android 6+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    try {
+                        val alarmInfo = alarmManager.getNextAlarmClock()
+                        if (alarmInfo != null) {
+                            val proximaExecucao = alarmInfo.triggerTime
+                            val dataFormatada = java.text.SimpleDateFormat("dd/MM HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(proximaExecucao))
+                            Log.d(TAG, "🕐 Próxima execução do alarme: $dataFormatada")
+                        } else {
+                            Log.d(TAG, "⚠️ Não foi possível obter informações do próximo alarme")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "⚠️ Erro ao obter informações do alarme: ${e.message}")
+                    }
+                }
+            } else {
+                Log.d(TAG, "❌ Alarme inativo - PendingIntent não encontrado")
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao verificar status do alarme: ${e.message}")
+        }
+    }
+
     // Método para debug - verificar status das configurações
     fun verificarStatusSincronizacao(context: Context) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -233,29 +322,7 @@ class SincronizacaoService {
                 Log.d(TAG, "⏱️ Intervalo: $intervalo horas")
                 
                 // ✅ NOVO: Verificar status do alarme
-                try {
-                    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-                    val intent = Intent(context, SincronizacaoReceiver::class.java).apply {
-                        action = ACTION_SINCRONIZAR
-                    }
-                    val pendingIntent = PendingIntent.getBroadcast(
-                        context,
-                        REQUEST_CODE,
-                        intent,
-                        PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-                    )
-                    
-                    val alarmeAtivo = pendingIntent != null
-                    Log.d(TAG, "⏰ Alarme Ativo: $alarmeAtivo")
-                    
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        val canScheduleExactAlarms = alarmManager.canScheduleExactAlarms()
-                        Log.d(TAG, "🔐 Permissão Alarme Exato: $canScheduleExactAlarms")
-                    }
-                    
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao verificar alarme: ${e.message}")
-                }
+                verificarStatusAlarme(context)
                 
                 // Verificar pontos pendentes
                 val pontoService = PontoSincronizacaoService()

@@ -42,7 +42,7 @@ class FuncionariosActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         entidadeId = SessionManager.entidade?.id.toString()
-
+        
         var daoFunc: FuncionarioDao
         daoFunc = AppDatabase.getInstance(this).funcionarioDao()
 
@@ -69,15 +69,11 @@ class FuncionariosActivity : AppCompatActivity() {
                         daoFunc.insert(funcionario)
                         Log.d("INSERT_FUNC", "Funcionário importado: ${funcionario.nome}")
                         
+                        // Atualizar conjunto de IDs importados e UI
+                        val idsImportados = daoFunc.getAll().map { it.id }.toSet()
                         withContext(Dispatchers.Main) {
-                            AlertDialog.Builder(this@FuncionariosActivity)
-                                .setTitle("Importação Concluída")
-                                .setMessage("${funcionario.nome} foi importado com sucesso!")
-                                .setPositiveButton("OK") { dialog, _ ->
-                                    dialog.dismiss()
-                                }
-                                .setCancelable(false)
-                                .show()
+                            adapter.atualizarImportados(idsImportados)
+                            Toast.makeText(this@FuncionariosActivity, "${funcionario.nome} foi importado!", Toast.LENGTH_SHORT).show()
                         }
                     }
                     dialog.dismiss()
@@ -90,6 +86,16 @@ class FuncionariosActivity : AppCompatActivity() {
         }
         binding.listaFuncionarios.layoutManager = LinearLayoutManager(this)
         binding.listaFuncionarios.adapter = adapter
+
+        // Carregar IDs já importados no início
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val idsImportados = daoFunc.getAll().map { it.id }.toSet()
+                withContext(Dispatchers.Main) {
+                    adapter.atualizarImportados(idsImportados)
+                }
+            } catch (_: Exception) { }
+        }
 
         binding.sincronizarListaFunc.setOnClickListener {
             currentPage = 1
@@ -141,6 +147,7 @@ class FuncionariosActivity : AppCompatActivity() {
 
         loadFuncionarios()
     }
+    
 
     private fun loadFuncionarios() {
         isLoading = true

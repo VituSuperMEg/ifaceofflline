@@ -21,8 +21,9 @@ class FuncionariosAdapter(
         private val orgaoTextView: TextView = itemView.findViewById(R.id.orgao)
         private val setorTextView: TextView = itemView.findViewById(R.id.setor)
         private val localizacaoTextView: TextView = itemView.findViewById(R.id.localizacao)
+        private val jaImportadoTextView: TextView = itemView.findViewById(R.id.jaImportado)
 
-        fun bind(funcionario: FuncionariosModel) {
+        fun bind(funcionario: FuncionariosModel, importados: Set<Int>?) {
             nomeTextView.text = funcionario.nome ?: "Sem nome"
             matriculaTextView.text = "Matrícula: ${funcionario.matricula ?: "00"}"
             cpfTextView.text = "CPF: ${funcionario.numero_cpf ?: "0000"}"
@@ -33,10 +34,21 @@ class FuncionariosAdapter(
             setorTextView.text = "Setor: ${funcionario.setor_descricao ?: "Não informado"}"
             localizacaoTextView.text = "Localização: ${funcionario.localizacao_descricao ?: "Não informado"}"
 
-            itemView.setOnClickListener {
-                onClick(funcionario)
-            }
+            val jaImportado = importados?.contains(funcionario.id) == true
+            jaImportadoTextView.text = "Já Importado: ${if (jaImportado) "Sim" else "Não"}"
+            jaImportadoTextView.setTextColor(
+                if (jaImportado) 0xFF4CAF50.toInt() else 0xFFFF6B6B.toInt()
+            )
+
+            itemView.setOnClickListener { onClick(funcionario) }
         }
+    }
+
+    private var idsImportados: Set<Int>? = null
+
+    fun atualizarImportados(ids: Set<Int>) {
+        idsImportados = ids
+        notifyDataSetChanged()
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FuncionarioViewHolder {
@@ -46,7 +58,7 @@ class FuncionariosAdapter(
     }
 
     override fun onBindViewHolder(holder: FuncionarioViewHolder, position: Int) {
-        holder.bind(funcionarios[position])
+        holder.bind(funcionarios[position], idsImportados)
     }
 
     override fun getItemCount(): Int = funcionarios.size

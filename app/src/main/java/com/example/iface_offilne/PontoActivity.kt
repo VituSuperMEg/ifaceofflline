@@ -23,6 +23,7 @@ import com.example.iface_offilne.data.PontosGenericosEntity
 import com.example.iface_offilne.service.PontoSincronizacaoService
 import com.example.iface_offilne.helpers.FaceRecognitionHelper
 import com.example.iface_offilne.helpers.LocationHelper
+import com.example.iface_offilne.helpers.PermissaoHelper
 import com.example.iface_offilne.helpers.bitmapToBase64
 import com.example.iface_offilne.helpers.bitmapToFloatArray
 import com.example.iface_offilne.helpers.cropFace
@@ -88,7 +89,31 @@ class PontoActivity : AppCompatActivity() {
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 10
         private const val REQUEST_CODE_LOCATION_PERMISSIONS = 20
-        private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
+        private val REQUIRED_PERMISSIONS = when {
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+                // Android 14+ (API 34+)
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.READ_MEDIA_IMAGES,
+                    Manifest.permission.POST_NOTIFICATIONS
+                )
+            }
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU -> {
+                // Android 13+ (API 33+)
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.READ_MEDIA_IMAGES
+                )
+            }
+            else -> {
+                // Android 12 e abaixo
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                )
+            }
+        }
         private val LOCATION_PERMISSIONS = arrayOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
@@ -221,13 +246,21 @@ class PontoActivity : AppCompatActivity() {
         binding.btnVoltar.backgroundTintList = null
 
         // Solicitar permissões
+        Log.d(TAG, "🔐 Verificando permissões...")
+        Log.d(TAG, "📱 Versão Android: ${android.os.Build.VERSION.SDK_INT}")
+        Log.d(TAG, "📋 Permissões necessárias: ${REQUIRED_PERMISSIONS.joinToString(", ")}")
+        
         if (allPermissionsGranted()) {
+            Log.d(TAG, "✅ Todas as permissões já concedidas")
             // ✅ NOVA: Verificar permissões de localização também
             if (!allLocationPermissionsGranted()) {
                 ActivityCompat.requestPermissions(this, LOCATION_PERMISSIONS, REQUEST_CODE_LOCATION_PERMISSIONS)
             }
             startCamera()
         } else {
+            Log.d(TAG, "❌ Permissões pendentes - solicitando...")
+            // Mostrar mensagem informativa antes de solicitar permissões
+            Toast.makeText(this, "📷 O app precisa de permissão para câmera e armazenamento para reconhecimento facial", Toast.LENGTH_LONG).show()
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
         }
         
@@ -386,10 +419,22 @@ class PontoActivity : AppCompatActivity() {
             ultimoPonto = binding.ultimoPonto
             tipoPontoRadioGroup = binding.tipoPontoRadioGroup
             
-            // Configurar botão voltar
+            // Configurar botão configurações com verificação de permissão
             binding.btnVoltar.setOnClickListener { 
-                Log.d(TAG, "🔄 Usuário clicou em voltar")
-                voltarParaTelaInicial("Botão voltar pressionado")
+                Log.d(TAG, "⚙️ Usuário clicou em configurações")
+                
+                // ✅ NOVO: Verificar permissão antes de abrir configurações
+                val permissaoHelper = PermissaoHelper(this)
+                permissaoHelper.verificarPermissaoConfiguracoes {
+                    // ✅ Permissão concedida - abrir configurações
+                    try {
+                        val intent = Intent(this, ConfiguracoesActivity::class.java)
+                        startActivity(intent)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao abrir configurações: ${e.message}")
+                        Toast.makeText(this, "❌ Erro ao abrir configurações", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
             
             // Removido: long press que abria AlertDialogs de análise para manter a tela limpa
@@ -1291,34 +1336,16 @@ class PontoActivity : AppCompatActivity() {
                         "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada", 
                         Toast.LENGTH_LONG).show()
                     
-                    // ✅ CORREÇÃO: Fechar IMEDIATAMENTE após 2 segundos
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        try {
-                            Log.d(TAG, "🔚 Fechando activity após ponto registrado")
-                            if (!isFinishing && !isDestroyed) {
-                                finish()
-                            } else {
-                                Log.w(TAG, "⚠️ Activity já finalizada, não fechando")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Erro ao fechar: ${e.message}")
-                            // Força saída do processo se necessário
-                            android.os.Process.killProcess(android.os.Process.myPid())
-                        }
-                    }, 2000)
+                    // ✅ CORREÇÃO: MANTER TELA ATIVA - NÃO FECHAR
+                    Log.d(TAG, "✅ Ponto registrado - mantendo tela ativa para novos registros")
                     
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro ao mostrar toast: ${e.message}")
-                    // Fechar imediatamente se der erro
+                    // ✅ CORREÇÃO: Não fechar activity, apenas resetar estado
                     try {
-                        if (!isFinishing && !isDestroyed) {
-                            finish()
-                        } else {
-                            Log.w(TAG, "⚠️ Activity já finalizada, não fechando")
-                        }
+                        forcarResetEstado()
                     } catch (e2: Exception) {
-                        Log.e(TAG, "❌ Erro crítico: ${e2.message}")
-                        android.os.Process.killProcess(android.os.Process.myPid())
+                        Log.e(TAG, "❌ Erro ao resetar estado: ${e2.message}")
                     }
                 }
             }
@@ -1683,20 +1710,16 @@ class PontoActivity : AppCompatActivity() {
                         // Limpar estado
                         forcarResetEstado()
                         
-                        // Voltar para HomeActivity de forma mais segura
-                        val intent = Intent(this, HomeActivity::class.java)
-                        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        startActivity(intent)
-                        finish()
+                        // ✅ CORREÇÃO: Não navegar para outras telas - manter na tela de ponto
+                        Log.d(TAG, "✅ Mantendo na tela de ponto - não navegando para outras telas")
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao voltar para tela inicial: ${e.message}")
-                    // Em caso de erro, tentar finalizar a activity
+                    Log.e(TAG, "❌ Erro ao processar: ${e.message}")
+                    // ✅ CORREÇÃO: Não fechar activity, apenas resetar estado
                     try {
-                        finish()
+                        forcarResetEstado()
                     } catch (e2: Exception) {
-                        Log.e(TAG, "❌ Erro crítico ao finalizar activity: ${e2.message}")
+                        Log.e(TAG, "❌ Erro ao resetar estado: ${e2.message}")
                     }
                 }
             }
@@ -1779,8 +1802,34 @@ class PontoActivity : AppCompatActivity() {
                     }
                     startCamera()
                 } else {
-                    Toast.makeText(this, "Permissões de câmera necessárias", Toast.LENGTH_LONG).show()
-                    finish()
+                    // Verificar quais permissões foram negadas
+                    val deniedPermissions = mutableListOf<String>()
+                    for (i in permissions.indices) {
+                        if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
+                            deniedPermissions.add(permissions[i])
+                        }
+                    }
+                    
+                    Log.e(TAG, "❌ Permissões negadas: ${deniedPermissions.joinToString(", ")}")
+                    
+                    val message = when {
+                        deniedPermissions.contains(Manifest.permission.CAMERA) -> 
+                            "❌ Permissão de câmera negada!\n\nPara reconhecimento facial, você precisa permitir o acesso à câmera.\n\nVá em Configurações > Apps > iFace Offline > Permissões e ative a câmera."
+                        deniedPermissions.contains(Manifest.permission.READ_MEDIA_IMAGES) -> 
+                            "❌ Permissão de mídia negada!\n\nPara processar imagens, você precisa permitir o acesso às imagens.\n\nVá em Configurações > Apps > iFace Offline > Permissões e ative 'Fotos e vídeos'."
+                        deniedPermissions.contains(Manifest.permission.POST_NOTIFICATIONS) -> 
+                            "❌ Permissão de notificação negada!\n\nPara receber avisos do app, você precisa permitir notificações.\n\nVá em Configurações > Apps > iFace Offline > Permissões e ative 'Notificações'."
+                        deniedPermissions.contains(Manifest.permission.WRITE_EXTERNAL_STORAGE) -> 
+                            "❌ Permissão de armazenamento negada!\n\nPara processar imagens, você precisa permitir o acesso ao armazenamento.\n\nVá em Configurações > Apps > iFace Offline > Permissões e ative 'Armazenamento'."
+                        else -> "❌ Permissões necessárias foram negadas!\n\nVá em Configurações > Apps > iFace Offline > Permissões e ative todas as permissões."
+                    }
+                    
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                    
+                    // Aguardar um pouco antes de fechar para o usuário ler a mensagem
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        finish()
+                    }, 3000)
                 }
             }
             REQUEST_CODE_LOCATION_PERMISSIONS -> {
@@ -1793,6 +1842,12 @@ class PontoActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    override fun onBackPressed() {
+        // ✅ CORREÇÃO: Não permitir voltar - manter na tela de ponto
+        Log.d(TAG, "🔒 Botão voltar bloqueado - mantendo na tela de ponto")
+        Toast.makeText(this, "🔒 Use o botão 'Voltar' na tela para sair", Toast.LENGTH_SHORT).show()
     }
 
     override fun onDestroy() {

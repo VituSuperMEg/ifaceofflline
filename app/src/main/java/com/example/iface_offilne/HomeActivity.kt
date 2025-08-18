@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.example.iface_offilne.databinding.ActivityHomeBinding
+import com.example.iface_offilne.helpers.PermissaoHelper
 
 class HomeActivity : AppCompatActivity() {
 
@@ -15,34 +16,47 @@ class HomeActivity : AppCompatActivity() {
         binding = ActivityHomeBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // ✅ NOVO: Sistema de permissões implementado
+        val permissaoHelper = PermissaoHelper(this)
+        
         // Card Usuários
         binding.cardUsuarios.setOnClickListener {
-            val screen = Intent(this@HomeActivity, UsuariosActivity::class.java)
-            startActivity(screen)
+            permissaoHelper.verificarPermissaoFuncionarios {
+                val screen = Intent(this@HomeActivity, UsuariosActivity::class.java)
+                startActivity(screen)
+            }
         }
 
         // Card Funcionários
         binding.cardFuncionarios.setOnClickListener {
-            val screen = Intent(this@HomeActivity, FuncionariosActivity::class.java)
-            startActivity(screen)
+            permissaoHelper.verificarPermissaoFuncionarios {
+                val screen = Intent(this@HomeActivity, FuncionariosActivity::class.java)
+                startActivity(screen)
+            }
         }
 
         // Card Registrar Ponto
         binding.cardRegistrarPonto.setOnClickListener {
-            val screen = Intent(this@HomeActivity, FaceRecognitionActivity::class.java)
-            startActivity(screen)
+            permissaoHelper.verificarPermissaoPontos {
+                val screen = Intent(this@HomeActivity, FaceRecognitionActivity::class.java)
+                startActivity(screen)
+            }
         }
 
         // Card Visualizar Pontos (Relatórios)
         binding.cardVisualizarPontos.setOnClickListener {
-            val screen = Intent(this@HomeActivity, VisualizarPontosActivity::class.java)
-            startActivity(screen)
+            permissaoHelper.verificarPermissaoRelatorios {
+                val screen = Intent(this@HomeActivity, VisualizarPontosActivity::class.java)
+                startActivity(screen)
+            }
         }
 
         // Card Configurações
         binding.cardConfiguracoes.setOnClickListener {
-            val screen = Intent(this@HomeActivity, ConfiguracoesActivity::class.java)
-            startActivity(screen)
+            permissaoHelper.verificarPermissaoConfiguracoes {
+                val screen = Intent(this@HomeActivity, ConfiguracoesActivity::class.java)
+                startActivity(screen)
+            }
         }
     }
 }

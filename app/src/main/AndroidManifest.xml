@@ -12,6 +12,9 @@
 
     <!-- Para Android 13+ (API 33+) - permissões mais específicas -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    
+    <!-- Para Android 14+ (API 34+) - permissões de notificação -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Features de hardware -->
     <uses-feature android:name="android.hardware.camera.any" />

@@ -80,7 +80,7 @@
                 android:inputType="text"
                 android:maxLines="1" />
 
-        </com.google.android.material.textfield.TextInputLayout>
+                </com.google.android.material.textfield.TextInputLayout>
 
         <!-- RecyclerView responsivo -->
         <androidx.recyclerview.widget.RecyclerView

@@ -243,7 +243,11 @@ class ConfiguracoesActivity : AppCompatActivity() {
             if (sincronizacaoAtiva) {
                 Log.d("ConfiguracoesActivity", "✅ Configurando alarme: sincronização ativa com intervalo de $intervalo horas")
                 sincronizacaoService.configurarAlarme(this, 0, 0, intervalo) // ✅ CORREÇÃO: Usar tempo atual
-                Toast.makeText(this, "⏰ Alarme configurado para $intervalo hora(s)", Toast.LENGTH_LONG).show()
+                
+                // ✅ NOVO: Iniciar sincronização imediatamente
+                sincronizacaoService.iniciarSincronizacaoImediata(this)
+                
+                Toast.makeText(this, "⏰ Alarme configurado para $intervalo hora(s) - Sincronização iniciada!", Toast.LENGTH_LONG).show()
             } else {
                 Log.d("ConfiguracoesActivity", "❌ Cancelando alarme: sincronização desativada")
                 sincronizacaoService.cancelarAlarme(this)
