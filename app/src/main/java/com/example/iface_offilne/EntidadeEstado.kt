@@ -1,6 +1,7 @@
 package com.example.iface_offilne
 
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -22,12 +23,16 @@ import kotlinx.coroutines.launch
 class EntidadeEstado : AppCompatActivity() {
 
     private lateinit var binding: ActivityEntidadeEstadoBinding
+    private lateinit var sharedPreferences: SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         binding = ActivityEntidadeEstadoBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // ✅ NOVO: Inicializar SharedPreferences
+        sharedPreferences = getSharedPreferences("LoginPrefs", MODE_PRIVATE)
 
         val estado = intent.getStringExtra("estado")
         SessionManager.estadoBr = estado.toString()
@@ -81,6 +86,19 @@ class EntidadeEstado : AppCompatActivity() {
         binding.btnEntidadeEstadoConfirmar.backgroundTintList = null
 
         binding.btnEntidadeEstadoConfirmar.setOnClickListener {
+            // ✅ NOVO: Salvar dados da entidade no SharedPreferences
+            val entidade = SessionManager.entidade
+            if (entidade != null) {
+                val editor = sharedPreferences.edit()
+                editor.putString("saved_entidade_id", entidade.id)
+                editor.putString("saved_entidade_name", entidade.name)
+                editor.putString("saved_estado", SessionManager.estadoBr)
+                editor.putString("saved_municipio", SessionManager.municipio)
+                editor.apply()
+                
+                Log.d("EntidadeEstado", "💾 Dados da entidade salvos: ${entidade.name}")
+            }
+            
             val intent = Intent(this, Login::class.java)
             startActivity(intent)
         }

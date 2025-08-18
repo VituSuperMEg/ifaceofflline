@@ -437,6 +437,12 @@ class PontoActivity : AppCompatActivity() {
                 }
             }
             
+            // ✅ NOVO: Configurar botão voltar
+            findViewById<Button>(R.id.btnSair).setOnClickListener {
+                Log.d(TAG, "🔙 Usuário clicou em voltar")
+                onBackPressed() // Chama o mesmo método do botão físico
+            }
+            
             // Removido: long press que abria AlertDialogs de análise para manter a tela limpa
             binding.btnVoltar.setOnLongClickListener {
                 Log.d(TAG, "🔕 Long press desativado nesta tela")
@@ -1845,9 +1851,23 @@ class PontoActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
-        // ✅ CORREÇÃO: Não permitir voltar - manter na tela de ponto
-        Log.d(TAG, "🔒 Botão voltar bloqueado - mantendo na tela de ponto")
-        Toast.makeText(this, "🔒 Use o botão 'Voltar' na tela para sair", Toast.LENGTH_SHORT).show()
+        // ✅ CORREÇÃO: Permitir sair da tela de ponto com confirmação
+        Log.d(TAG, "🔙 Botão voltar pressionado - confirmando saída")
+        
+        AlertDialog.Builder(this)
+            .setTitle("Sair da Tela de Ponto")
+            .setMessage("Tem certeza que deseja sair da tela de registro de ponto?")
+            .setPositiveButton("Sim, Sair") { dialog, _ ->
+                Log.d(TAG, "✅ Usuário confirmou saída - fechando activity")
+                dialog.dismiss()
+                super.onBackPressed()
+            }
+            .setNegativeButton("Cancelar") { dialog, _ ->
+                Log.d(TAG, "❌ Usuário cancelou saída - mantendo na tela")
+                dialog.dismiss()
+            }
+            .setCancelable(true)
+            .show()
     }
 
     override fun onDestroy() {

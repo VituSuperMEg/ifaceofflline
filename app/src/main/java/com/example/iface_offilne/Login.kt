@@ -143,8 +143,13 @@ class Login : AppCompatActivity() {
         editor.remove("saved_cpf")
         editor.remove("saved_senha")
         editor.remove("manter_logado")
+        // ✅ NOVO: Limpar também dados da entidade
+        editor.remove("saved_entidade_id")
+        editor.remove("saved_entidade_name")
+        editor.remove("saved_estado")
+        editor.remove("saved_municipio")
         editor.apply()
-        Log.d("Login", "🗑️ Dados de login limpos")
+        Log.d("Login", "🗑️ Dados de login e entidade limpos")
     }
 
 

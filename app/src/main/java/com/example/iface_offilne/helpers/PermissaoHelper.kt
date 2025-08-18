@@ -26,6 +26,7 @@ class PermissaoHelper(private val context: Context) {
         const val MENU_CADASTRO_FACE = "cadastro_face"
         const val MENU_RELATORIOS = "relatorios"
         const val MENU_ADMIN = "admin"
+        const val MENU_HOME = "home"
     }
     
     private val apiService = RetrofitClient.instance

@@ -15,6 +15,7 @@ import com.example.iface_offilne.data.FuncionariosEntity
 import com.example.iface_offilne.data.api.RetrofitClient
 import com.example.iface_offilne.data.dao.FuncionarioDao
 import com.example.iface_offilne.databinding.ActivityFuncionariosBinding
+import com.example.iface_offilne.helpers.PermissaoHelper
 import com.example.iface_offilne.models.FuncionariosLocalModel
 import com.example.iface_offilne.models.FuncionariosModel
 import com.example.iface_offilne.util.SessionManager
@@ -148,6 +149,42 @@ class FuncionariosActivity : AppCompatActivity() {
         loadFuncionarios()
     }
     
+    // ✅ NOVO: Verificar permissão de home antes de voltar
+    override fun onBackPressed() {
+        Log.d("FuncionariosActivity", "🔙 Botão voltar pressionado - verificando permissão de home")
+        
+        // ✅ TESTE TEMPORÁRIO: Verificar se entidade está configurada
+        val entidade = SessionManager.entidade?.id
+        if (entidade.isNullOrEmpty()) {
+            Log.w("FuncionariosActivity", "⚠️ Entidade não configurada - voltando sem verificação")
+            super.onBackPressed()
+            return
+        }
+        
+        val permissaoHelper = PermissaoHelper(this)
+        permissaoHelper.verificarPermissao(
+            menu = PermissaoHelper.MENU_HOME,
+            onSuccess = {
+                Log.d("FuncionariosActivity", "✅ Permissão de home concedida - voltando")
+                try {
+                    super.onBackPressed()
+                } catch (e: Exception) {
+                    Log.e("FuncionariosActivity", "❌ Erro ao chamar super.onBackPressed(): ${e.message}")
+                    finish()
+                }
+            },
+            onError = { mensagem ->
+                Log.w("FuncionariosActivity", "❌ Permissão de home negada: $mensagem")
+                // ✅ FALLBACK: Se API falhar, permitir voltar com aviso
+                Toast.makeText(this, "⚠️ $mensagem - Voltando mesmo assim", Toast.LENGTH_LONG).show()
+                try {
+                    super.onBackPressed()
+                } catch (e: Exception) {
+                    finish()
+                }
+            }
+        )
+    }
 
     private fun loadFuncionarios() {
         isLoading = true
