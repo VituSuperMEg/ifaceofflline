@@ -110,7 +110,7 @@
         android:layout_height="wrap_content"
         android:text="VOLTAR"
         android:textSize="14sp"
-        android:background="@drawable/button_background_white_blue_selector"
+        android:background="@drawable/button_background_black_blue_selector"
         android:textColor="#FFFFFF"
         android:padding="12dp"
         android:layout_margin="8dp" />

@@ -35,6 +35,8 @@ class FuncionariosActivity : AppCompatActivity() {
     private var currentPage = 1
     private var entidadeId: String = ""
     private lateinit var model: FuncionariosModel
+    private var searchJob: kotlinx.coroutines.Job? = null
+    private var usarBuscaLocal = false // Flag para alternar entre busca backend/local
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -145,6 +147,25 @@ class FuncionariosActivity : AppCompatActivity() {
                 filtrarFuncionarios(s.toString())
             }
         })
+        
+        // Long press no campo de busca para alternar modo de busca
+        binding.editTextBusca.setOnLongClickListener {
+            usarBuscaLocal = !usarBuscaLocal
+            val modo = if (usarBuscaLocal) "LOCAL (Precisa)" else "BACKEND"
+            Toast.makeText(this, "Modo de busca: $modo", Toast.LENGTH_SHORT).show()
+            
+            // Atualizar hint do campo para mostrar o modo
+            val hintOriginal = "Buscar funcionário para importar..."
+            val hintComModo = if (usarBuscaLocal) "$hintOriginal [LOCAL]" else "$hintOriginal [BACKEND]"
+            binding.editTextBusca.hint = hintComModo
+            
+            Log.d("PESQUISA", "Modo de busca alterado para: $modo")
+            true
+        }
+        
+        // Mostrar loading inicial
+        binding.listaFuncionarios.visibility = android.view.View.GONE
+        // TODO: Adicionar ProgressBar no layout se necessário
 
         loadFuncionarios()
     }
@@ -199,8 +220,17 @@ class FuncionariosActivity : AppCompatActivity() {
                     adapter.notifyItemRangeInserted(listaFuncionarios.size - funcionarios.size, funcionarios.size)
                     currentPage++
                 }
+                
+                // Mostrar lista após carregar
+                withContext(Dispatchers.Main) {
+                    binding.listaFuncionarios.visibility = android.view.View.VISIBLE
+                }
+                
             } catch (e: Exception) {
                 Log.e("API_ERROR", "Erro ao carregar página $currentPage: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    binding.listaFuncionarios.visibility = android.view.View.VISIBLE
+                }
             } finally {
                 isLoading = false
             }
@@ -208,18 +238,137 @@ class FuncionariosActivity : AppCompatActivity() {
     }
 
     private fun filtrarFuncionarios(query: String) {
-        val queryLower = query.lowercase()
-        val funcionariosFiltrados = if (query.isEmpty()) {
-            todosFuncionarios
+        // Cancelar busca anterior se ainda estiver em andamento
+        searchJob?.cancel()
+        
+        val descricao = query.trim().uppercase()
+        
+        if (descricao.isEmpty()) {
+            // Se não há busca, carregar todos os funcionários
+            currentPage = 1
+            listaFuncionarios.clear()
+            todosFuncionarios.clear()
+            adapter.notifyDataSetChanged()
+            loadFuncionarios()
         } else {
-            todosFuncionarios.filter { funcionario ->
-                funcionario.nome.lowercase().contains(queryLower)
+            // Debounce: aguardar 500ms antes de fazer a busca
+            searchJob = lifecycleScope.launch {
+                kotlinx.coroutines.delay(500) // Aguardar 500ms
+                
+                if (usarBuscaLocal) {
+                    // Busca local mais precisa
+                    buscarLocalmente(descricao)
+                } else {
+                    // Busca no backend
+                    buscarFuncionariosNoBackend(descricao)
+                }
             }
         }
         
-        listaFuncionarios.clear()
-        listaFuncionarios.addAll(funcionariosFiltrados)
-        adapter.notifyDataSetChanged()
+        val modo = if (usarBuscaLocal) "LOCAL" else "BACKEND"
+        Log.d("PESQUISA", "Enviando descricao '$descricao' via $modo")
+    }
+    
+    private fun buscarFuncionariosNoBackend(descricao: String) {
+        isLoading = true
+        lifecycleScope.launch {
+            try {
+                val response = RetrofitClient.instance.getFuncionarios(entidadeId, 1, descricao)
+                val funcionarios = response.data ?: emptyList()
+                
+                // ✅ NOVO: Filtrar resultados no frontend para garantir precisão
+                val funcionariosFiltrados = filtrarResultadosPrecisos(funcionarios, descricao)
+                
+                listaFuncionarios.clear()
+                todosFuncionarios.clear()
+                listaFuncionarios.addAll(funcionariosFiltrados)
+                todosFuncionarios.addAll(funcionariosFiltrados)
+                
+                withContext(Dispatchers.Main) {
+                    adapter.notifyDataSetChanged()
+                    binding.listaFuncionarios.visibility = android.view.View.VISIBLE
+                    
+                    // Mostrar feedback sobre a filtragem
+                    if (funcionarios.size != funcionariosFiltrados.size) {
+                        Toast.makeText(this@FuncionariosActivity, 
+                            "Backend retornou ${funcionarios.size} resultados, filtrados para ${funcionariosFiltrados.size} resultados precisos", 
+                            Toast.LENGTH_SHORT).show()
+                    }
+                }
+                
+                Log.d("PESQUISA", "Backend retornou ${funcionarios.size} funcionários, filtrados para ${funcionariosFiltrados.size} para descricao: '$descricao'")
+                
+            } catch (e: Exception) {
+                Log.e("PESQUISA_ERROR", "Erro ao buscar funcionários no backend: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@FuncionariosActivity, "Erro na busca: ${e.message}", Toast.LENGTH_SHORT).show()
+                    binding.listaFuncionarios.visibility = android.view.View.VISIBLE
+                }
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+    
+    /**
+     * Busca localmente nos dados já carregados (mais precisa)
+     */
+    private fun buscarLocalmente(descricao: String) {
+        lifecycleScope.launch {
+            try {
+                // Se não temos dados carregados, carregar primeiro
+                if (todosFuncionarios.isEmpty()) {
+                    loadFuncionarios()
+                    return@launch
+                }
+                
+                val funcionariosFiltrados = filtrarResultadosPrecisos(todosFuncionarios, descricao)
+                
+                withContext(Dispatchers.Main) {
+                    listaFuncionarios.clear()
+                    listaFuncionarios.addAll(funcionariosFiltrados)
+                    adapter.notifyDataSetChanged()
+                    binding.listaFuncionarios.visibility = android.view.View.VISIBLE
+                    
+                    Toast.makeText(this@FuncionariosActivity, 
+                        "Busca LOCAL: ${funcionariosFiltrados.size} resultados para '$descricao'", 
+                        Toast.LENGTH_SHORT).show()
+                }
+                
+                Log.d("PESQUISA", "Busca LOCAL: ${funcionariosFiltrados.size} resultados para '$descricao'")
+                
+            } catch (e: Exception) {
+                Log.e("PESQUISA_LOCAL_ERROR", "Erro na busca local: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@FuncionariosActivity, "Erro na busca local: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+    
+    /**
+     * Filtra os resultados do backend para garantir que realmente contenham o termo buscado
+     */
+    private fun filtrarResultadosPrecisos(funcionarios: List<FuncionariosModel>, descricao: String): List<FuncionariosModel> {
+        if (descricao.isEmpty()) return funcionarios
+        
+        return funcionarios.filter { funcionario ->
+            val nome = funcionario.nome.uppercase()
+            val cargo = funcionario.cargo_descricao.uppercase()
+            val orgao = funcionario.orgao_descricao?.uppercase() ?: ""
+            val setor = funcionario.setor_descricao?.uppercase() ?: ""
+            val matricula = funcionario.matricula.uppercase()
+            val cpf = funcionario.numero_cpf.replace(Regex("[^0-9]"), "").uppercase()
+            val cpfBusca = descricao.replace(Regex("[^0-9]"), "")
+            
+            // Verificar se algum campo contém a descrição buscada
+            nome.contains(descricao) ||
+            cargo.contains(descricao) ||
+            orgao.contains(descricao) ||
+            setor.contains(descricao) ||
+            matricula.contains(descricao) ||
+            (cpfBusca.isNotEmpty() && cpf.contains(cpfBusca))
+        }
     }
 
     private fun atualizarFuncionariosExistentes() {
@@ -313,3 +462,4 @@ class FuncionariosActivity : AppCompatActivity() {
         }
     }
 }
+

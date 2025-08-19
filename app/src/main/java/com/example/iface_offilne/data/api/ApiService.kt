@@ -23,7 +23,8 @@ interface ApiService {
     @GET("/{entidade}/services/funcionarios/list")
     suspend fun getFuncionarios(
         @Path("entidade") entidade: String,
-        @Query("page") page: Int
+        @Query("page") page: Int,
+        @Query("descricao") descricao: String? = null
     ): FuncionariosResponse
 
     @POST("/{entidade}/services/util/sincronizar-ponto-table")

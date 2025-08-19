@@ -443,6 +443,9 @@ class PontoActivity : AppCompatActivity() {
                 onBackPressed() // Chama o mesmo método do botão físico
             }
             
+            // Remover backgroundTint do botão voltar
+            findViewById<Button>(R.id.btnSair).backgroundTintList = null
+            
             // Removido: long press que abria AlertDialogs de análise para manter a tela limpa
             binding.btnVoltar.setOnLongClickListener {
                 Log.d(TAG, "🔕 Long press desativado nesta tela")

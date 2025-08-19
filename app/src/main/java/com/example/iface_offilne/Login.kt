@@ -26,6 +26,9 @@ class Login : AppCompatActivity() {
         binding = ActivityLoginBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Configurar ajuste automático do layout quando o teclado aparecer
+        window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+
         // Inicializar SharedPreferences
         sharedPreferences = getSharedPreferences("LoginPrefs", MODE_PRIVATE)
 
