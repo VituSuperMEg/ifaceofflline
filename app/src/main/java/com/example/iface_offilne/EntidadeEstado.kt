@@ -19,6 +19,7 @@ import com.example.iface_offilne.data.request.EntidadeRequest
 import com.example.iface_offilne.databinding.ActivityEntidadeEstadoBinding
 import com.example.iface_offilne.util.SessionManager
 import kotlinx.coroutines.launch
+import android.widget.Toast
 
 class EntidadeEstado : AppCompatActivity() {
 
@@ -86,21 +87,38 @@ class EntidadeEstado : AppCompatActivity() {
         binding.btnEntidadeEstadoConfirmar.backgroundTintList = null
 
         binding.btnEntidadeEstadoConfirmar.setOnClickListener {
-            // ✅ NOVO: Salvar dados da entidade no SharedPreferences
+            // ✅ NOVO: Validar se entidade foi selecionada
             val entidade = SessionManager.entidade
-            if (entidade != null) {
-                val editor = sharedPreferences.edit()
-                editor.putString("saved_entidade_id", entidade.id)
-                editor.putString("saved_entidade_name", entidade.name)
-                editor.putString("saved_estado", SessionManager.estadoBr)
-                editor.putString("saved_municipio", SessionManager.municipio)
-                editor.apply()
-                
-                Log.d("EntidadeEstado", "💾 Dados da entidade salvos: ${entidade.name}")
+            if (entidade == null || entidade.id.isEmpty()) {
+                Toast.makeText(this, "❌ Por favor, selecione uma entidade", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
             }
             
-            val intent = Intent(this, Login::class.java)
-            startActivity(intent)
+            // ✅ NOVO: Salvar dados da entidade usando SessionManager
+            try {
+                val sucesso = SessionManager.saveEntidadeToPreferences(this)
+                
+                if (sucesso) {
+                    Log.d("EntidadeEstado", "💾 Dados da entidade salvos: ${entidade.name} (${entidade.id})")
+                    
+                    // ✅ NOVO: Mostrar confirmação
+                    Toast.makeText(this, "✅ Entidade configurada: ${entidade.name}", Toast.LENGTH_LONG).show()
+                    
+                    // ✅ NOVO: Aguardar um pouco antes de navegar
+                    binding.root.postDelayed({
+                        val intent = Intent(this, Login::class.java)
+                        startActivity(intent)
+                        finish() // Fechar esta activity
+                    }, 1500) // 1.5 segundos
+                } else {
+                    Log.e("EntidadeEstado", "❌ Falha ao salvar entidade")
+                    Toast.makeText(this, "❌ Erro ao salvar entidade", Toast.LENGTH_LONG).show()
+                }
+                
+            } catch (e: Exception) {
+                Log.e("EntidadeEstado", "❌ Erro ao salvar entidade: ${e.message}")
+                Toast.makeText(this, "❌ Erro ao salvar entidade: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 }

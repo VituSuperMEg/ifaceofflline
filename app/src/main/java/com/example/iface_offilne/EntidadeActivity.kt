@@ -16,6 +16,11 @@ import com.example.iface_offilne.cities.Ceara
 import com.example.iface_offilne.databinding.ActivityEntidadeBinding
 import com.example.iface_offilne.databinding.ActivityMainBinding
 import android.widget.Button
+import com.example.iface_offilne.service.SincronizacaoService
+import com.example.iface_offilne.util.ConfiguracoesManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class EntidadeActivity: AppCompatActivity() {
 
@@ -97,26 +102,22 @@ class EntidadeActivity: AppCompatActivity() {
         val manterLogado = sharedPreferences.getBoolean("manter_logado", false)
         val savedCpf = sharedPreferences.getString("saved_cpf", "")
         val savedSenha = sharedPreferences.getString("saved_senha", "")
-        val savedEntidadeId = sharedPreferences.getString("saved_entidade_id", "")
-        val savedEntidadeName = sharedPreferences.getString("saved_entidade_name", "")
-        val savedEstado = sharedPreferences.getString("saved_estado", "")
-        val savedMunicipio = sharedPreferences.getString("saved_municipio", "")
 
         if (manterLogado && !savedCpf.isNullOrEmpty() && !savedSenha.isNullOrEmpty()) {
             Log.d("EntidadeActivity", "🔄 Usuário já logado - verificando entidade...")
             
-            // Restaurar dados da entidade se estiverem salvos
-            if (!savedEntidadeId.isNullOrEmpty() && !savedEntidadeName.isNullOrEmpty()) {
-                Log.d("EntidadeActivity", "✅ Restaurando entidade salva: $savedEntidadeName")
+            // ✅ NOVO: Usar método do SessionManager para restaurar entidade
+            val entidadeRestaurada = com.example.iface_offilne.util.SessionManager.restoreEntidadeFromPreferences(this)
+            
+            if (entidadeRestaurada) {
+                Log.d("EntidadeActivity", "✅ Entidade restaurada com sucesso")
                 
-                // Restaurar dados no SessionManager
-                com.example.iface_offilne.util.SessionManager.entidade = 
-                    com.example.iface_offilne.data.Entidade(
-                        id = savedEntidadeId,
-                        name = savedEntidadeName
-                    )
-                com.example.iface_offilne.util.SessionManager.estadoBr = savedEstado
-                com.example.iface_offilne.util.SessionManager.municipio = savedMunicipio
+                // ✅ NOVO: Configurar alarme de sincronização antes de navegar
+                configurarAlarmeSincronizacaoInicial()
+                
+                // ✅ NOVO: Mostrar confirmação
+                val entidadeName = com.example.iface_offilne.util.SessionManager.getEntidadeName()
+                Toast.makeText(this, "✅ Entidade restaurada: $entidadeName", Toast.LENGTH_SHORT).show()
                 
                 // Navegar direto para Home
                 val intent = Intent(this, com.example.iface_offilne.HomeActivity::class.java)
@@ -124,9 +125,47 @@ class EntidadeActivity: AppCompatActivity() {
                 finish() // Fechar esta activity para não voltar
             } else {
                 Log.d("EntidadeActivity", "⚠️ Usuário logado mas entidade não configurada - continuando fluxo normal")
+                Toast.makeText(this, "⚠️ Entidade não configurada - configure uma entidade", Toast.LENGTH_SHORT).show()
             }
         } else {
             Log.d("EntidadeActivity", "ℹ️ Usuário não logado - fluxo normal de configuração")
+        }
+    }
+    
+    /**
+     * ✅ NOVO: Configura o alarme de sincronização na inicialização do app
+     * Executado quando o usuário já está logado e vai direto para a Home
+     */
+    private fun configurarAlarmeSincronizacaoInicial() {
+        Log.d("EntidadeActivity", "🔧 === CONFIGURANDO ALARME DE SINCRONIZAÇÃO INICIAL ===")
+        
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Verificar se a sincronização está ativa
+                val sincronizacaoAtiva = ConfiguracoesManager.isSincronizacaoAtiva(this@EntidadeActivity)
+                val intervalo = ConfiguracoesManager.getIntervaloSincronizacao(this@EntidadeActivity)
+                
+                Log.d("EntidadeActivity", "🔍 Status da sincronização: ativa=$sincronizacaoAtiva, intervalo=${intervalo}h")
+                
+                if (sincronizacaoAtiva) {
+                    Log.d("EntidadeActivity", "✅ Sincronização ativa - configurando alarme na inicialização")
+                    
+                    // Configurar alarme
+                    val sincronizacaoService = SincronizacaoService()
+                    sincronizacaoService.configurarAlarme(this@EntidadeActivity, 0, 0, intervalo)
+                    
+                    // Verificar status do alarme
+                    sincronizacaoService.verificarStatusAlarme(this@EntidadeActivity)
+                    
+                    Log.d("EntidadeActivity", "✅ Alarme de sincronização configurado na inicialização para $intervalo hora(s)")
+                } else {
+                    Log.d("EntidadeActivity", "ℹ️ Sincronização desativada - alarme não configurado na inicialização")
+                }
+                
+            } catch (e: Exception) {
+                Log.e("EntidadeActivity", "❌ Erro ao configurar alarme inicial: ${e.message}")
+                e.printStackTrace()
+            }
         }
     }
 }

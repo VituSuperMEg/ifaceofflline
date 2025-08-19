@@ -74,17 +74,17 @@ class PontoActivity : AppCompatActivity() {
     private var currentFaceBitmap: Bitmap? = null // Para armazenar a foto da face
     private var cameraProvider: ProcessCameraProvider? = null // ✅ NOVO: Referência para limpar camera
     private var lastProcessingTime = 0L // ✅ NOVA: Controle de timeout
-    private var processingTimeout = 5000L // ✅ OTIMIZAÇÃO: 5 segundos de timeout
+    private var processingTimeout = 10000L // ✅ CORREÇÃO: 10 segundos de timeout (aumentado)
     private var pontoJaRegistrado = false // ✅ NOVA: Controle para evitar registros duplicados
     private var ultimoFuncionarioReconhecido: String? = null // ✅ NOVA: Controle do último funcionário
     
-    // ✅ SISTEMA DE TIMEOUT MELHORADO: Mais estável e robusto
+    // ✅ SISTEMA DE TIMEOUT DESABILITADO: App nunca fecha automaticamente
     private var lastFaceDetectionTime = 0L // Última vez que detectou uma face
-    private var noFaceTimeout = 300000L // ✅ CORREÇÃO: 5 minutos sem detectar face (aumentado)
+    private var noFaceTimeout = Long.MAX_VALUE // ✅ CORREÇÃO: Timeout desabilitado (valor máximo)
     private var activityStartTime = 0L // Tempo de início da activity
-    private var maxActivityTime = 600000L // ✅ CORREÇÃO: 10 minutos máximo na tela (aumentado)
+    private var maxActivityTime = Long.MAX_VALUE // ✅ CORREÇÃO: Timeout desabilitado (valor máximo)
     private var timeoutPausado = false // Para pausar timeout durante processamento importante
-    private var monitorHandler: Handler? = null // ✅ NOVA: Handler dedicado para controle
+    private var monitorHandler: Handler? = null // Handler dedicado para controle
 
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 10
@@ -292,12 +292,31 @@ class PontoActivity : AppCompatActivity() {
             }
         }
         
-        // ✅ NOVA FUNÇÃO: Monitor de estado para evitar travamento
+        // ✅ NOVA FUNÇÃO CRÍTICA: Verificar qualidade dos embeddings
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val relatorioQualidade = faceRecognitionHelper?.verificarQualidadeEmbeddings()
+                Log.d(TAG, "🔍 Relatório de qualidade: $relatorioQualidade")
+                
+                // Se houver problemas, mostrar alerta
+                if (relatorioQualidade?.contains("❌") == true || relatorioQualidade?.contains("⚠️") == true) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@PontoActivity, 
+                            "⚠️ Problemas detectados nos cadastros faciais!\nVerifique os logs para detalhes.", 
+                            Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao verificar qualidade: ${e.message}")
+            }
+        }
+        
+        // ✅ NOVA: Monitor de estado para evitar travamento
         startStateMonitor()
     }
     
     /**
-     * ✅ MONITOR DE ESTADO OTIMIZADO: Menos agressivo e mais estável
+     * ✅ MONITOR DE ESTADO DESABILITADO: App nunca fecha automaticamente
      */
     private fun startStateMonitor() {
         try {
@@ -316,77 +335,40 @@ class PontoActivity : AppCompatActivity() {
                             return
                         }
                         
-                        val currentTime = System.currentTimeMillis()
+                        // ✅ CORREÇÃO: Monitor desabilitado - apenas logs informativos
+                        val tempoAtual = System.currentTimeMillis()
+                        val tempoSemFace = tempoAtual - lastFaceDetectionTime
+                        val tempoTotal = tempoAtual - activityStartTime
                         
-                        // ✅ OTIMIZAÇÃO: Verificações menos frequentes e mais suaves
-                        val timeSinceLastFace = currentTime - lastFaceDetectionTime
-                        val totalActivityTime = currentTime - activityStartTime
-                        
-                        // ✅ OTIMIZAÇÃO: Timeout mais longo e menos agressivo
-                        if (!timeoutPausado && !processandoFace) {
-                            if (totalActivityTime > maxActivityTime) {
-                                Log.w(TAG, "⏱️ Tempo máximo da activity atingido (${totalActivityTime/1000}s) - mantendo na tela de ponto")
-                                // Apenas informar e manter na tela
-                                statusText.text = "⏱️ Sessão longa. Continue posicionando o rosto."
-                            }
-                            // Verificar timeout de face e apenas resetar dicas, sem navegar
-                            if (timeSinceLastFace > noFaceTimeout) {
-                                Log.w(TAG, "⏱️ Timeout sem detectar face (${timeSinceLastFace/1000}s) - permanecendo na tela")
-                                statusText.text = "📷 Não detectei rosto há um tempo. Posicione seu rosto na câmera."
-                            }
+                        // ✅ NOVA: Apenas logs informativos, SEM fechar o app
+                        if (tempoSemFace > 30000) { // 30 segundos
+                            Log.d(TAG, "⏰ ${tempoSemFace/1000}s sem detectar face (monitor ativo)")
+                        } else {
+                            // Monitor ativo mas tempo normal
                         }
                         
-                        // ✅ OTIMIZAÇÃO: Verificar travamento com timeout maior e menos agressivo
-                        if (processandoFace) {
-                            val timeSinceStart = currentTime - lastProcessingTime
-                            if (timeSinceStart > processingTimeout * 3) { // Triplicar o timeout para ser menos agressivo
-                                Log.w(TAG, "⚠️ Processamento travado há ${timeSinceStart}ms - resetando suavemente")
-                                runOnUiThread {
-                                    try {
-                                        forcarResetEstado()
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "❌ Erro ao resetar estado: ${e.message}")
-                                    }
-                                }
-                            }
+                        if (tempoTotal > 300000) { // 5 minutos
+                            Log.d(TAG, "⏰ ${tempoTotal/1000}s de atividade (monitor ativo)")
+                        } else {
+                            // Tempo total normal
                         }
                         
-                        // ✅ OTIMIZAÇÃO: Verificar modelo com menos frequência
-                        if (!modelLoaded && (currentTime % 60000 < 10000)) { // A cada 60s por 10s
-                            CoroutineScope(Dispatchers.IO).launch {
-                                try {
-                                    loadTensorFlowModel()
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "❌ Erro ao recarregar modelo: ${e.message}")
-                                }
-                            }
-                        }
-                        
-                        // ✅ NOVA: Verificar uso de memória periodicamente
-                        if (currentTime % 30000 < 5000) { // A cada 30s
-                            logMemoryUsage("Monitor")
-                        }
+                        // ✅ CORREÇÃO: Continuar monitoramento sem fechar
+                        monitorHandler?.postDelayed(this, 30000) // Verificar a cada 30 segundos
                         
                     } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro no monitor (ignorando): ${e.message}")
-                    }
-                    
-                    // ✅ OTIMIZAÇÃO: Reagendar apenas se activity ainda for válida
-                    try {
-                        if (!isFinishing && !isDestroyed && monitorHandler != null) {
-                            monitorHandler?.postDelayed(this, 10000) // ✅ OTIMIZAÇÃO: 10 segundos (menos frequente)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro ao reagendar monitor: ${e.message}")
+                        Log.e(TAG, "❌ Erro no monitor de estado: ${e.message}")
                     }
                 }
             }
             
-            // ✅ OTIMIZAÇÃO: Iniciar monitor com delay inicial
-            monitorHandler?.postDelayed(monitorRunnable, 10000)
+            // ✅ CORREÇÃO: Iniciar monitoramento sem timeout
+            monitorHandler?.post(monitorRunnable)
+            
+            Log.d(TAG, "🔄 Monitor de estado iniciado (timeout desabilitado)")
             
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao iniciar monitor: ${e.message}")
+            Log.e(TAG, "❌ Erro ao iniciar monitor de estado: ${e.message}")
         }
     }
     
@@ -395,11 +377,30 @@ class PontoActivity : AppCompatActivity() {
      */
     private fun stopStateMonitor() {
         try {
-            monitorHandler?.removeCallbacksAndMessages(null)
+            Log.d(TAG, "🛑 === PARANDO MONITOR DE ESTADO ===")
+            
+            // ✅ CRÍTICO: Remover todas as callbacks pendentes
+            monitorHandler?.let { handler ->
+                try {
+                    handler.removeCallbacksAndMessages(null)
+                    Log.d(TAG, "🧹 Callbacks do monitor removidas")
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ Erro ao remover callbacks: ${e.message}")
+                }
+            }
+            
+            // ✅ CRÍTICO: Limpar referência do handler
             monitorHandler = null
             Log.d(TAG, "✅ Monitor de estado parado")
+            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao parar monitor: ${e.message}")
+            // ✅ CRÍTICO: Limpeza de emergência
+            try {
+                monitorHandler = null
+            } catch (e2: Exception) {
+                Log.e(TAG, "❌ Erro na limpeza de emergência: ${e2.message}")
+            }
         }
     }
 
@@ -547,7 +548,6 @@ class PontoActivity : AppCompatActivity() {
                 throw IllegalStateException("Interpreter não foi criado")
             }
             
-            // Verificar dimensões do modelo
             val inputTensor = interpreter?.getInputTensor(0)
             val outputTensor = interpreter?.getOutputTensor(0)
             
@@ -559,7 +559,6 @@ class PontoActivity : AppCompatActivity() {
                 Log.d(TAG, "   Input: ${inputShape.contentToString()}")
                 Log.d(TAG, "   Output: ${outputShape.contentToString()}")
                 
-                // Atualizar dimensões baseado no modelo real
                 if (inputShape.size >= 4) {
                     modelInputHeight = inputShape[1]
                     modelInputWidth = inputShape[2]
@@ -584,72 +583,186 @@ class PontoActivity : AppCompatActivity() {
     private fun startCamera() {
         Log.d(TAG, "📷 === INICIANDO CÂMERA ===")
         
-        // ✅ CORREÇÃO: Limpar camera anterior se existir
-        stopCamera()
-        
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-
-        cameraProviderFuture.addListener({
-            try {
-                // ✅ CORREÇÃO: Verificar se activity ainda é válida
-                if (isFinishing || isDestroyed) {
-                    Log.w(TAG, "⚠️ Activity finalizada, cancelando inicialização da câmera")
-                    return@addListener
-                }
-                
-                cameraProvider = cameraProviderFuture.get()
-
-                val preview = Preview.Builder()
-                    .setTargetResolution(android.util.Size(800, 600)) // ✅ CORREÇÃO: Resolução menor para economizar memória
-                    .build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
+        try {
+            // ✅ CRÍTICO: Verificar se activity ainda é válida
+            if (isFinishing || isDestroyed) {
+                Log.w(TAG, "⚠️ Activity finalizada, cancelando inicialização da câmera")
+                return
+            }
+            
+            // ✅ CRÍTICO: Verificar permissões antes de iniciar
+            if (!allPermissionsGranted()) {
+                Log.w(TAG, "⚠️ Permissões não concedidas, cancelando inicialização da câmera")
+                return
+            }
+            
+            // ✅ CRÍTICO: Limpar camera anterior se existir
+            stopCamera()
+            
+            // ✅ CRÍTICO: Aguardar um pouco para garantir que a câmera anterior foi liberada
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    // ✅ CRÍTICO: Verificar novamente se activity ainda é válida
+                    if (isFinishing || isDestroyed) {
+                        Log.w(TAG, "⚠️ Activity finalizada durante delay, cancelando inicialização da câmera")
+                        return@postDelayed
                     }
+                    
+                    val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
-                imageAnalyzer = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .setTargetResolution(android.util.Size(640, 480)) // ✅ CORREÇÃO: Resolução menor para análise
-                    .build()
-                    .also {
-                        it.setAnalyzer(ContextCompat.getMainExecutor(this)) { imageProxy ->
-                            // ✅ CORREÇÃO: Verificar se activity ainda é válida antes de processar
-                            if (!isFinishing && !isDestroyed) {
-                                processImage(imageProxy)
-                            } else {
-                                imageProxy.close()
+                    cameraProviderFuture.addListener({
+                        try {
+                            // ✅ CRÍTICO: Verificar se activity ainda é válida
+                            if (isFinishing || isDestroyed) {
+                                Log.w(TAG, "⚠️ Activity finalizada, cancelando inicialização da câmera")
+                                return@addListener
+                            }
+                            
+                            cameraProvider = cameraProviderFuture.get()
+
+                            val preview = Preview.Builder()
+                                .setTargetResolution(android.util.Size(800, 600)) // ✅ CORREÇÃO: Resolução menor para economizar memória
+                                .build().also {
+                                    it.setSurfaceProvider(previewView.surfaceProvider)
+                                }
+
+                            imageAnalyzer = ImageAnalysis.Builder()
+                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                .setTargetResolution(android.util.Size(640, 480)) // ✅ CORREÇÃO: Resolução menor para análise
+                                .build()
+                                .also {
+                                    it.setAnalyzer(ContextCompat.getMainExecutor(this)) { imageProxy ->
+                                        // ✅ CRÍTICO: Verificar se activity ainda é válida antes de processar
+                                        if (!isFinishing && !isDestroyed) {
+                                            processImage(imageProxy)
+                                        } else {
+                                            imageProxy.close()
+                                        }
+                                    }
+                                }
+
+                            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+
+                            try {
+                                cameraProvider?.unbindAll()
+                                cameraProvider?.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
+                                Log.d(TAG, "✅ Câmera iniciada com sucesso")
+                            } catch (exc: Exception) {
+                                Log.e(TAG, "❌ Falha ao iniciar câmera", exc)
+                                // ✅ CRÍTICO: Tentar limpeza em caso de erro
+                                try {
+                                    stopCamera()
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "❌ Erro na limpeza após falha: ${e.message}")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro crítico ao iniciar câmera: ${e.message}")
+                            e.printStackTrace()
+                            // ✅ CRÍTICO: Tentar limpeza em caso de erro
+                            try {
+                                stopCamera()
+                            } catch (e2: Exception) {
+                                Log.e(TAG, "❌ Erro na limpeza após erro crítico: ${e2.message}")
                             }
                         }
-                    }
 
-                val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
-
-                try {
-                    cameraProvider?.unbindAll()
-                    cameraProvider?.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
-                    Log.d(TAG, "✅ Câmera iniciada com sucesso")
-                } catch (exc: Exception) {
-                    Log.e(TAG, "❌ Falha ao iniciar câmera", exc)
+                    }, ContextCompat.getMainExecutor(this))
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro ao agendar inicialização da câmera: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro crítico ao iniciar câmera: ${e.message}")
-                e.printStackTrace()
-            }
-
-        }, ContextCompat.getMainExecutor(this))
+            }, 500) // ✅ CRÍTICO: Aguardar 500ms para garantir liberação da câmera anterior
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro crítico no startCamera: ${e.message}")
+            e.printStackTrace()
+        }
     }
     
     // ✅ NOVA FUNÇÃO: Parar câmera de forma segura
     private fun stopCamera() {
         try {
-            cameraProvider?.unbindAll()
-            cameraProvider = null
-            Log.d(TAG, "📷 Câmera parada com sucesso")
+            Log.d(TAG, "📷 === PARANDO CÂMERA ===")
+            
+            // ✅ CRÍTICO: Verificar se activity ainda é válida
+            if (isFinishing || isDestroyed) {
+                Log.w(TAG, "⚠️ Activity finalizada, cancelando parada da câmera")
+                return
+            }
+            
+            // ✅ CRÍTICO: Parar imageAnalyzer primeiro
+            try {
+                if (::imageAnalyzer.isInitialized) {
+                    imageAnalyzer.clearAnalyzer()
+                    Log.d(TAG, "🔍 ImageAnalyzer parado")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Erro ao parar imageAnalyzer: ${e.message}")
+            }
+            
+            // ✅ CRÍTICO: Desvincular todos os use cases
+            try {
+                cameraProvider?.let { provider ->
+                    provider.unbindAll()
+                    Log.d(TAG, "🔗 Use cases desvinculados")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Erro ao desvincular use cases: ${e.message}")
+            }
+            
+            // ✅ CRÍTICO: Limpar referência do provider
+            try {
+                cameraProvider = null
+                Log.d(TAG, "📷 CameraProvider limpo")
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Erro ao limpar cameraProvider: ${e.message}")
+            }
+            
+            // ✅ CRÍTICO: Limpar overlay
+            try {
+                if (::overlay.isInitialized) {
+                    overlay.clear()
+                    Log.d(TAG, "🎯 Overlay limpo")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Erro ao limpar overlay: ${e.message}")
+            }
+            
+            // ✅ CRÍTICO: Resetar estado de processamento
+            try {
+                processandoFace = false
+                lastProcessingTime = 0L
+                Log.d(TAG, "🔄 Estado de processamento resetado")
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Erro ao resetar estado: ${e.message}")
+            }
+            
+            Log.d(TAG, "✅ Câmera parada com sucesso")
+            
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao parar câmera: ${e.message}")
+            Log.e(TAG, "❌ Erro crítico ao parar câmera: ${e.message}")
+            // ✅ CRÍTICO: Tentar limpeza de emergência
+            try {
+                cameraProvider = null
+                processandoFace = false
+                lastProcessingTime = 0L
+                Log.d(TAG, "🚨 Limpeza de emergência da câmera realizada")
+            } catch (e2: Exception) {
+                Log.e(TAG, "❌ Erro na limpeza de emergência: ${e2.message}")
+            }
         }
     }
 
     private fun processImage(imageProxy: ImageProxy) {
         try {
+            // ✅ CRÍTICO: Verificar se activity ainda é válida
+            if (isFinishing || isDestroyed) {
+                Log.w(TAG, "⚠️ Activity finalizada, fechando imageProxy")
+                imageProxy.close()
+                return
+            }
+            
             val mediaImage = imageProxy.image
             if (mediaImage != null) {
                 // ✅ CORREÇÃO: Verificar se a imagem é válida
@@ -664,6 +777,13 @@ class PontoActivity : AppCompatActivity() {
                 faceDetector.process(image)
                     .addOnSuccessListener { faces ->
                         try {
+                            // ✅ CRÍTICO: Verificar se activity ainda é válida
+                            if (isFinishing || isDestroyed) {
+                                Log.w(TAG, "⚠️ Activity finalizada durante detecção de faces")
+                                imageProxy.close()
+                                return@addOnSuccessListener
+                            }
+                            
                             if (faces.isNotEmpty()) {
                                 val face = faces[0]
                                 
@@ -706,12 +826,18 @@ class PontoActivity : AppCompatActivity() {
                                 
                                 // ✅ OTIMIZAÇÃO: Atualizar status baseado na posição da face
                                 if (!processandoFace) {
-                                    if (faceRatio < 0.08f) {
-                                        statusText.text = "📷 Aproxime seu rosto"
-                                    } else if (!overlay.isFaceInOval(face.boundingBox)) {
-                                        statusText.text = "📷 Centre seu rosto no oval"
-                                    } else {
-                                        statusText.text = "🔍 Pronto..."
+                                    try {
+                                        if (::statusText.isInitialized && !isFinishing && !isDestroyed) {
+                                            if (faceRatio < 0.08f) {
+                                                statusText.text = "📷 Aproxime seu rosto"
+                                            } else if (!overlay.isFaceInOval(face.boundingBox)) {
+                                                statusText.text = "📷 Centre seu rosto no oval"
+                                            } else {
+                                                statusText.text = "🔍 Pronto..."
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "⚠️ Erro ao atualizar status: ${e.message}")
                                     }
                                 }
                                 
@@ -720,19 +846,31 @@ class PontoActivity : AppCompatActivity() {
                                     // ✅ CORREÇÃO: Verificar se o modelo está carregado antes de processar
                                     if (!modelLoaded || interpreter == null) {
                                         Log.w(TAG, "⚠️ Modelo não carregado, aguardando...")
-                                        statusText.text = "⏳ Carregando modelo..."
+                                        try {
+                                            if (::statusText.isInitialized && !isFinishing && !isDestroyed) {
+                                                statusText.text = "⏳ Carregando modelo..."
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.w(TAG, "⚠️ Erro ao atualizar status: ${e.message}")
+                                        }
                                         imageProxy.close()
                                         return@addOnSuccessListener
                                     }
                                     
-                                                        processandoFace = true
-                    lastProcessingTime = System.currentTimeMillis()
-                    Log.d(TAG, "👤 === INICIANDO RECONHECIMENTO FACIAL ===")
-                    
-                    // ✅ NOVA: Monitorar memória antes do processamento
-                    logMemoryUsage("Antes reconhecimento")
-                    
-                    statusText.text = "🔍 Reconhecendo..."
+                                    processandoFace = true
+                                    lastProcessingTime = System.currentTimeMillis()
+                                    Log.d(TAG, "👤 === INICIANDO RECONHECIMENTO FACIAL ===")
+                                    
+                                    // ✅ NOVA: Monitorar memória antes do processamento
+                                    logMemoryUsage("Antes reconhecimento")
+                                    
+                                    try {
+                                        if (::statusText.isInitialized && !isFinishing && !isDestroyed) {
+                                            statusText.text = "🔍 Reconhecendo..."
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "⚠️ Erro ao atualizar status: ${e.message}")
+                                    }
                                     
                                     try {
                                         // Converter para bitmap antes de fechar o proxy
@@ -812,25 +950,9 @@ class PontoActivity : AppCompatActivity() {
         // ✅ OTIMIZAÇÃO: Pausar timeout apenas durante processamento crítico
         pausarTimeout("Processando face detectada")
         
-        // ✅ OTIMIZAÇÃO: Auto-reset reduzido para 8 segundos
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (processandoFace) {
-                Log.w(TAG, "⚠️ Auto-reset do processandoFace após 8 segundos")
-                processandoFace = false
-                lastProcessingTime = 0L
-                pontoJaRegistrado = false
-                // ✅ CORREÇÃO: NÃO limpar ultimoFuncionarioReconhecido no auto-reset
-                // Só limpar no reset manual ou nova pessoa
-                try {
-                    if (::statusText.isInitialized && !isFinishing && !isDestroyed) {
-                        statusText.text = "📷 Posicione seu rosto na câmera"
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao resetar status: ${e.message}")
-                }
-                retomarTimeout("Auto-reset timeout")
-            }
-        }, 8000)
+        // ✅ CORREÇÃO: Auto-reset desabilitado para evitar fechamento do app
+        // O app deve funcionar indefinidamente sem reset automático
+        Log.d(TAG, "🔄 Processamento iniciado - sem auto-reset")
         
         // ✅ OTIMIZAÇÃO: Verificações básicas apenas
         if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
@@ -1628,21 +1750,46 @@ class PontoActivity : AppCompatActivity() {
      */
     private suspend fun verificarECorrigirProblemasReconhecimento() {
         try {
-            Log.d(TAG, "🔧 Verificando e corrigindo problemas de reconhecimento...")
+            Log.d(TAG, "🔧 === VERIFICANDO E CORRIGINDO PROBLEMAS DE RECONHECIMENTO ===")
             
-            // Executar verificação completa
-            faceRecognitionHelper?.verificarECorrigirProblemasReconhecimento()
+            // ✅ CRÍTICO: Limpar faces duplicadas primeiro
+            faceRecognitionHelper?.limparFacesDuplicadas()
             
-            // Listar problemas encontrados
+            // ✅ CRÍTICO: Verificar integridade das faces
+            faceRecognitionHelper?.verificarIntegridadeFaces()
+            
+            // ✅ CRÍTICO: Verificar qualidade dos embeddings
+            val relatorioQualidade = faceRecognitionHelper?.verificarQualidadeEmbeddings()
+            Log.d(TAG, "🔍 Relatório de qualidade: $relatorioQualidade")
+            
+            // ✅ CRÍTICO: Listar problemas encontrados
             val problemas = faceRecognitionHelper?.listarFuncionariosComProblemas()
             if (!problemas.isNullOrEmpty()) {
-                Log.w(TAG, "⚠️ Problemas encontrados:")
+                Log.w(TAG, "⚠️ PROBLEMAS CRÍTICOS ENCONTRADOS:")
                 problemas.forEach { problema ->
                     Log.w(TAG, "   $problema")
                 }
+                
+                // ✅ CRÍTICO: Mostrar alerta se houver problemas
+                withContext(Dispatchers.Main) {
+                    try {
+                        if (!isFinishing && !isDestroyed) {
+                            Toast.makeText(this@PontoActivity, 
+                                "⚠️ ${problemas.size} problema(s) detectado(s)!\nVerifique os logs para detalhes.", 
+                                Toast.LENGTH_LONG).show()
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao mostrar alerta: ${e.message}")
+                    }
+                }
             } else {
-                Log.d(TAG, "✅ Nenhum problema encontrado")
+                Log.d(TAG, "✅ Nenhum problema crítico encontrado")
             }
+            
+            // ✅ CRÍTICO: Limpar cache para garantir dados atualizados
+            faceRecognitionHelper?.clearCache()
+            
+            Log.d(TAG, "✅ Verificação e correção concluídas")
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao verificar problemas: ${e.message}")
@@ -1716,41 +1863,6 @@ class PontoActivity : AppCompatActivity() {
         timeoutPausado = false
         lastFaceDetectionTime = System.currentTimeMillis() // Reset do timer de face
         Log.d(TAG, "▶️ Timeout retomado: $motivo")
-    }
-
-    /**
-     * ✅ NOVA FUNÇÃO: Voltar para tela inicial de forma segura
-     */
-    private fun voltarParaTelaInicial(motivo: String) {
-        try {
-            Log.w(TAG, "🏠 === VOLTANDO PARA TELA INICIAL ===")
-            Log.w(TAG, "📋 Motivo: $motivo")
-            
-            // Mostrar mensagem para o usuário
-            runOnUiThread {
-                try {
-                    if (!isFinishing && !isDestroyed) {
-                        Toast.makeText(this, "Retornando à tela inicial: $motivo", Toast.LENGTH_LONG).show()
-                        
-                        // Limpar estado
-                        forcarResetEstado()
-                        
-                        // ✅ CORREÇÃO: Não navegar para outras telas - manter na tela de ponto
-                        Log.d(TAG, "✅ Mantendo na tela de ponto - não navegando para outras telas")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao processar: ${e.message}")
-                    // ✅ CORREÇÃO: Não fechar activity, apenas resetar estado
-                    try {
-                        forcarResetEstado()
-                    } catch (e2: Exception) {
-                        Log.e(TAG, "❌ Erro ao resetar estado: ${e2.message}")
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro crítico ao voltar para tela inicial: ${e.message}")
-        }
     }
 
     private fun forcarResetEstado() {
@@ -1877,9 +1989,26 @@ class PontoActivity : AppCompatActivity() {
             .setTitle("Sair da Tela de Ponto")
             .setMessage("Tem certeza que deseja sair da tela de registro de ponto?")
             .setPositiveButton("Sim, Sair") { dialog, _ ->
-                Log.d(TAG, "✅ Usuário confirmou saída - fechando activity")
+                Log.d(TAG, "✅ Usuário confirmou saída - parando câmera e fechando activity")
                 dialog.dismiss()
-                super.onBackPressed()
+                
+                // ✅ CRÍTICO: Parar câmera antes de sair
+                try {
+                    stopCamera()
+                    Log.d(TAG, "📷 Câmera parada antes de sair")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro ao parar câmera antes de sair: ${e.message}")
+                }
+                
+                // ✅ CRÍTICO: Aguardar um pouco para garantir que a câmera foi liberada
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try {
+                        super.onBackPressed()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao chamar super.onBackPressed: ${e.message}")
+                        finish()
+                    }
+                }, 200) // Aguardar 200ms
             }
             .setNegativeButton("Cancelar") { dialog, _ ->
                 Log.d(TAG, "❌ Usuário cancelou saída - mantendo na tela")
@@ -1894,26 +2023,51 @@ class PontoActivity : AppCompatActivity() {
         try {
             Log.d(TAG, "🗑️ === LIMPANDO RECURSOS NO onDestroy ===")
             
-            // ✅ OTIMIZAÇÃO: Parar monitor de estado para evitar memory leaks
+            // ✅ CRÍTICO: Parar monitor de estado ANTES de qualquer outra operação
             stopStateMonitor()
             
-            // ✅ OTIMIZAÇÃO: Parar câmera para evitar memory leaks
-            stopCamera()
+            // ✅ CRÍTICO: Parar câmera ANTES de limpar outros recursos
+            try {
+                stopCamera()
+                Log.d(TAG, "📷 Câmera parada no onDestroy")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao parar câmera no onDestroy: ${e.message}")
+            }
             
-            // ✅ OTIMIZAÇÃO: Limpar bitmap atual de forma mais segura
-            currentFaceBitmap?.let { bitmap ->
-                try {
+            // ✅ CRÍTICO: Limpar bitmap atual de forma mais segura
+            try {
+                currentFaceBitmap?.let { bitmap ->
                     if (!bitmap.isRecycled) {
                         bitmap.recycle()
-                        Log.d(TAG, "🖼️ Bitmap reciclado")
+                        Log.d(TAG, "🖼️ Bitmap reciclado no onDestroy")
                     }
-                } catch (e: Exception) {
-                    Log.w(TAG, "⚠️ Erro ao reciclar bitmap no onDestroy: ${e.message}")
                 }
+                currentFaceBitmap = null
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Erro ao reciclar bitmap no onDestroy: ${e.message}")
             }
-            currentFaceBitmap = null
             
-            // ✅ OTIMIZAÇÃO: Limpar cache do helper para liberar memória
+            // ✅ CRÍTICO: Limpar interpreter ANTES de limpar helpers
+            try {
+                interpreter?.let { interp ->
+                    interp.close()
+                    Log.d(TAG, "🤖 TensorFlow interpreter fechado")
+                }
+                interpreter = null
+                modelLoaded = false
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao fechar interpreter: ${e.message}")
+            }
+            
+            // ✅ CRÍTICO: Limpar face detector ANTES de limpar helpers
+            try {
+                faceDetector.close()
+                Log.d(TAG, "👤 Face detector fechado")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao fechar face detector: ${e.message}")
+            }
+            
+            // ✅ CRÍTICO: Limpar cache do helper para liberar memória
             try {
                 faceRecognitionHelper?.clearCache()
                 faceRecognitionHelper = null
@@ -1922,40 +2076,47 @@ class PontoActivity : AppCompatActivity() {
                 Log.e(TAG, "❌ Erro ao limpar cache: ${e.message}")
             }
             
-            // ✅ OTIMIZAÇÃO: Limpar helper de localização
-            locationHelper = null
-            
-            // ✅ OTIMIZAÇÃO: Limpar interpreter de forma mais segura
+            // ✅ CRÍTICO: Limpar helper de localização
             try {
-                if (interpreter != null) {
-                    interpreter?.close()
-                    interpreter = null
-                    Log.d(TAG, "🤖 TensorFlow interpreter fechado")
-                }
+                locationHelper = null
+                Log.d(TAG, "📍 Location helper limpo")
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao fechar interpreter: ${e.message}")
+                Log.e(TAG, "❌ Erro ao limpar location helper: ${e.message}")
             }
             
-            // ✅ OTIMIZAÇÃO: Limpar face detector de forma mais segura
+            // ✅ CRÍTICO: Resetar todas as variáveis de estado
             try {
-                faceDetector.close()
-                Log.d(TAG, "👤 Face detector fechado")
+                processandoFace = false
+                lastProcessingTime = 0L
+                pontoJaRegistrado = false
+                ultimoFuncionarioReconhecido = null
+                funcionarioReconhecido = null
+                timeoutPausado = false
+                Log.d(TAG, "🔄 Estado resetado no onDestroy")
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao fechar face detector: ${e.message}")
+                Log.e(TAG, "❌ Erro ao resetar estado: ${e.message}")
             }
             
-            // ✅ OTIMIZAÇÃO: Forçar garbage collection e monitorar memória final
-            logMemoryUsage("Antes limpeza final")
-            System.gc()
-            
-            // Aguardar um pouco e verificar novamente
-            Handler(Looper.getMainLooper()).postDelayed({
-                logMemoryUsage("Após limpeza final")
-            }, 100)
+            // ✅ CRÍTICO: Forçar garbage collection e monitorar memória final
+            try {
+                logMemoryUsage("Antes limpeza final")
+                System.gc()
+                
+                // Aguardar um pouco e verificar novamente
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try {
+                        logMemoryUsage("Após limpeza final")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao verificar memória final: ${e.message}")
+                    }
+                }, 100)
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao forçar garbage collection: ${e.message}")
+            }
             
             Log.d(TAG, "✅ Todos os recursos liberados no onDestroy")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao fechar recursos: ${e.message}")
+            Log.e(TAG, "❌ Erro crítico ao fechar recursos: ${e.message}")
             e.printStackTrace()
         }
     }
@@ -1965,12 +2126,17 @@ class PontoActivity : AppCompatActivity() {
         Log.d(TAG, "📱 onPause - pausando câmera para economizar recursos")
         
         try {
-            // ✅ CORREÇÃO: Parar câmera para economizar memória e recursos
+            // ✅ CRÍTICO: Parar câmera ANTES de qualquer outra operação
             stopCamera()
             
-            // ✅ NOVA: Pausar timeout para evitar fechamento durante pausa
+            // ✅ CRÍTICO: Pausar timeout para evitar fechamento durante pausa
             pausarTimeout("Activity pausada")
             
+            // ✅ CRÍTICO: Resetar estado de processamento
+            processandoFace = false
+            lastProcessingTime = 0L
+            
+            Log.d(TAG, "✅ onPause concluído com sucesso")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro no onPause: ${e.message}")
         }
@@ -1981,27 +2147,28 @@ class PontoActivity : AppCompatActivity() {
         Log.d(TAG, "📱 onResume - retomando atividade")
         
         try {
-            // ✅ CORREÇÃO: Reset imediato se processandoFace está travado
+            // ✅ CRÍTICO: Reset imediato se processandoFace está travado
             if (processandoFace) {
                 Log.w(TAG, "⚠️ processandoFace travado no onResume, resetando imediatamente")
                 forcarResetEstado()
             }
             
-            // ✅ NOVA: Retomar timeout
+            // ✅ CRÍTICO: Retomar timeout
             retomarTimeout("Activity retomada")
             
-            // ✅ CORREÇÃO: Reiniciar câmera se permissões estão ok
-            if (allPermissionsGranted()) {
-                startCamera()
-            }
-            
-            // ✅ CORREÇÃO: Aguardar um pouco antes de resetar para evitar conflitos
+            // ✅ CRÍTICO: Aguardar um pouco antes de reiniciar câmera para evitar conflitos
             Handler(Looper.getMainLooper()).postDelayed({
                 try {
+                    // ✅ CRÍTICO: Reiniciar câmera se permissões estão ok
+                    if (allPermissionsGranted()) {
+                        startCamera()
+                    }
+                    
+                    // ✅ CRÍTICO: Resetar estado após um delay
                     forcarResetEstado()
                     Log.d(TAG, "📊 Estado no onResume: processandoFace = $processandoFace")
                     
-                    // ✅ CORREÇÃO: Verificar se o modelo está carregado
+                    // ✅ CRÍTICO: Verificar se o modelo está carregado
                     if (!modelLoaded) {
                         Log.w(TAG, "⚠️ Modelo não carregado no onResume, recarregando...")
                         loadTensorFlowModel()
@@ -2009,7 +2176,7 @@ class PontoActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro no reset no onResume: ${e.message}")
                 }
-            }, 500) // Aguardar 500ms
+            }, 1000) // ✅ CRÍTICO: Aumentar delay para 1 segundo para evitar conflitos
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro no onResume: ${e.message}")
@@ -2021,6 +2188,12 @@ class PontoActivity : AppCompatActivity() {
      */
     private suspend fun registrarPonto(funcionario: FuncionariosEntity) {
         try {
+            // ✅ CRÍTICO: Verificar se activity ainda é válida
+            if (isFinishing || isDestroyed) {
+                Log.w(TAG, "⚠️ Activity finalizada, cancelando registro de ponto")
+                return
+            }
+            
             // ✅ NOVO: Verificar se entidade está configurada antes de registrar ponto
             if (!com.example.iface_offilne.util.SessionManager.isEntidadeConfigurada()) {
                 Log.e(TAG, "❌ === ERRO CRÍTICO: ENTIDADE NÃO CONFIGURADA ===")
@@ -2028,9 +2201,15 @@ class PontoActivity : AppCompatActivity() {
                 Log.e(TAG, "  💡 SOLUÇÃO: Usuário deve ir em configurações e selecionar uma entidade")
                 
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@PontoActivity, 
-                        "❌ Entidade não configurada!\nVá em Configurações e selecione uma entidade.", 
-                        Toast.LENGTH_LONG).show()
+                    try {
+                        if (!isFinishing && !isDestroyed) {
+                            Toast.makeText(this@PontoActivity, 
+                                "❌ Entidade não configurada!\nVá em Configurações e selecione uma entidade.", 
+                                Toast.LENGTH_LONG).show()
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao mostrar toast: ${e.message}")
+                    }
                 }
                 return
             }
@@ -2115,9 +2294,15 @@ class PontoActivity : AppCompatActivity() {
                 Log.e(TAG, "❌ Erro na sincronização: ${e.message}")
             }
             
-            // ✅ Mostrar sucesso
+            // ✅ Mostrar sucesso com proteção adicional
             withContext(Dispatchers.Main) {
                 try {
+                    // ✅ CRÍTICO: Verificar se activity ainda é válida
+                    if (isFinishing || isDestroyed) {
+                        Log.w(TAG, "⚠️ Activity finalizada, não mostrando sucesso")
+                        return@withContext
+                    }
+                    
                     val toastLocationText = if (latitude != null && longitude != null) {
                         "\n📍 ${String.format("%.4f", latitude)}, ${String.format("%.4f", longitude)}"
                     } else {
@@ -2130,8 +2315,14 @@ class PontoActivity : AppCompatActivity() {
                     
                     // Reset automático após 20 segundos
                     Handler(Looper.getMainLooper()).postDelayed({
-                        pontoJaRegistrado = false
-                        ultimoFuncionarioReconhecido = null
+                        try {
+                            if (!isFinishing && !isDestroyed) {
+                                pontoJaRegistrado = false
+                                ultimoFuncionarioReconhecido = null
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro no reset automático: ${e.message}")
+                        }
                     }, 20000)
                     
                     val locationText = if (latitude != null && longitude != null) {
@@ -2140,7 +2331,13 @@ class PontoActivity : AppCompatActivity() {
                         "\n⚠️ Sem localização"
                     }
                     
-                    statusText.text = "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada$locationText\n\nClique 'Voltar' para sair"
+                    try {
+                        if (::statusText.isInitialized && !isFinishing && !isDestroyed) {
+                            statusText.text = "✅ Ponto registrado!\n${funcionario.nome}\n$dataFormatada$locationText\n\nClique 'Voltar' para sair"
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao atualizar statusText: ${e.message}")
+                    }
                     
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro ao mostrar sucesso: ${e.message}")
@@ -2149,11 +2346,28 @@ class PontoActivity : AppCompatActivity() {
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao registrar ponto: ${e.message}")
-            throw e
+            
+            // ✅ CRÍTICO: Mostrar erro para o usuário
+            withContext(Dispatchers.Main) {
+                try {
+                    if (!isFinishing && !isDestroyed) {
+                        Toast.makeText(this@PontoActivity, 
+                            "❌ Erro ao registrar ponto\nTente novamente", 
+                            Toast.LENGTH_LONG).show()
+                    }
+                } catch (e2: Exception) {
+                    Log.e(TAG, "❌ Erro ao mostrar erro: ${e2.message}")
+                }
+            }
         } finally {
-            processandoFace = false
-            lastProcessingTime = 0L
-            retomarTimeout("Processamento de ponto concluído")
+            // ✅ CRÍTICO: Sempre resetar estado
+            try {
+                processandoFace = false
+                lastProcessingTime = 0L
+                retomarTimeout("Processamento de ponto concluído")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro no finally: ${e.message}")
+            }
         }
     }
 } 

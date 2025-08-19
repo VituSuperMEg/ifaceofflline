@@ -106,12 +106,13 @@ class SincronizacaoService {
             // ✅ CORREÇÃO: Usar setRepeating para execução automática contínua
             val intervaloMillis = intervalo * 60 * 60 * 1000L // Converter horas para milissegundos
             
-            // ✅ NOVO: Calcular próxima execução baseada no horário atual
+            // ✅ CORREÇÃO: Calcular próxima execução baseada no horário atual
             val agora = System.currentTimeMillis()
             val proximaExecucao = agora + intervaloMillis
             
+            Log.d(TAG, "🕐 Horário atual: ${java.text.SimpleDateFormat("dd/MM HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(agora))}")
             Log.d(TAG, "🕐 Primeira execução em: ${java.text.SimpleDateFormat("dd/MM HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(proximaExecucao))}")
-            Log.d(TAG, "🔄 Próximas execuções a cada $intervalo hora(s)")
+            Log.d(TAG, "🔄 Próximas execuções a cada $intervalo hora(s) (${intervaloMillis/1000/60} minutos)")
             
             // ✅ CORREÇÃO: Usar setRepeating para execução automática contínua
             try {
@@ -134,6 +135,10 @@ class SincronizacaoService {
                     )
                     Log.d(TAG, "✅ Alarme configurado com setRepeating (Android < 6)")
                 }
+                
+                // ✅ NOVO: Verificar se o alarme foi configurado corretamente
+                verificarAlarmeConfigurado(context, alarmManager, pendingIntent)
+                
             } catch (e: SecurityException) {
                 Log.w(TAG, "⚠️ Permissão de alarme negada, usando inexact repeating")
                 // Fallback para alarme inexato
@@ -151,6 +156,52 @@ class SincronizacaoService {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao configurar alarme: ${e.message}")
             e.printStackTrace()
+        }
+    }
+    
+    /**
+     * ✅ NOVO: Verifica se o alarme foi configurado corretamente
+     */
+    private fun verificarAlarmeConfigurado(context: Context, alarmManager: AlarmManager, pendingIntent: PendingIntent) {
+        try {
+            Log.d(TAG, "🔍 === VERIFICANDO SE ALARME FOI CONFIGURADO ===")
+            
+            // Verificar se o PendingIntent existe
+            val intentVerificacao = Intent(context, SincronizacaoReceiver::class.java).apply {
+                action = ACTION_SINCRONIZAR
+            }
+            
+            val pendingIntentVerificacao = PendingIntent.getBroadcast(
+                context,
+                REQUEST_CODE,
+                intentVerificacao,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            
+            if (pendingIntentVerificacao != null) {
+                Log.d(TAG, "✅ PendingIntent encontrado - alarme configurado")
+                
+                // Tentar obter informações do alarme (Android 6+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    try {
+                        val alarmInfo = alarmManager.getNextAlarmClock()
+                        if (alarmInfo != null) {
+                            val proximaExecucao = alarmInfo.triggerTime
+                            val dataFormatada = java.text.SimpleDateFormat("dd/MM HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(proximaExecucao))
+                            Log.d(TAG, "🕐 Próxima execução do alarme: $dataFormatada")
+                        } else {
+                            Log.d(TAG, "⚠️ Não foi possível obter informações do próximo alarme")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "⚠️ Erro ao obter informações do alarme: ${e.message}")
+                    }
+                }
+            } else {
+                Log.w(TAG, "⚠️ PendingIntent não encontrado - alarme pode não ter sido configurado")
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao verificar alarme configurado: ${e.message}")
         }
     }
 
@@ -405,6 +456,66 @@ class SincronizacaoService {
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao configurar alarme de teste: ${e.message}")
+        }
+    }
+    
+    /**
+     * ✅ NOVO: Testar alarme com intervalo personalizado (para debug)
+     * @param context Contexto da aplicação
+     * @param minutos Intervalo em minutos para teste
+     */
+    fun testarAlarmeComIntervalo(context: Context, minutos: Int) {
+        Log.d(TAG, "🧪 === TESTE DE ALARME COM INTERVALO DE ${minutos} MINUTOS ===")
+        
+        try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            
+            // Cancelar alarme anterior
+            cancelarAlarme(context)
+            
+            val intent = Intent(context, SincronizacaoReceiver::class.java).apply {
+                action = ACTION_SINCRONIZAR
+            }
+            
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                REQUEST_CODE,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val intervaloMillis = minutos * 60 * 1000L // Converter minutos para milissegundos
+            val agora = System.currentTimeMillis()
+            val proximaExecucao = agora + intervaloMillis
+            
+            Log.d(TAG, "🕐 Horário atual: ${java.text.SimpleDateFormat("dd/MM HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(agora))}")
+            Log.d(TAG, "🕐 Primeira execução em: ${java.text.SimpleDateFormat("dd/MM HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(proximaExecucao))}")
+            Log.d(TAG, "🔄 Próximas execuções a cada $minutos minuto(s)")
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setRepeating(
+                    AlarmManager.RTC_WAKEUP,
+                    proximaExecucao,
+                    intervaloMillis,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setRepeating(
+                    AlarmManager.RTC_WAKEUP,
+                    proximaExecucao,
+                    intervaloMillis,
+                    pendingIntent
+                )
+            }
+            
+            Log.d(TAG, "✅ Alarme de teste configurado para $minutos minuto(s)")
+            
+            // Verificar se foi configurado
+            verificarAlarmeConfigurado(context, alarmManager, pendingIntent)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao configurar alarme de teste: ${e.message}")
+            e.printStackTrace()
         }
     }
 } 
