@@ -42,23 +42,29 @@ class PermissaoHelper(private val context: Context) {
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
-        val entidade = SessionManager.entidade?.id
-        
-        if (entidade.isNullOrEmpty()) {
-            Log.e(TAG, "❌ Entidade não configurada")
-            onError("Entidade não configurada")
+        // ✅ NOVO: Usar método utilitário do SessionManager
+        if (!SessionManager.isEntidadeConfigurada()) {
+            Log.e(TAG, "❌ === ERRO CRÍTICO: ENTIDADE NÃO CONFIGURADA ===")
+            Log.e(TAG, "  🔴 ${SessionManager.getEntidadeInfo()}")
+            Log.e(TAG, "  📍 Menu solicitado: $menu")
+            Log.e(TAG, "  💡 SOLUÇÃO: Usuário deve ir em configurações e selecionar uma entidade")
+            onError("Entidade não configurada. Vá em Configurações e selecione uma entidade.")
             return
         }
         
+        val entidade = SessionManager.getEntidadeId()
+        
+        Log.d(TAG, "🔐 Verificando permissão para menu: $menu")
+        Log.d(TAG, "🏢 Entidade: $entidade")
+        
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                Log.d(TAG, "🔐 Verificando permissão para menu: $menu")
-                
                 val request = PermissaoRequest(
                     entidade = entidade,
                     menu = menu
                 )
                 
+                Log.d(TAG, "🌐 Fazendo requisição para API...")
                 val response = apiService.getPermissao(entidade, request)
                 
                 withContext(Dispatchers.Main) {
@@ -78,16 +84,21 @@ class PermissaoHelper(private val context: Context) {
                             }
                         } else {
                             Log.e(TAG, "❌ Resposta inválida da API")
+                            Log.e(TAG, "  📝 Response: $permissaoResponse")
                             onError("Erro na verificação de permissão")
                         }
                     } else {
                         Log.e(TAG, "❌ Erro na API: ${response.code()}")
+                        Log.e(TAG, "  📝 Error Body: ${response.errorBody()?.string()}")
+                        Log.e(TAG, "  📝 Error Message: ${response.message()}")
                         onError("Erro de conexão (${response.code()})")
                     }
                 }
                 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao verificar permissão: ${e.message}")
+                Log.e(TAG, "  🔴 Tipo: ${e.javaClass.simpleName}")
+                e.printStackTrace()
                 withContext(Dispatchers.Main) {
                     onError("Erro de conexão: ${e.message}")
                 }
@@ -108,7 +119,12 @@ class PermissaoHelper(private val context: Context) {
             menu = menu,
             onSuccess = onSuccess,
             onError = { mensagem ->
-                Toast.makeText(context, "❌ $mensagem", Toast.LENGTH_LONG).show()
+                Log.w(TAG, "❌ Permissão negada: $mensagem")
+                try {
+                    Toast.makeText(context, "❌ $mensagem", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro ao mostrar Toast: ${e.message}")
+                }
             }
         )
     }

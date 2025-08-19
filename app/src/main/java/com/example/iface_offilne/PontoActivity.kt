@@ -1267,6 +1267,22 @@ class PontoActivity : AppCompatActivity() {
         try {
             Log.d(TAG, "✅ Registrando ponto para: ${funcionario.nome}")
             
+            // ✅ NOVO: Verificar se entidade está configurada antes de registrar ponto
+            if (!com.example.iface_offilne.util.SessionManager.isEntidadeConfigurada()) {
+                Log.e(TAG, "❌ === ERRO CRÍTICO: ENTIDADE NÃO CONFIGURADA ===")
+                Log.e(TAG, "  🔴 ${com.example.iface_offilne.util.SessionManager.getEntidadeInfo()}")
+                Log.e(TAG, "  💡 SOLUÇÃO: Usuário deve ir em configurações e selecionar uma entidade")
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@PontoActivity, 
+                        "❌ Entidade não configurada!\nVá em Configurações e selecione uma entidade.", 
+                        Toast.LENGTH_LONG).show()
+                }
+                return
+            }
+            
+            Log.d(TAG, "✅ Entidade configurada: ${com.example.iface_offilne.util.SessionManager.getEntidadeName()} (${com.example.iface_offilne.util.SessionManager.getEntidadeId()})")
+            
             // ✅ CORREÇÃO: Verificar se o funcionário é válido
             if (funcionario.codigo.isBlank()) {
                 throw IllegalArgumentException("Código do funcionário está vazio")
@@ -2002,6 +2018,22 @@ class PontoActivity : AppCompatActivity() {
      */
     private suspend fun registrarPonto(funcionario: FuncionariosEntity) {
         try {
+            // ✅ NOVO: Verificar se entidade está configurada antes de registrar ponto
+            if (!com.example.iface_offilne.util.SessionManager.isEntidadeConfigurada()) {
+                Log.e(TAG, "❌ === ERRO CRÍTICO: ENTIDADE NÃO CONFIGURADA ===")
+                Log.e(TAG, "  🔴 ${com.example.iface_offilne.util.SessionManager.getEntidadeInfo()}")
+                Log.e(TAG, "  💡 SOLUÇÃO: Usuário deve ir em configurações e selecionar uma entidade")
+                
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@PontoActivity, 
+                        "❌ Entidade não configurada!\nVá em Configurações e selecione uma entidade.", 
+                        Toast.LENGTH_LONG).show()
+                }
+                return
+            }
+            
+            Log.d(TAG, "✅ Entidade configurada: ${com.example.iface_offilne.util.SessionManager.getEntidadeName()} (${com.example.iface_offilne.util.SessionManager.getEntidadeId()})")
+            
             val horarioAtual = System.currentTimeMillis()
             val formato = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
             val dataFormatada = formato.format(Date(horarioAtual))
