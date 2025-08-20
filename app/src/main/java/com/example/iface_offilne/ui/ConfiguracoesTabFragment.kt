@@ -13,6 +13,7 @@ import com.example.iface_offilne.databinding.FragmentConfiguracoesTabBinding
 import com.example.iface_offilne.util.ConfiguracoesManager
 import com.example.iface_offilne.util.DuplicatePointManager
 import com.example.iface_offilne.util.SessionManager
+import com.example.iface_offilne.util.MaskUtil
 import androidx.lifecycle.lifecycleScope
 import androidx.appcompat.app.AlertDialog
 import com.example.iface_offilne.util.DiagnosticoHelper
@@ -52,6 +53,9 @@ class ConfiguracoesTabFragment : Fragment() {
         binding.btnSincronizarAgora.backgroundTintList = null
         binding.btnVerificarDuplicatas.backgroundTintList = null
         binding.btnForcarMarcacao.backgroundTintList = null
+        
+        // ✅ MÁSCARA: Aplicar máscara de código de entidade
+        MaskUtil.applyEntidadeMask(binding.editTextEntidadeId)
 
         binding.switchSincronizacao.setOnCheckedChangeListener { _, isChecked ->
             binding.layoutIntervaloSincronizacao.visibility = if (isChecked) View.VISIBLE else View.GONE
@@ -182,7 +186,8 @@ class ConfiguracoesTabFragment : Fragment() {
     }
 
     fun getEntidade(): String {
-        return _binding?.editTextEntidadeId?.text?.toString()?.trim() ?: ""
+        val textoComMascara = _binding?.editTextEntidadeId?.text?.toString()?.trim() ?: ""
+        return MaskUtil.unmask(textoComMascara) // ✅ MÁSCARA: Remover máscara para retornar apenas números
     }
 
 
@@ -226,7 +231,9 @@ class ConfiguracoesTabFragment : Fragment() {
     }
     
     fun setEntidade(value: String) {
-        _binding?.editTextEntidadeId?.setText(value)
+        // ✅ MÁSCARA: Aplicar máscara ao valor se não estiver vazio
+        val valorComMascara = if (value.isNotEmpty()) MaskUtil.maskEntidade(value) else value
+        _binding?.editTextEntidadeId?.setText(valorComMascara)
     }
     
     fun setEntidadeError(error: String?) {

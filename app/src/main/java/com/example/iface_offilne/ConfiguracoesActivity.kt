@@ -274,6 +274,12 @@ class ConfiguracoesActivity : AppCompatActivity() {
                 configFragment.setEntidadeError("Código da Entidade é obrigatório")
                 return
             }
+            
+            // ✅ MÁSCARA: Validar se código de entidade tem 9 dígitos
+            if (entidadeId.length != 9) {
+                configFragment.setEntidadeError("Código da Entidade deve ter 9 dígitos")
+                return
+            }
 
             if (intervalo <= 0) {
                 Toast.makeText(this, "Intervalo deve ser maior que zero", Toast.LENGTH_SHORT).show()

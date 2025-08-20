@@ -44,9 +44,15 @@ class FuncionariosActivity : AppCompatActivity() {
         binding = ActivityFuncionariosBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Obter entidade ID das configurações
+        // ✅ CARREGAMENTO ROBUSTO: Obter entidade ID das configurações
         lifecycleScope.launch {
-            entidadeId = ConfiguracoesManager.getEntidadeId(this@FuncionariosActivity)
+            try {
+                entidadeId = ConfiguracoesManager.getEntidadeId(this@FuncionariosActivity)
+                Log.d("FuncionariosActivity", "🏢 Entidade carregada: '$entidadeId'")
+            } catch (e: Exception) {
+                Log.e("FuncionariosActivity", "❌ Erro ao carregar entidade: ${e.message}")
+                entidadeId = ""
+            }
         }
         
         var daoFunc: FuncionarioDao
@@ -103,10 +109,23 @@ class FuncionariosActivity : AppCompatActivity() {
             } catch (_: Exception) { }
         }
 
+        // ✅ BOTÃO RECARREGAR: Agora funciona como "recarregar" já que o carregamento é automático
         binding.sincronizarListaFunc.setOnClickListener {
+            Log.d("FuncionariosActivity", "🔄 Botão recarregar pressionado")
+            
+            // Mostrar feedback visual
+            Toast.makeText(this, "🔄 Recarregando funcionários...", Toast.LENGTH_SHORT).show()
+            
+            // Resetar dados e carregar novamente
             currentPage = 1
             listaFuncionarios.clear()
+            todosFuncionarios.clear()
             adapter.notifyDataSetChanged()
+            
+            // Ocultar lista durante recarregamento
+            binding.listaFuncionarios.visibility = android.view.View.GONE
+            
+            // Carregar funcionários
             loadFuncionarios()
         }
 
@@ -166,11 +185,48 @@ class FuncionariosActivity : AppCompatActivity() {
             true
         }
         
+        // ✅ CARREGAMENTO AUTOMÁTICO: Carregar funcionários automaticamente ao entrar na tela
+        Log.d("FuncionariosActivity", "🚀 Iniciando carregamento automático de funcionários")
+        
         // Mostrar loading inicial
         binding.listaFuncionarios.visibility = android.view.View.GONE
-        // TODO: Adicionar ProgressBar no layout se necessário
-
-        loadFuncionarios()
+        
+        // ✅ NOVO: Carregar funcionários automaticamente
+        lifecycleScope.launch {
+            try {
+                // Aguardar um pouco para garantir que a entidade foi carregada
+                kotlinx.coroutines.delay(500)
+                
+                if (entidadeId.isNotEmpty()) {
+                    Log.d("FuncionariosActivity", "✅ Entidade carregada: $entidadeId - iniciando carregamento")
+                    loadFuncionarios()
+                } else {
+                    Log.w("FuncionariosActivity", "⚠️ Entidade não carregada ainda - aguardando...")
+                    // Tentar novamente após 1 segundo
+                    kotlinx.coroutines.delay(1000)
+                    if (entidadeId.isNotEmpty()) {
+                        Log.d("FuncionariosActivity", "✅ Entidade carregada na segunda tentativa - iniciando carregamento")
+                        loadFuncionarios()
+                    } else {
+                        Log.e("FuncionariosActivity", "❌ Entidade não carregada após tentativas - mostrando lista vazia")
+                        withContext(Dispatchers.Main) {
+                            binding.listaFuncionarios.visibility = android.view.View.VISIBLE
+                            Toast.makeText(this@FuncionariosActivity, 
+                                "⚠️ Entidade não configurada. Configure a entidade nas configurações.", 
+                                Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("FuncionariosActivity", "❌ Erro no carregamento automático: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    binding.listaFuncionarios.visibility = android.view.View.VISIBLE
+                    Toast.makeText(this@FuncionariosActivity, 
+                        "❌ Erro ao carregar funcionários: ${e.message}", 
+                        Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
     
     // ✅ NOVO: Verificar permissão de home antes de voltar
@@ -213,14 +269,29 @@ class FuncionariosActivity : AppCompatActivity() {
         isLoading = true
         lifecycleScope.launch {
             try {
+                Log.d("FuncionariosActivity", "📡 Carregando funcionários - página $currentPage, entidade: $entidadeId")
+                
                 val response = RetrofitClient.instance.getFuncionarios(entidadeId, currentPage)
                 val funcionarios = response.data ?: emptyList()
+
+                Log.d("FuncionariosActivity", "✅ Funcionários carregados: ${funcionarios.size} na página $currentPage")
 
                 if (funcionarios.isNotEmpty()) {
                     listaFuncionarios.addAll(funcionarios)
                     todosFuncionarios.addAll(funcionarios)
                     adapter.notifyItemRangeInserted(listaFuncionarios.size - funcionarios.size, funcionarios.size)
                     currentPage++
+                    
+                    // ✅ FEEDBACK: Mostrar quantidade total carregada
+                    withContext(Dispatchers.Main) {
+                        if (currentPage == 2) { // Primeira página carregada
+                            Toast.makeText(this@FuncionariosActivity, 
+                                "✅ ${listaFuncionarios.size} funcionários carregados", 
+                                Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } else {
+                    Log.d("FuncionariosActivity", "📭 Nenhum funcionário encontrado na página $currentPage")
                 }
                 
                 // Mostrar lista após carregar
@@ -229,9 +300,16 @@ class FuncionariosActivity : AppCompatActivity() {
                 }
                 
             } catch (e: Exception) {
-                Log.e("API_ERROR", "Erro ao carregar página $currentPage: ${e.message}")
+                Log.e("API_ERROR", "❌ Erro ao carregar página $currentPage: ${e.message}")
                 withContext(Dispatchers.Main) {
                     binding.listaFuncionarios.visibility = android.view.View.VISIBLE
+                    
+                    // ✅ FEEDBACK: Mostrar erro para o usuário
+                    if (currentPage == 1) { // Só mostrar erro na primeira página
+                        Toast.makeText(this@FuncionariosActivity, 
+                            "❌ Erro ao carregar funcionários: ${e.message}", 
+                            Toast.LENGTH_LONG).show()
+                    }
                 }
             } finally {
                 isLoading = false

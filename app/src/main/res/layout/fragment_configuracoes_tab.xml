@@ -125,7 +125,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
-                    android:hint="Cód. Entidade"
+                    android:hint="Código da Entidade (9 dígitos)"
                     app:boxStrokeColor="#4A90E2"
                     app:hintTextColor="#4A90E2"
                     style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
@@ -134,7 +134,8 @@
                         android:id="@+id/editTextEntidadeId"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="text"
+                        android:inputType="number"
+                        android:maxLength="9"
                         android:maxLines="1" />
 
                 </com.google.android.material.textfield.TextInputLayout>

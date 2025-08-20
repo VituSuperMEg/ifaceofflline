@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.example.iface_offilne.data.AppDatabase
 import com.example.iface_offilne.databinding.ActivityLoginBinding
 import com.example.iface_offilne.util.SessionManager
+import com.example.iface_offilne.util.MaskUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -51,14 +52,24 @@ class Login : AppCompatActivity() {
 
         // Configurar botão para usar o background personalizado
         binding.btnLogin.backgroundTintList = null
+        
+        // ✅ MÁSCARA: Aplicar máscara de CPF
+        MaskUtil.applyCpfMask(binding.cpfLogin)
 
         binding.btnLogin.setOnClickListener {
-            val cpf = binding.cpfLogin.text.toString().trim()
+            val cpfComMascara = binding.cpfLogin.text.toString().trim()
+            val cpf = MaskUtil.unmask(cpfComMascara) // ✅ MÁSCARA: Remover máscara para validação
             val senha = binding.senhaLogin.text.toString().trim()
             val manterLogado = binding.checkboxManterLogado.isChecked
 
             if(cpf.isEmpty() || senha.isEmpty()) {
-                Toast.makeText(this, "Preecha todos os campos", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Preencha todos os campos", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            
+            // ✅ MÁSCARA: Validar se CPF tem 11 dígitos
+            if (cpf.length != 11) {
+                Toast.makeText(this, "CPF deve ter 11 dígitos", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
@@ -99,8 +110,11 @@ class Login : AppCompatActivity() {
         if (manterLogado && !savedCpf.isNullOrEmpty() && !savedSenha.isNullOrEmpty()) {
             Log.d("Login", "🔄 Tentando login automático com dados salvos...")
             
+            // ✅ MÁSCARA: Aplicar máscara ao CPF salvo
+            val cpfComMascara = MaskUtil.maskCpf(savedCpf)
+            
             // Preencher campos
-            binding.cpfLogin.setText(savedCpf)
+            binding.cpfLogin.setText(cpfComMascara)
             binding.senhaLogin.setText(savedSenha)
             binding.checkboxManterLogado.isChecked = true
             
@@ -164,13 +178,13 @@ class Login : AppCompatActivity() {
                 val operadorDao = db.operadorDao()
                 
                 // Verificar se ROOT existe
-                val rootUser = operadorDao.getOperador("99999999", "00331520")
+                val rootUser = operadorDao.getOperador("99999999999", "00331520")
                 
                 if (rootUser == null) {
                     // Criar usuário ROOT se não existir
                     operadorDao.insert(
                         com.example.iface_offilne.data.OperadorEntity(
-                            cpf = "99999999",
+                            cpf = "99999999999",
                             nome = "ROOT",
                             senha = "00331520"
                         )
@@ -218,7 +232,7 @@ class Login : AppCompatActivity() {
                 // Forçar inserção do usuário ROOT (substituir se existir)
                 operadorDao.insert(
                     com.example.iface_offilne.data.OperadorEntity(
-                        cpf = "99999999",
+                        cpf = "99999999999",
                         nome = "ROOT",
                         senha = "00331520"
                     )
@@ -228,7 +242,7 @@ class Login : AppCompatActivity() {
                 
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@Login, 
-                        "🔧 Usuário ROOT recriado!\nCPF: 99999999\nSenha: 00331520", 
+                        "🔧 Usuário ROOT recriado!\nCPF: 999.999.999-99\nSenha: 00331520", 
                         Toast.LENGTH_LONG).show()
                 }
                 

@@ -44,6 +44,15 @@ import java.nio.channels.FileChannel
 import java.text.SimpleDateFormat
 import java.util.*
 
+/**
+ * Activity principal para registro de ponto com reconhecimento facial
+ * 
+ * ✅ SISTEMA DE COOLDOWN:
+ * - Evita múltiplos registros de ponto em sequência
+ * - Cooldown de 5 segundos entre registros
+ * - Mostra contador regressivo na UI
+ * - Aplica-se a todos os métodos de reconhecimento (normal e fallback)
+ */
 class PontoActivity : AppCompatActivity() {
 
     private lateinit var previewView: PreviewView
@@ -69,6 +78,10 @@ class PontoActivity : AppCompatActivity() {
     private var cameraProvider: ProcessCameraProvider? = null
     private var lastProcessingTime = 0L
     private var processingTimeout = 10000L
+    
+    // ✅ COOLDOWN: Sistema para evitar múltiplos registros
+    private var lastPontoRegistrado = 0L
+    private var cooldownPonto = 5000L // 5 segundos de cooldown
 
     private var tensorFlowFallbackMode = false
     private var lastTensorFlowError = 0L
@@ -494,6 +507,29 @@ class PontoActivity : AppCompatActivity() {
                                     
                                     // ✅ PROTEÇÃO: Verificar se pode processar face
                                     if (!processandoFace && modelLoaded && interpreter != null && !isFinishing && !isDestroyed) {
+                                        // ✅ COOLDOWN: Verificar se já passou tempo suficiente desde o último ponto
+                                        if (isCooldownActive()) {
+                                            val segundosRestantes = getCooldownRemainingSeconds()
+                                            Log.d(TAG, "⏰ Aguardando cooldown: ${segundosRestantes}s restantes")
+                                            
+                                            // ✅ COOLDOWN: Mostrar status na UI
+                                            try {
+                                                if (!isFinishing && !isDestroyed && ::statusText.isInitialized) {
+                                                    val status = statusText
+                                                    status.text = "⏰ Aguarde ${segundosRestantes}s\npara próximo ponto"
+                                                }
+                                            } catch (e: Exception) {
+                                                Log.w(TAG, "⚠️ Erro ao atualizar status do cooldown: ${e.message}")
+                                            }
+                                            
+                                            try {
+                                                imageProxy.close()
+                                            } catch (e: Exception) {
+                                                Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${e.message}")
+                                            }
+                                            return@addOnSuccessListener
+                                        }
+                                        
                                         Log.d(TAG, "✅ INICIANDO RECONHECIMENTO - QUALQUER FACE!")
                                         
                                         processandoFace = true
@@ -873,6 +909,10 @@ class PontoActivity : AppCompatActivity() {
                 if (funcionario != null) {
                     Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO: ${funcionario.nome}")
 
+                    // ✅ COOLDOWN: Atualizar timestamp do último ponto registrado
+                    lastPontoRegistrado = System.currentTimeMillis()
+                    Log.d(TAG, "⏰ Cooldown iniciado - próximo ponto em ${cooldownPonto}ms")
+
                     // ✅ PROTEÇÃO: Registrar ponto com verificação de contexto
                     withContext(Dispatchers.Main) {
                         if (!isFinishing && !isDestroyed) {
@@ -1048,6 +1088,10 @@ class PontoActivity : AppCompatActivity() {
             if (funcionario != null) {
                 Log.d(TAG, "✅ FUNCIONÁRIO FALLBACK: ${funcionario.nome}")
                 
+                // ✅ COOLDOWN: Atualizar timestamp do último ponto registrado
+                lastPontoRegistrado = System.currentTimeMillis()
+                Log.d(TAG, "⏰ Cooldown iniciado (fallback) - próximo ponto em ${cooldownPonto}ms")
+                
                 // ✅ PROTEÇÃO: Registrar ponto com verificação de contexto
                 withContext(Dispatchers.Main) {
                     if (!isFinishing && !isDestroyed) {
@@ -1182,6 +1226,10 @@ class PontoActivity : AppCompatActivity() {
             
             if (funcionario != null) {
                 Log.d(TAG, "✅ FUNCIONÁRIO FALLBACK: ${funcionario.nome}")
+                
+                // ✅ COOLDOWN: Atualizar timestamp do último ponto registrado
+                lastPontoRegistrado = System.currentTimeMillis()
+                Log.d(TAG, "⏰ Cooldown iniciado (sem TensorFlow) - próximo ponto em ${cooldownPonto}ms")
                 
                 // ✅ PROTEÇÃO: Registrar ponto com verificação de contexto
                 withContext(Dispatchers.Main) {
@@ -1901,6 +1949,33 @@ class PontoActivity : AppCompatActivity() {
             // Tentar recarregar o modelo TensorFlow
             loadTensorFlowModel()
         }
+    }
+    
+    /**
+     * ✅ COOLDOWN: Resetar cooldown do ponto (para testes ou emergências)
+     */
+    private fun resetPontoCooldown() {
+        Log.d(TAG, "🔄 Resetando cooldown do ponto")
+        lastPontoRegistrado = 0L
+    }
+    
+    /**
+     * ✅ COOLDOWN: Verificar se o cooldown está ativo
+     */
+    private fun isCooldownActive(): Boolean {
+        val tempoAtual = System.currentTimeMillis()
+        val tempoDesdeUltimoPonto = tempoAtual - lastPontoRegistrado
+        return tempoDesdeUltimoPonto < cooldownPonto
+    }
+    
+    /**
+     * ✅ COOLDOWN: Obter tempo restante do cooldown em segundos
+     */
+    private fun getCooldownRemainingSeconds(): Int {
+        val tempoAtual = System.currentTimeMillis()
+        val tempoDesdeUltimoPonto = tempoAtual - lastPontoRegistrado
+        val tempoRestante = cooldownPonto - tempoDesdeUltimoPonto
+        return if (tempoRestante > 0) (tempoRestante / 1000).toInt() else 0
     }
 
     /**
