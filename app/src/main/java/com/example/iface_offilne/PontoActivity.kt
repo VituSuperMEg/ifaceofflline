@@ -273,9 +273,6 @@ class PontoActivity : AppCompatActivity() {
                         setUseNNAPI(false)
                         setAllowFp16PrecisionForFp32(false) // Desabilitar FP16 para evitar problemas
                         setAllowBufferHandleOutput(false) // Desabilitar buffer handle
-                        setErrorReporter { error ->
-                            Log.e(TAG, "❌ TensorFlow Error: $error")
-                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro ao configurar opções: ${e.message}")
