@@ -18,7 +18,7 @@ import com.example.iface_offilne.databinding.ActivityFuncionariosBinding
 import com.example.iface_offilne.helpers.PermissaoHelper
 import com.example.iface_offilne.models.FuncionariosLocalModel
 import com.example.iface_offilne.models.FuncionariosModel
-import com.example.iface_offilne.util.SessionManager
+import com.example.iface_offilne.util.ConfiguracoesManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -44,7 +44,10 @@ class FuncionariosActivity : AppCompatActivity() {
         binding = ActivityFuncionariosBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        entidadeId = SessionManager.entidade?.id.toString()
+        // Obter entidade ID das configurações
+        lifecycleScope.launch {
+            entidadeId = ConfiguracoesManager.getEntidadeId(this@FuncionariosActivity)
+        }
         
         var daoFunc: FuncionarioDao
         daoFunc = AppDatabase.getInstance(this).funcionarioDao()
@@ -175,8 +178,7 @@ class FuncionariosActivity : AppCompatActivity() {
         Log.d("FuncionariosActivity", "🔙 Botão voltar pressionado - verificando permissão de home")
         
         // ✅ TESTE TEMPORÁRIO: Verificar se entidade está configurada
-        val entidade = SessionManager.entidade?.id
-        if (entidade.isNullOrEmpty()) {
+        if (entidadeId.isEmpty()) {
             Log.w("FuncionariosActivity", "⚠️ Entidade não configurada - voltando sem verificação")
             super.onBackPressed()
             return

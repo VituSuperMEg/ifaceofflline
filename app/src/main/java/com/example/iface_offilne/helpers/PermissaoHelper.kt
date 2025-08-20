@@ -7,7 +7,7 @@ import com.example.iface_offilne.data.api.ApiService
 import com.example.iface_offilne.data.api.PermissaoRequest
 import com.example.iface_offilne.data.api.PermissaoResponse
 import com.example.iface_offilne.data.api.RetrofitClient
-import com.example.iface_offilne.util.SessionManager
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -42,23 +42,26 @@ class PermissaoHelper(private val context: Context) {
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
-        // ✅ NOVO: Usar método utilitário do SessionManager
-        if (!SessionManager.isEntidadeConfigurada()) {
-            Log.e(TAG, "❌ === ERRO CRÍTICO: ENTIDADE NÃO CONFIGURADA ===")
-            Log.e(TAG, "  🔴 ${SessionManager.getEntidadeInfo()}")
-            Log.e(TAG, "  📍 Menu solicitado: $menu")
-            Log.e(TAG, "  💡 SOLUÇÃO: Usuário deve ir em configurações e selecionar uma entidade")
-            onError("Entidade não configurada. Vá em Configurações e selecione uma entidade.")
-            return
-        }
-        
-        val entidade = SessionManager.getEntidadeId()
-        
-        Log.d(TAG, "🔐 Verificando permissão para menu: $menu")
-        Log.d(TAG, "🏢 Entidade: $entidade")
-        
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // ✅ CORREÇÃO: Usar ConfiguracoesManager em vez de SessionManager
+                val entidadeConfigurada = com.example.iface_offilne.util.ConfiguracoesManager.isEntidadeConfigurada(context)
+                
+                if (!entidadeConfigurada) {
+                    Log.e(TAG, "❌ === ERRO CRÍTICO: ENTIDADE NÃO CONFIGURADA ===")
+                    Log.e(TAG, "  📍 Menu solicitado: $menu")
+                    Log.e(TAG, "  💡 SOLUÇÃO: Usuário deve ir em configurações e selecionar uma entidade")
+                    withContext(Dispatchers.Main) {
+                        onError("Entidade não configurada. Vá em Configurações e selecione uma entidade.")
+                    }
+                    return@launch
+                }
+                
+                val entidade = com.example.iface_offilne.util.ConfiguracoesManager.getEntidadeId(context)
+                
+                Log.d(TAG, "🔐 Verificando permissão para menu: $menu")
+                Log.d(TAG, "🏢 Entidade: $entidade")
+                
                 val request = PermissaoRequest(
                     entidade = entidade,
                     menu = menu

@@ -32,7 +32,6 @@ class EntidadeEstado : AppCompatActivity() {
         binding = ActivityEntidadeEstadoBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // ✅ NOVO: Inicializar SharedPreferences
         sharedPreferences = getSharedPreferences("LoginPrefs", MODE_PRIVATE)
 
         val estado = intent.getStringExtra("estado")
@@ -87,29 +86,24 @@ class EntidadeEstado : AppCompatActivity() {
         binding.btnEntidadeEstadoConfirmar.backgroundTintList = null
 
         binding.btnEntidadeEstadoConfirmar.setOnClickListener {
-            // ✅ NOVO: Validar se entidade foi selecionada
             val entidade = SessionManager.entidade
             if (entidade == null || entidade.id.isEmpty()) {
                 Toast.makeText(this, "❌ Por favor, selecione uma entidade", Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
             
-            // ✅ NOVO: Salvar dados da entidade usando SessionManager
             try {
                 val sucesso = SessionManager.saveEntidadeToPreferences(this)
-                
+
                 if (sucesso) {
                     Log.d("EntidadeEstado", "💾 Dados da entidade salvos: ${entidade.name} (${entidade.id})")
                     
-                    // ✅ NOVO: Mostrar confirmação
-                    Toast.makeText(this, "✅ Entidade configurada: ${entidade.name}", Toast.LENGTH_LONG).show()
-                    
-                    // ✅ NOVO: Aguardar um pouco antes de navegar
+
                     binding.root.postDelayed({
                         val intent = Intent(this, Login::class.java)
                         startActivity(intent)
-                        finish() // Fechar esta activity
-                    }, 1500) // 1.5 segundos
+                        finish() 
+                    }, 1500) 
                 } else {
                     Log.e("EntidadeEstado", "❌ Falha ao salvar entidade")
                     Toast.makeText(this, "❌ Erro ao salvar entidade", Toast.LENGTH_LONG).show()

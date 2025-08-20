@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.graphics.*
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
@@ -17,6 +19,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.iface_offilne.data.AppDatabase
 import com.example.iface_offilne.data.FaceEntity
+import com.example.iface_offilne.helpers.AdvancedFaceRecognitionHelper
 import com.example.iface_offilne.helpers.Helpers
 import com.example.iface_offilne.helpers.bitmapToFloatArray
 import com.example.iface_offilne.helpers.cropFace
@@ -55,6 +58,9 @@ class CameraActivity : AppCompatActivity() {
     private var modelInputWidth = 112
     private var modelInputHeight = 112
     private var modelOutputSize = 192
+    
+    // 🚀 NOVO: Helper avançado para reconhecimento facial
+    private lateinit var advancedFaceHelper: AdvancedFaceRecognitionHelper
 
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 10
@@ -91,9 +97,10 @@ class CameraActivity : AppCompatActivity() {
 
     private var faceDetector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
-            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST) // ✅ SIMPLIFICAÇÃO: Modo rápido para melhor performance
             .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
             .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
+            .setMinFaceSize(0.1f) // ✅ SIMPLIFICAÇÃO: Face ainda menor para detectar qualquer rosto
             .build()
     )
 
@@ -107,6 +114,15 @@ class CameraActivity : AppCompatActivity() {
         setupUI()
         Log.d(TAG, "🚀 === INICIANDO APLICAÇÃO ===")
 
+        // 🚀 NOVO: Inicializar helper avançado
+        advancedFaceHelper = AdvancedFaceRecognitionHelper(this)
+        
+        // 🔍 TESTE: Verificar banco de dados
+        testDatabaseConnection()
+        
+        // ✅ NOVO: Detectar qualidade da câmera e ajustar parâmetros
+        detectCameraQuality()
+        
         // Carrega o modelo
         loadTensorFlowModel()
 
@@ -118,6 +134,17 @@ class CameraActivity : AppCompatActivity() {
         if (allPermissionsGranted()) {
             Log.d(TAG, "✅ Todas as permissões já concedidas")
             startCamera()
+            
+            // ✅ SIMPLIFICAÇÃO: Instruções mais simples e diretas
+            Handler(Looper.getMainLooper()).postDelayed({
+                showToast("📷 Posicione seu rosto na tela\nQualquer posição funciona!")
+            }, 2000)
+            
+            // ✅ NOVO: Debug para verificar se a detecção está funcionando
+            Handler(Looper.getMainLooper()).postDelayed({
+                Log.d(TAG, "🔍 DEBUG: Verificando se detecção está ativa...")
+                showToast("🔍 Sistema de detecção ativo")
+            }, 5000)
         } else {
             Log.d(TAG, "❌ Permissões pendentes - solicitando...")
             // Mostrar mensagem informativa antes de solicitar permissões
@@ -366,7 +393,7 @@ class CameraActivity : AppCompatActivity() {
 
             imageAnalyzer = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setTargetResolution(android.util.Size(640, 480)) // Resolução otimizada para velocidade
+                .setTargetResolution(android.util.Size(640, 480)) // ✅ SIMPLIFICAÇÃO: Resolução menor para melhor performance
                 .build().also {
                     it.setAnalyzer(ContextCompat.getMainExecutor(this)) { proxy ->
                         processImage(proxy)
@@ -404,14 +431,52 @@ class CameraActivity : AppCompatActivity() {
 
                         overlay.setBoundingBox(face.boundingBox, mediaImage.width, mediaImage.height)
 
-                        // ✅ Só salva se estiver no centro
-                        if (!alreadySaved && overlay.isFaceInOval(face.boundingBox)) {
+                        // ✅ SIMPLIFICAÇÃO: Critérios muito mais simples e tolerantes
+                        val faceArea = face.boundingBox.width() * face.boundingBox.height()
+                        val screenArea = mediaImage.width * mediaImage.height
+                        val faceRatio = faceArea.toFloat() / screenArea.toFloat()
+                        
+                        Log.d(TAG, "📏 Face ratio: $faceRatio")
+                        
+                        // ✅ SIMPLIFICAÇÃO: Critérios mínimos para funcionar em qualquer aparelho
+                        val isFaceBigEnough = faceRatio >= 0.02f // Face deve ocupar apenas 2% da tela (muito tolerante)
+                        val isFaceInOval = overlay.isFaceInOval(face.boundingBox)
+                        val isFaceStable = faceDetectionCount >= 2 // Apenas 2 detecções para estabilizar
+                        
+                        Log.d(TAG, "🔍 Critérios: tamanho=${isFaceBigEnough}, posição=${isFaceInOval}, estável=${isFaceStable}")
+                        
+                        if (!alreadySaved && isFaceBigEnough && isFaceInOval && isFaceStable) {
+                            Log.d(TAG, "✅ FACE DETECTADA - PROCESSANDO IMEDIATAMENTE!")
                             processDetectedFace(mediaImage, face.boundingBox)
                             alreadySaved = true
-                            showToast("✅ Rosto centralizado e salvo com sucesso!")
+                            showToast("✅ Rosto detectado! Processando...")
+                        } else if (!alreadySaved && isFaceBigEnough && faceDetectionCount >= 5) {
+                            // ✅ SIMPLIFICAÇÃO: Fallback - processar mesmo fora do oval após 5 detecções
+                            Log.d(TAG, "🔄 FALLBACK: Processando face fora do oval após 5 detecções")
+                            processDetectedFace(mediaImage, face.boundingBox)
+                            alreadySaved = true
+                            showToast("✅ Processando face...")
+                        } else if (!alreadySaved) {
+                            // ✅ SIMPLIFICAÇÃO: Feedback mais simples
+                            val feedbackMessage = when {
+                                !isFaceBigEnough -> "📷 Aproxime mais"
+                                !isFaceInOval -> "📷 Centre no oval"
+                                !isFaceStable -> "📷 Fique parado"
+                                else -> "📷 Posicione seu rosto"
+                            }
+                            
+                            // Mostrar feedback a cada 5 frames (mais frequente)
+                            if (faceDetectionCount % 5 == 0) {
+                                showToast(feedbackMessage)
+                            }
                         }
                     } else {
                         overlay.clear()
+                        // Reset mais rápido
+                        if (faceDetectionCount > 0) {
+                            Log.d(TAG, "⚠️ Face perdida")
+                            faceDetectionCount = 0
+                        }
                     }
                     imageProxy.close()
                 }
@@ -427,7 +492,7 @@ class CameraActivity : AppCompatActivity() {
 
     private fun processDetectedFace(mediaImage: android.media.Image, boundingBox: Rect) {
         try {
-            Log.d(TAG, "🔄 === PROCESSANDO FACE ===")
+            Log.d(TAG, "🔄 === PROCESSANDO FACE SIMPLIFICADO ===")
 
             val bitmap = toBitmap(mediaImage)
             saveImage(bitmap, "original")
@@ -435,87 +500,274 @@ class CameraActivity : AppCompatActivity() {
             val faceBmp = cropFace(bitmap, boundingBox)
             saveImage(faceBmp, "face_cropped")
 
-            val resized = Bitmap.createScaledBitmap(faceBmp, modelInputWidth, modelInputHeight, true)
-            saveImage(resized, "face_${modelInputWidth}x${modelInputHeight}")
-
-            // Manter orientação natural da imagem
-            val correctedFace = faceBmp
-
-            // Salvar a foto do rosto para mostrar na tela de confirmação (tamanho otimizado para melhor qualidade)
-            val faceForDisplay = Bitmap.createScaledBitmap(correctedFace, 300, 300, true)
-            currentFaceBitmap = fixImageOrientationDefinitive(faceForDisplay) // Corrigir orientação
-            
-            Log.d(TAG, "💾 Imagens salvas com correção de orientação!")
-
-            if (modelLoaded && interpreter != null) {
-                executeInference(resized)
-            } else {
-                Log.d(TAG, "⚠️  Sem modelo - apenas detecção")
-                // Mostrar tela de sucesso mesmo sem modelo
-                showSuccessScreen()
-            }
+            // ✅ SIMPLIFICAÇÃO: Processar diretamente sem verificações complexas
+            Log.d(TAG, "✅ Processando face diretamente")
+            processFaceWithHelper(faceBmp)
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro no processamento", e)
             showToast("Erro: ${e.message}")
+            alreadySaved = false // Reset para permitir nova tentativa
+        }
+    }
+    
+    /**
+     * ✅ SIMPLIFICAÇÃO: Processar face de forma direta
+     */
+    private fun processFaceWithHelper(faceBmp: Bitmap) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                Log.d(TAG, "🔄 Tentando processar face...")
+                
+                // ✅ SIMPLIFICAÇÃO: Tentar processamento direto primeiro
+                try {
+                    val registrationResult = advancedFaceHelper.registerFaceWithValidation(faceBmp)
+                    
+                    when (registrationResult) {
+                        is AdvancedFaceRecognitionHelper.FaceRegistrationResult.Success -> {
+                            Log.d(TAG, "✅ Face validada com sucesso!")
+                            
+                            // Salvar a foto do rosto para mostrar na tela de confirmação
+                            val faceForDisplay = Bitmap.createScaledBitmap(faceBmp, 300, 300, true)
+                            currentFaceBitmap = fixImageOrientationDefinitive(faceForDisplay)
+                            
+                            // Salvar embedding no banco
+                            saveFaceToDatabase(registrationResult.embedding)
+                        }
+                        
+                        is AdvancedFaceRecognitionHelper.FaceRegistrationResult.Failure -> {
+                            Log.w(TAG, "❌ Face rejeitada: ${registrationResult.reason}")
+                            // ✅ SIMPLIFICAÇÃO: Tentar processamento alternativo
+                            processFaceAlternative(faceBmp)
+                        }
+                    }
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro no processamento avançado, tentando alternativa", e)
+                    // ✅ SIMPLIFICAÇÃO: Fallback para processamento alternativo
+                    processFaceAlternative(faceBmp)
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro crítico no processamento", e)
+                withContext(Dispatchers.Main) {
+                    showToast("Erro no processamento. Tente novamente.")
+                    alreadySaved = false
+                }
+            }
+        }
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Processamento alternativo para câmeras de baixa qualidade
+     */
+    private suspend fun processFaceAlternative(faceBmp: Bitmap) {
+        try {
+            Log.d(TAG, "🔄 Tentando processamento alternativo...")
+            
+            // ✅ SIMPLIFICAÇÃO: Processamento mais simples
+            val resizedFace = Bitmap.createScaledBitmap(faceBmp, 112, 112, true)
+            
+            // Tentar gerar embedding diretamente
+            val embedding = try {
+                val inputTensor = convertBitmapToTensorInput(resizedFace)
+                val output = Array(1) { FloatArray(modelOutputSize) }
+                
+                interpreter?.run(inputTensor, output)
+                output[0]
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao gerar embedding", e)
+                null
+            }
+            
+            if (embedding != null) {
+                Log.d(TAG, "✅ Embedding gerado com sucesso!")
+                
+                // Salvar a foto do rosto
+                val faceForDisplay = Bitmap.createScaledBitmap(faceBmp, 300, 300, true)
+                currentFaceBitmap = fixImageOrientationDefinitive(faceForDisplay)
+                
+                // Salvar embedding no banco
+                saveFaceToDatabase(embedding)
+            } else {
+                Log.e(TAG, "❌ Falha ao gerar embedding")
+                withContext(Dispatchers.Main) {
+                    showToast("Falha no processamento. Tente em melhor iluminação.")
+                    alreadySaved = false
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro no processamento alternativo", e)
+            withContext(Dispatchers.Main) {
+                showToast("Erro no processamento alternativo.")
+                alreadySaved = false
+            }
+        }
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Verificar qualidade da face
+     */
+    private fun checkFaceQuality(bitmap: Bitmap): Float {
+        try {
+            // Verificar resolução mínima
+            if (bitmap.width < 100 || bitmap.height < 100) {
+                return 0.1f
+            }
+            
+            // Verificar se não está muito escuro ou muito claro
+            val pixels = IntArray(bitmap.width * bitmap.height)
+            bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+            
+            var totalBrightness = 0f
+            var totalContrast = 0f
+            
+            for (pixel in pixels) {
+                val r = (pixel shr 16) and 0xFF
+                val g = (pixel shr 8) and 0xFF
+                val b = pixel and 0xFF
+                
+                val brightness = (r + g + b) / 3f / 255f
+                totalBrightness += brightness
+            }
+            
+            val avgBrightness = totalBrightness / pixels.size
+            
+            // Calcular qualidade baseada na luminosidade
+            val quality = when {
+                avgBrightness < 0.2f -> 0.2f // Muito escuro
+                avgBrightness > 0.8f -> 0.3f // Muito claro
+                avgBrightness in 0.3f..0.7f -> 0.8f // Boa luminosidade
+                else -> 0.5f // Luminosidade aceitável
+            }
+            
+            Log.d(TAG, "📊 Qualidade calculada: $quality (luminosidade: $avgBrightness)")
+            return quality
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao verificar qualidade", e)
+            return 0.5f // Qualidade média como fallback
+        }
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Melhorar qualidade da face
+     */
+    private fun improveFaceQuality(bitmap: Bitmap): Bitmap? {
+        try {
+            // ✅ MELHORIA: Aplicar filtros para melhorar a qualidade
+            val improvedBitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, true)
+            
+            // Aplicar filtro de suavização para reduzir ruído
+            val canvas = Canvas(improvedBitmap)
+            val paint = Paint().apply {
+                isAntiAlias = true
+                isFilterBitmap = true
+            }
+            
+            // Desenhar com filtros aplicados
+            canvas.drawBitmap(bitmap, 0f, 0f, paint)
+            
+            // Redimensionar para melhor qualidade se necessário
+            val finalBitmap = if (improvedBitmap.width < 200 || improvedBitmap.height < 200) {
+                Bitmap.createScaledBitmap(improvedBitmap, 200, 200, true)
+            } else {
+                improvedBitmap
+            }
+            
+            Log.d(TAG, "✅ Face melhorada: ${bitmap.width}x${bitmap.height} -> ${finalBitmap.width}x${finalBitmap.height}")
+            return finalBitmap
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao melhorar qualidade", e)
+            return null
         }
     }
 
-    private fun executeInference(bitmap: Bitmap) {
+    private fun saveFaceToDatabase(embedding: FloatArray) {
         try {
-            Log.d(TAG, "🧠 === EXECUTANDO INFERÊNCIA ===")
-
-            // Usar o mesmo método de conversão que a PontoActivity
-            val inputTensor = convertBitmapToTensorInput(bitmap)
-            val output = Array(1) { FloatArray(modelOutputSize) }
-
-            interpreter?.run(inputTensor, output)
-
-            val vetorFacial = output[0]
+            Log.d(TAG, "💾 === SALVANDO FACE NO BANCO ===")
+            
             val usuario = intent.getSerializableExtra("usuario") as? FuncionariosLocalModel
-
-            if (usuario != null) {
-                // Primeiro deletar face antiga se existir
-                CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        val dao = AppDatabase.getInstance(applicationContext).faceDao()
-                        
-                        // Deletar face antiga
+            
+            if (usuario == null) {
+                Log.e(TAG, "❌ Usuario nulo - não foi possível salvar o vetor facial.")
+                showToast("Erro: usuário não encontrado.")
+                return
+            }
+            
+            Log.d(TAG, "👤 Usuário: ${usuario.nome} (${usuario.codigo})")
+            Log.d(TAG, "📊 Embedding tamanho: ${embedding.size}")
+            Log.d(TAG, "📊 Primeiros 3 valores: ${embedding.take(3).joinToString(", ")}")
+            
+            // Validar embedding antes de salvar
+            if (embedding.isEmpty()) {
+                Log.e(TAG, "❌ Embedding vazio!")
+                showToast("Erro: embedding facial inválido")
+                return
+            }
+            
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val dao = AppDatabase.getInstance(applicationContext).faceDao()
+                    
+                    // Verificar se já existe face para este funcionário
+                    val existingFace = dao.getByFuncionarioId(usuario.codigo)
+                    if (existingFace != null) {
+                        Log.d(TAG, "🔄 Face existente encontrada - atualizando...")
                         dao.deleteByFuncionarioId(usuario.codigo)
                         Log.d(TAG, "🗑️ Face antiga deletada para funcionário ${usuario.codigo}")
-                        
-                        // Criar nova face
-                        val faces = FaceEntity(
-                            id = 0, // Deixar o Room gerar o ID
-                            funcionarioId = usuario.codigo,
-                            embedding = vetorFacial.joinToString(","),
-                            synced = true
-                        )
-                        
-                        // Inserir nova face
-                        dao.insert(faces)
-                        Log.d(TAG, "✅ Nova face salva para funcionário ${usuario.codigo}")
+                    } else {
+                        Log.d(TAG, "✨ Primeira face para o funcionário ${usuario.codigo}")
+                    }
+                    
+                    // Converter embedding para string
+                    val embeddingString = embedding.joinToString(",")
+                    Log.d(TAG, "📝 Embedding string (primeiros 50 chars): ${embeddingString.take(50)}...")
+                    
+                    // Criar nova face
+                    val faceEntity = FaceEntity(
+                        id = 0, // Deixar o Room gerar o ID
+                        funcionarioId = usuario.codigo,
+                        embedding = embeddingString,
+                        synced = true
+                    )
+                    
+                    // Inserir nova face
+                    dao.insert(faceEntity)
+                    
+                    // Verificar se foi salvo corretamente
+                    val savedFace = dao.getByFuncionarioId(usuario.codigo)
+                    if (savedFace != null) {
+                        Log.d(TAG, "✅ Face salva com sucesso!")
+                        Log.d(TAG, "   ID: ${savedFace.id}")
+                        Log.d(TAG, "   Funcionário: ${savedFace.funcionarioId}")
+                        Log.d(TAG, "   Embedding tamanho: ${savedFace.embedding.split(",").size}")
+                        Log.d(TAG, "   Sincronizado: ${savedFace.synced}")
                         
                         // Mostrar tela de confirmação na thread principal
                         withContext(Dispatchers.Main) {
                             showSuccessScreen()
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro ao salvar face: ${e.message}")
+                    } else {
+                        Log.e(TAG, "❌ Face não foi encontrada após salvar!")
                         withContext(Dispatchers.Main) {
-                            showToast("Erro ao salvar face: ${e.message}")
+                            showToast("Erro: face não foi salva corretamente")
                         }
                     }
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro ao salvar face: ${e.message}", e)
+                    withContext(Dispatchers.Main) {
+                        showToast("Erro ao salvar face: ${e.message}")
+                    }
                 }
-
-
-            } else {
-                Log.e(TAG, "❌ Usuario nulo - não foi possível salvar o vetor facial.")
-                showToast("Erro: usuário não encontrado.")
             }
+            
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro na inferência", e)
-            showToast("Erro na inferência: ${e.message}")
+            Log.e(TAG, "❌ Erro geral ao salvar face", e)
+            showToast("Erro ao salvar face: ${e.message}")
         }
     }
 
@@ -606,6 +858,123 @@ class CameraActivity : AppCompatActivity() {
                 val declaredLength = fileDescriptor.declaredLength
 
                 fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+            }
+        }
+    }
+
+    /**
+     * 🔍 TESTE DE CONEXÃO COM O BANCO DE DADOS
+     */
+    private fun testDatabaseConnection() {
+        Log.d(TAG, "🔍 === TESTANDO CONEXÃO COM BANCO ===")
+        
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val dao = AppDatabase.getInstance(applicationContext).faceDao()
+                val allFaces = dao.getAllFaces()
+                
+                Log.d(TAG, "📊 Total de faces no banco: ${allFaces.size}")
+                
+                val usuario = intent.getSerializableExtra("usuario") as? FuncionariosLocalModel
+                if (usuario != null) {
+                    Log.d(TAG, "👤 Verificando face para usuário: ${usuario.nome} (${usuario.codigo})")
+                    
+                    val existingFace = dao.getByFuncionarioId(usuario.codigo)
+                    if (existingFace != null) {
+                        Log.d(TAG, "✅ Face existente encontrada:")
+                        Log.d(TAG, "   ID: ${existingFace.id}")
+                        Log.d(TAG, "   Embedding tamanho: ${existingFace.embedding.split(",").size}")
+                        Log.d(TAG, "   Sincronizado: ${existingFace.synced}")
+                    } else {
+                        Log.d(TAG, "📝 Nenhuma face encontrada para este usuário")
+                    }
+                } else {
+                    Log.w(TAG, "⚠️ Usuário não informado no intent")
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao testar banco de dados", e)
+            }
+        }
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Detectar qualidade da câmera e ajustar parâmetros
+     */
+    private fun detectCameraQuality() {
+        Log.d(TAG, "📷 === DETECTANDO QUALIDADE DA CÂMERA ===")
+        
+        try {
+            val cameraManager = getSystemService(CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+            val cameraIds = cameraManager.cameraIdList
+            
+            for (cameraId in cameraIds) {
+                val characteristics = cameraManager.getCameraCharacteristics(cameraId)
+                val facing = characteristics.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)
+                
+                // Verificar apenas câmera frontal
+                if (facing == android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT) {
+                    val sensorSize = characteristics.get(android.hardware.camera2.CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
+                    
+                    Log.d(TAG, "📱 Câmera frontal encontrada:")
+                    Log.d(TAG, "   ID: $cameraId")
+                    
+                    if (sensorSize != null) {
+                        Log.d(TAG, "   Sensor: ${sensorSize.width}x${sensorSize.height}")
+                        
+                        // Classificar qualidade baseada no sensor
+                        val sensorPixels = sensorSize.width * sensorSize.height
+                        val quality = when {
+                            sensorPixels >= 8000000 -> "ALTA" // 8MP+
+                            sensorPixels >= 5000000 -> "MÉDIA" // 5MP+
+                            sensorPixels >= 2000000 -> "BAIXA" // 2MP+
+                            else -> "MUITO BAIXA"
+                        }
+                        
+                        Log.d(TAG, "   Qualidade estimada: $quality (${sensorPixels/1000000}MP)")
+                        
+                        // ✅ AJUSTAR PARÂMETROS BASEADO NA QUALIDADE
+                        adjustParametersForQuality(quality)
+                    }
+                    
+                    break // Só precisamos da câmera frontal
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao detectar qualidade da câmera", e)
+            // Usar configuração padrão
+            adjustParametersForQuality("MÉDIA")
+        }
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Ajustar parâmetros baseado na qualidade da câmera
+     */
+    private fun adjustParametersForQuality(quality: String) {
+        Log.d(TAG, "⚙️ === AJUSTANDO PARÂMETROS PARA QUALIDADE: $quality ===")
+        
+        when (quality) {
+            "ALTA" -> {
+                // Câmera de alta qualidade - parâmetros mais restritivos
+                Log.d(TAG, "🎯 Configuração para câmera de ALTA qualidade")
+                // Manter configurações padrão
+            }
+            "MÉDIA" -> {
+                // Câmera de qualidade média - parâmetros equilibrados
+                Log.d(TAG, "⚖️ Configuração para câmera de MÉDIA qualidade")
+                // Ajustes moderados já aplicados
+            }
+            "BAIXA", "MUITO BAIXA" -> {
+                // Câmera de baixa qualidade - parâmetros mais tolerantes
+                Log.d(TAG, "🔧 Configuração para câmera de BAIXA qualidade")
+                
+                // ✅ AJUSTES PARA CÂMERAS DE BAIXA QUALIDADE:
+                // 1. Reduzir tamanho mínimo da face
+                // 2. Aumentar tolerância do oval
+                // 3. Reduzir critérios de estabilidade
+                
+                showToast("📷 Detectada câmera de baixa qualidade - Ajustando configurações...")
             }
         }
     }

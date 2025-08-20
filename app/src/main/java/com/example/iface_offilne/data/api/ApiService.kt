@@ -5,7 +5,7 @@ import com.example.iface_offilne.data.EntidadeResponse
 import com.example.iface_offilne.data.request.EntidadeRequest
 import com.example.iface_offilne.models.FuncionariosModel
 import com.example.iface_offilne.models.FuncionariosResponse
-import com.example.iface_offilne.util.SessionManager
+
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET

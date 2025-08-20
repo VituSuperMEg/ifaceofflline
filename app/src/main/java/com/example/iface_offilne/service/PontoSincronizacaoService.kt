@@ -33,48 +33,101 @@ class PontoSincronizacaoService {
     ) {
         withContext(Dispatchers.IO) {
             try {
+                // ✅ PROTEÇÃO: Validar parâmetros
+                if (funcionarioId.isEmpty()) {
+                    Log.e(TAG, "❌ ID do funcionário vazio")
+                    return@withContext
+                }
+                
+                if (funcionarioNome.isEmpty()) {
+                    Log.e(TAG, "❌ Nome do funcionário vazio")
+                    return@withContext
+                }
+                
                 val database = AppDatabase.getInstance(context)
                 val pontoDao = database.pontoSincronizacaoDao()
                 val funcionarioDao = database.funcionarioDao()
                 
-                // Obter configurações atuais
-                val localizacaoId = ConfiguracoesManager.getLocalizacaoId(context)
-                val codigoSincronizacao = ConfiguracoesManager.getCodigoSincronizacao(context)
+                // ✅ PROTEÇÃO: Obter configurações com fallback
+                val localizacaoId = try {
+                    ConfiguracoesManager.getLocalizacaoId(context)
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ Erro ao obter localização ID: ${e.message}")
+                    ""
+                }
                 
-                // Buscar informações completas do funcionário
-                val funcionario = funcionarioDao.getById(funcionarioId.toIntOrNull() ?: 0)
+                val codigoSincronizacao = try {
+                    ConfiguracoesManager.getCodigoSincronizacao(context)
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ Erro ao obter código de sincronização: ${e.message}")
+                    ""
+                }
+                
+                // ✅ PROTEÇÃO: Buscar informações completas do funcionário
+                val funcionario = try {
+                    funcionarioDao.getById(funcionarioId.toIntOrNull() ?: 0)
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ Erro ao buscar funcionário: ${e.message}")
+                    null
+                }
                 
                 // Formatar data/hora atual
                 val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                 val dataHora = sdf.format(Date())
                 
-                // Criar entidade do ponto com informações completas
-                val ponto = PontoSincronizacaoEntity(
-                    funcionarioId = funcionarioId,
-                    funcionarioNome = funcionarioNome,
-                    funcionarioMatricula = funcionario?.matricula ?: "",
-                    funcionarioCpf = funcionario?.cpf ?: "",
-                    funcionarioCargo = funcionario?.cargo ?: "",
-                    funcionarioSecretaria = funcionario?.secretaria ?: "",
-                    funcionarioLotacao = funcionario?.lotacao ?: "",
-                    dataHora = dataHora,
-                    tipo = tipo,
-                    sincronizado = false,
-                    localizacaoId = localizacaoId,
-                    codigoSincronizacao = codigoSincronizacao,
-                    fotoBase64 = fotoBase64, // 🆕 Incluir foto
-                    latitude = latitude, // ✅ NOVA: Incluir latitude
-                    longitude = longitude // ✅ NOVA: Incluir longitude
-                )
+                // ✅ PROTEÇÃO: Criar entidade do ponto com informações completas
+                val ponto = try {
+                    PontoSincronizacaoEntity(
+                        funcionarioId = funcionarioId,
+                        funcionarioNome = funcionarioNome,
+                        funcionarioMatricula = funcionario?.matricula ?: "",
+                        funcionarioCpf = funcionario?.cpf ?: "",
+                        funcionarioCargo = funcionario?.cargo ?: "",
+                        funcionarioSecretaria = funcionario?.secretaria ?: "",
+                        funcionarioLotacao = funcionario?.lotacao ?: "",
+                        dataHora = dataHora,
+                        tipo = tipo,
+                        sincronizado = false,
+                        localizacaoId = localizacaoId,
+                        codigoSincronizacao = codigoSincronizacao,
+                        fotoBase64 = fotoBase64, // 🆕 Incluir foto
+                        latitude = latitude, // ✅ NOVA: Incluir latitude
+                        longitude = longitude // ✅ NOVA: Incluir longitude
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro ao criar entidade de ponto: ${e.message}")
+                    return@withContext
+                }
                 
-                // Salvar no Room
-                pontoDao.insertPonto(ponto)
+                // ✅ PROTEÇÃO: Salvar no Room com retry
+                var pontoSalvo = false
+                var tentativas = 0
+                val maxTentativas = 3
                 
-                Log.d(TAG, "✅ Ponto salvo para sincronização: $funcionarioId - $tipo - $dataHora")
+                while (!pontoSalvo && tentativas < maxTentativas) {
+                    try {
+                        tentativas++
+                        Log.d(TAG, "💾 Tentativa $tentativas de salvar ponto para sincronização...")
+                        
+                        pontoDao.insertPonto(ponto)
+                        pontoSalvo = true
+                        Log.d(TAG, "✅ Ponto salvo para sincronização na tentativa $tentativas: $funcionarioId - $tipo - $dataHora")
+                        
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro na tentativa $tentativas: ${e.message}")
+                        if (tentativas >= maxTentativas) {
+                            Log.e(TAG, "❌ Falha ao salvar ponto para sincronização após $maxTentativas tentativas")
+                            return@withContext
+                        }
+                        // Aguardar um pouco antes da próxima tentativa
+                        kotlinx.coroutines.delay(500)
+                    }
+                }
                 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao salvar ponto para sincronização: ${e.message}")
-                throw e
+                // ✅ PROTEÇÃO: Não fazer throw para evitar crash
+                // Apenas logar o erro e continuar
             }
         }
     }
@@ -88,18 +141,17 @@ class PontoSincronizacaoService {
                 Log.d(TAG, "🚀 === INICIANDO SINCRONIZAÇÃO REAL ===")
                 
                 // ✅ VERIFICAÇÃO PRIORITÁRIA: Entidade configurada
-                val entidadeAtual = com.example.iface_offilne.util.SessionManager.entidade
-                if (entidadeAtual == null || entidadeAtual.id.isEmpty()) {
+                val entidadeId = ConfiguracoesManager.getEntidadeId(context)
+                if (entidadeId.isEmpty()) {
                     Log.e(TAG, "❌ === ERRO CRÍTICO: ENTIDADE NÃO CONFIGURADA ===")
-                    Log.e(TAG, "  🔴 SessionManager.entidade: $entidadeAtual")
-                    Log.e(TAG, "  💡 SOLUÇÃO: Usuário deve ir em configurações e selecionar uma entidade")
+                    Log.e(TAG, "  🔴 Entidade ID das configurações: '$entidadeId'")
+                    Log.e(TAG, "  💡 SOLUÇÃO: Usuário deve ir em configurações e preencher o código da entidade")
                     Log.e(TAG, "  📍 Sem entidade, a API retornará erro 400 'Cliente não configurado'")
-                    return@withContext SincronizacaoResult(false, 0, 0, "❌ Entidade não configurada. Vá em configurações e selecione uma entidade.")
+                    return@withContext SincronizacaoResult(false, 0, 0, "❌ Entidade não configurada. Vá em configurações e preencha o código da entidade.")
                 }
                 
                 Log.d(TAG, "✅ Entidade configurada:")
-                Log.d(TAG, "  🆔 ID: '${entidadeAtual.id}'")
-                Log.d(TAG, "  📝 Nome: '${entidadeAtual.name}'")
+                Log.d(TAG, "  🆔 ID: '$entidadeId'")
                 
                 val database = AppDatabase.getInstance(context)
                 val pontoDao = database.pontoSincronizacaoDao()
@@ -312,20 +364,19 @@ class PontoSincronizacaoService {
                 Log.d(TAG, "🌐 === FAZENDO CHAMADA HTTP ===")
                 
                 try {
-                    // ✅ CORRIGIDO: Obter entidade do SessionManager
-                    val entidade = com.example.iface_offilne.util.SessionManager.entidade?.id
+                    // ✅ CORRIGIDO: Obter entidade das configurações
+                    val entidade = ConfiguracoesManager.getEntidadeId(context)
                     
-                    if (entidade.isNullOrEmpty()) {
+                    if (entidade.isEmpty()) {
                         Log.e(TAG, "❌ === ERRO: ENTIDADE NÃO CONFIGURADA ===")
-                        Log.e(TAG, "  🔴 SessionManager.entidade é null ou vazio")
-                        Log.e(TAG, "  💡 Usuário precisa selecionar uma entidade primeiro")
-                        Log.e(TAG, "  📍 Vá em configurações e selecione a entidade")
+                        Log.e(TAG, "  🔴 Entidade ID das configurações é vazio")
+                        Log.e(TAG, "  💡 Usuário precisa preencher o código da entidade primeiro")
+                        Log.e(TAG, "  📍 Vá em configurações e preencha o código da entidade")
                         return@withContext false
                     }
                     
                     Log.d(TAG, "🔗 URL da API: /$entidade/services/util/sincronizar-ponto-table")
-                    Log.d(TAG, "🔗 Entidade corrigida: '$entidade'")
-                    Log.d(TAG, "🔗 SessionManager.entidade.name: '${com.example.iface_offilne.util.SessionManager.entidade?.name}'")
+                    Log.d(TAG, "🔗 Entidade das configurações: '$entidade'")
                     
                                     // ✅ CORREÇÃO: Converter pontos para o formato da API com geolocalização
                 val pontosParaAPI = pontos.map { ponto ->

@@ -59,7 +59,6 @@ dependencies {
 
     implementation("androidx.appcompat:appcompat:1.6.1")
 
-
     // TensorFlow
     implementation("org.tensorflow:tensorflow-lite:2.13.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
@@ -67,7 +66,23 @@ dependencies {
 
     // Face Detection
     implementation("com.google.mlkit:face-detection:16.1.5")
-
+    
+    // 🚀 NOVAS BIBLIOTECAS PARA RECONHECIMENTO FACIAL AVANÇADO
+    // MediaPipe para detecção mais precisa
+    implementation("com.google.mediapipe:tasks-vision:0.10.0")
+    
+    // ML Kit Face Detection (já incluído acima, mas com configurações avançadas)
+    implementation("com.google.mlkit:face-detection:16.1.5")
+    
+    // Biometric Support
+    implementation("androidx.biometric:biometric:1.1.0")
+    
+    // Image Processing Libraries
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.exifinterface:exifinterface:1.3.6")
+    
+    // Coroutines for async operations
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
     implementation("com.google.android.material:material:1.9.0")
 

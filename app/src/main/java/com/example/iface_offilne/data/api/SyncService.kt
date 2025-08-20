@@ -4,7 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.example.iface_offilne.data.AppDatabase
 import com.example.iface_offilne.data.PontosGenericosEntity
-import com.example.iface_offilne.util.SessionManager
+import com.example.iface_offilne.util.ConfiguracoesManager
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import retrofit2.Response
@@ -93,9 +94,9 @@ class SyncService(private val context: Context) {
                     Log.d(TAG, "📤   - observacao: ${ponto.observacao}")
                 }
 
-                // Obter entidade atual
-                val entidade = SessionManager.entidade?.id
-                if (entidade.isNullOrEmpty()) {
+                // Obter entidade atual das configurações
+                val entidade = ConfiguracoesManager.getEntidadeId(context)
+                if (entidade.isEmpty()) {
                     Log.e(TAG, "❌ Entidade não configurada")
                     return@withContext SyncResult.Error("Entidade não configurada")
                 }
@@ -224,8 +225,8 @@ class SyncService(private val context: Context) {
             withContext(Dispatchers.IO) {
                 Log.d(TAG, "🧪 Testando conexão com o servidor...")
 
-                val entidade = SessionManager.entidade?.id
-                if (entidade.isNullOrEmpty()) {
+                val entidade = ConfiguracoesManager.getEntidadeId(context)
+                if (entidade.isEmpty()) {
                     Log.e(TAG, "❌ Entidade não configurada")
                     return@withContext SyncResult.Error("Entidade não configurada")
                 }

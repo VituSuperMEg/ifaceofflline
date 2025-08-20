@@ -18,7 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@Database(entities = [FaceEntity::class, OperadorEntity::class, FuncionariosEntity::class, PontosGenericosEntity::class, ConfiguracoesEntity::class, PontoSincronizacaoEntity::class, HistoricoSincronizacaoEntity::class], version = 11)
+@Database(entities = [FaceEntity::class, OperadorEntity::class, FuncionariosEntity::class, PontosGenericosEntity::class, ConfiguracoesEntity::class, PontoSincronizacaoEntity::class, HistoricoSincronizacaoEntity::class], version = 12)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun faceDao(): FaceDao
@@ -45,6 +45,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "faces.db"
                 )
                     .fallbackToDestructiveMigration() // Para desenvolvimento - remove em produção
+                    .addMigrations() // Adicionar migrations se necessário
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)

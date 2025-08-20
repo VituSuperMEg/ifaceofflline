@@ -381,11 +381,11 @@ class SincronizacaoService {
                 Log.d(TAG, "📊 Pontos Pendentes: $pontosPendentes")
                 
                 // ✅ NOVO: Verificar entidade configurada
-                val entidade = com.example.iface_offilne.util.SessionManager.entidade
-                Log.d(TAG, "🏢 Entidade: ${entidade?.name ?: "NÃO CONFIGURADA"}")
+                val entidadeId = ConfiguracoesManager.getEntidadeId(context)
+                Log.d(TAG, "🏢 Entidade ID: ${entidadeId.ifEmpty { "NÃO CONFIGURADA" }}")
                 
                 // Verificar se configurações estão válidas
-                val configuracoesValidas = localizacaoId.isNotEmpty() && codigoSincronizacao.isNotEmpty() && entidade != null
+                val configuracoesValidas = localizacaoId.isNotEmpty() && codigoSincronizacao.isNotEmpty() && entidadeId.isNotEmpty()
                 Log.d(TAG, "✅ Configurações Válidas: $configuracoesValidas")
                 
                 // ✅ DIAGNÓSTICO DE PROBLEMAS
@@ -393,7 +393,7 @@ class SincronizacaoService {
                 
                 if (localizacaoId.isEmpty()) problemas.add("Localização ID não preenchida")
                 if (codigoSincronizacao.isEmpty()) problemas.add("Código de sincronização não preenchido")
-                if (entidade == null) problemas.add("Entidade não configurada")
+                if (entidadeId.isEmpty()) problemas.add("Entidade não configurada")
                 if (!sincronizacaoAtiva) problemas.add("Sincronização automática desativada")
                 if (pontosPendentes == 0) problemas.add("Nenhum ponto para sincronizar")
                 

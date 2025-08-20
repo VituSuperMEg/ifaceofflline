@@ -24,7 +24,24 @@ class FaceRecognitionHelper(private val context: Context) {
     private data class CachedFaceData(
         val funcionario: FuncionariosEntity,
         val embedding: FloatArray
-    )
+    ) {
+        // ✅ CRÍTICO: Implementar equals e hashCode para FloatArray
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+            
+            other as CachedFaceData
+            
+            if (funcionario != other.funcionario) return false
+            return embedding.contentEquals(other.embedding)
+        }
+        
+        override fun hashCode(): Int {
+            var result = funcionario.hashCode()
+            result = 31 * result + embedding.contentHashCode()
+            return result
+        }
+    }
     
     companion object {
         private const val TAG = "FaceRecognitionHelper"
@@ -62,89 +79,114 @@ class FaceRecognitionHelper(private val context: Context) {
     }
 
     /**
-     * ✅ VERSÃO CORRIGIDA: Reconhecimento facial com thresholds corretos
+     * ✅ VERSÃO CORRIGIDA: Reconhecimento facial com thresholds corretos e proteções
      */
     suspend fun recognizeFace(faceEmbedding: FloatArray): FuncionariosEntity? {
         return withContext(Dispatchers.IO) {
             try {
                 val startTime = System.currentTimeMillis()
                 
-                // ✅ LIMPEZA AUTOMÁTICA DE CACHE PARA EVITAR CONFUSÃO
-                clearCache()
-                
-                // ✅ VALIDAÇÃO BÁSICA MELHORADA
+                // ✅ PROTEÇÃO CRÍTICA: Validar embedding de entrada
                 if (!validarEmbedding(faceEmbedding)) {
-                    if (DEBUG_MODE) Log.e(TAG, "❌ Vetor facial inválido: tamanho=${faceEmbedding.size}")
+                    Log.e(TAG, "❌ Vetor facial inválido: tamanho=${faceEmbedding.size}")
                     return@withContext null
                 }
                 
                 // ✅ VERIFICAÇÃO DE CONTEXTO
                 if (context is android.app.Activity && (context.isFinishing || context.isDestroyed)) {
-                    if (DEBUG_MODE) Log.w(TAG, "⚠️ Activity finalizada")
+                    Log.w(TAG, "⚠️ Activity finalizada")
                     return@withContext null
                 }
                 
                 // ✅ CARREGAR DADOS EM CACHE (FRESCO)
                 val facesData = getCachedFacesData()
                 if (facesData.isEmpty()) {
-                    if (DEBUG_MODE) Log.w(TAG, "⚠️ Nenhuma face cadastrada")
+                    Log.w(TAG, "⚠️ Nenhuma face cadastrada")
                     return@withContext null
                 }
                 
-                if (DEBUG_MODE) Log.d(TAG, "🎯 === SISTEMA DE RECONHECIMENTO FACIAL CORRIGIDO ===")
-                if (DEBUG_MODE) Log.d(TAG, "🔍 Analisando ${facesData.size} funcionários cadastrados")
-                if (DEBUG_MODE) Log.d(TAG, "📊 Thresholds ativos: BASE=$BASE_THRESHOLD, MIN=$MIN_SIMILARITY_FOR_ANY_APPROVAL, MAX_DIST=$MAX_EUCLIDEAN_DISTANCE")
+                Log.d(TAG, "🎯 === SISTEMA DE RECONHECIMENTO FACIAL CORRIGIDO ===")
+                Log.d(TAG, "🔍 Analisando ${facesData.size} funcionários cadastrados")
+                Log.d(TAG, "📊 Thresholds ativos: BASE=$BASE_THRESHOLD, MIN=$MIN_SIMILARITY_FOR_ANY_APPROVAL, MAX_DIST=$MAX_EUCLIDEAN_DISTANCE")
                 
-                // ✅ ANÁLISE COMPARATIVA: Calcular similaridades
+                // ✅ ANÁLISE COMPARATIVA: Calcular similaridades com proteções
                 val candidatos = mutableListOf<Triple<FuncionariosEntity, Float, Float>>() // funcionario, cosine, euclidean
                 
                 for (faceData in facesData) {
-                    // ✅ VALIDAR EMBEDDING CADASTRADO
-                    if (!validarEmbedding(faceData.embedding)) {
-                        if (DEBUG_MODE) Log.w(TAG, "⚠️ Embedding inválido para ${faceData.funcionario.nome}")
+                    try {
+                        // ✅ VALIDAR EMBEDDING CADASTRADO
+                        if (!validarEmbedding(faceData.embedding)) {
+                            Log.w(TAG, "⚠️ Embedding inválido para ${faceData.funcionario.nome}")
+                            continue
+                        }
+                        
+                        // ✅ PROTEÇÃO: Calcular similaridades com tratamento de erro
+                        val cosineSimilarity = try {
+                            calculateCosineSimilaritySafe(faceEmbedding, faceData.embedding)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro ao calcular similaridade de cosseno: ${e.message}")
+                            0f
+                        }
+                        
+                        val euclideanDistance = try {
+                            calculateEuclideanDistanceSafe(faceEmbedding, faceData.embedding)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro ao calcular distância euclidiana: ${e.message}")
+                            Float.MAX_VALUE
+                        }
+                        
+                        // ✅ VALIDAR RESULTADOS DOS CÁLCULOS
+                        if (cosineSimilarity.isNaN() || cosineSimilarity.isInfinite()) {
+                            Log.w(TAG, "⚠️ Similaridade de cosseno inválida para ${faceData.funcionario.nome}: $cosineSimilarity")
+                            continue
+                        }
+                        
+                        if (euclideanDistance.isNaN() || euclideanDistance.isInfinite()) {
+                            Log.w(TAG, "⚠️ Distância euclidiana inválida para ${faceData.funcionario.nome}: $euclideanDistance")
+                            continue
+                        }
+                        
+                        if (DEBUG_MODE) {
+                            Log.d(TAG, "👤 ${faceData.funcionario.nome}:")
+                            Log.d(TAG, "   - Cosine: $cosineSimilarity")
+                            Log.d(TAG, "   - Euclidean: $euclideanDistance")
+                        }
+                        
+                        // ✅ FILTROS CORRIGIDOS: Usar thresholds do usuário
+                        val thresholdsAtivos = if (MODO_TESTE_ATIVO) {
+                            Log.w(TAG, "🧪 MODO TESTE ATIVO - Critérios permissivos")
+                            Triple(TEST_MIN_SIMILARITY, TEST_MAX_EUCLIDEAN_DISTANCE, TEST_BASE_THRESHOLD)
+                        } else {
+                            Triple(MIN_SIMILARITY_FOR_ANY_APPROVAL, MAX_EUCLIDEAN_DISTANCE, BASE_THRESHOLD)
+                        }
+                        
+                        val passaCosseno = cosineSimilarity >= thresholdsAtivos.first
+                        val passaDistancia = euclideanDistance <= thresholdsAtivos.second
+                        val passaThresholdBase = cosineSimilarity >= thresholdsAtivos.third
+                        
+                        // ✅ LÓGICA CORRIGIDA: Aprovar se passar no threshold mínimo
+                        if (passaCosseno && passaDistancia && passaThresholdBase) {
+                            candidatos.add(Triple(faceData.funcionario, cosineSimilarity, euclideanDistance))
+                            if (DEBUG_MODE) {
+                                Log.d(TAG, "   ✅ CANDIDATO VÁLIDO")
+                            }
+                        } else {
+                            if (DEBUG_MODE) {
+                                Log.d(TAG, "   ❌ REJEITADO - Cosine:$passaCosseno Dist:$passaDistancia Thresh:$passaThresholdBase")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao processar ${faceData.funcionario.nome}: ${e.message}")
                         continue
-                    }
-                    
-                    val cosineSimilarity = calculateCosineSimilarityFast(faceEmbedding, faceData.embedding)
-                    val euclideanDistance = calculateEuclideanDistanceFast(faceEmbedding, faceData.embedding)
-                    
-                    if (DEBUG_MODE) {
-                        Log.d(TAG, "👤 ${faceData.funcionario.nome}:")
-                        Log.d(TAG, "   - Cosine: $cosineSimilarity")
-                        Log.d(TAG, "   - Euclidean: $euclideanDistance")
-                    }
-                    
-                    // ✅ FILTROS CORRIGIDOS: Usar thresholds do usuário
-                    val thresholdsAtivos = if (MODO_TESTE_ATIVO) {
-                        Log.w(TAG, "🧪 MODO TESTE ATIVO - Critérios permissivos")
-                        Triple(TEST_MIN_SIMILARITY, TEST_MAX_EUCLIDEAN_DISTANCE, TEST_BASE_THRESHOLD)
-                    } else {
-                        Triple(MIN_SIMILARITY_FOR_ANY_APPROVAL, MAX_EUCLIDEAN_DISTANCE, BASE_THRESHOLD)
-                    }
-                    
-                    val passaCosseno = cosineSimilarity >= thresholdsAtivos.first
-                    val passaDistancia = euclideanDistance <= thresholdsAtivos.second
-                    val passaThresholdBase = cosineSimilarity >= thresholdsAtivos.third
-                    
-                    // ✅ LÓGICA CORRIGIDA: Aprovar se passar no threshold mínimo
-                    if (passaCosseno && passaDistancia && passaThresholdBase) {
-                        candidatos.add(Triple(faceData.funcionario, cosineSimilarity, euclideanDistance))
-                        if (DEBUG_MODE) {
-                            Log.d(TAG, "   ✅ CANDIDATO VÁLIDO")
-                        }
-                    } else {
-                        if (DEBUG_MODE) {
-                            Log.d(TAG, "   ❌ REJEITADO - Cosine:$passaCosseno Dist:$passaDistancia Thresh:$passaThresholdBase")
-                        }
                     }
                 }
                 
                 // ✅ ANÁLISE CORRIGIDA: Lógica mais rigorosa para evitar confusão entre pessoas
                 val funcionarioEscolhido = if (candidatos.isEmpty()) {
-                    if (DEBUG_MODE) Log.w(TAG, "❌ ZERO candidatos passaram nos filtros rigorosos")
+                    Log.w(TAG, "❌ ZERO candidatos passaram nos filtros rigorosos")
                     null
                 } else {
-                    if (DEBUG_MODE) Log.d(TAG, "🎯 ${candidatos.size} candidatos encontrados")
+                    Log.d(TAG, "🎯 ${candidatos.size} candidatos encontrados")
                     
                     // ✅ ORDENAR POR SIMILARIDADE (MELHOR PRIMEIRO)
                     candidatos.sortByDescending { it.second }
@@ -171,25 +213,25 @@ class FaceRecognitionHelper(private val context: Context) {
                         
                         // ✅ CRÍTICO: Se a diferença for muito pequena, rejeitar para evitar confusão
                         if (diferenca < MIN_DIFFERENCE_BETWEEN_PEOPLE) {
-                            if (DEBUG_MODE) Log.w(TAG, "❌ REJEITADO: Diferença muito pequena entre candidatos ($diferenca < $MIN_DIFFERENCE_BETWEEN_PEOPLE) - risco de confusão")
+                            Log.w(TAG, "❌ REJEITADO: Diferença muito pequena entre candidatos ($diferenca < $MIN_DIFFERENCE_BETWEEN_PEOPLE) - risco de confusão")
                             null
                         } else {
                             // ✅ APROVAR apenas se passar nos critérios rigorosos
                             if (melhorSimilaridade >= BASE_THRESHOLD && melhorDistancia <= MAX_EUCLIDEAN_DISTANCE) {
-                                if (DEBUG_MODE) Log.d(TAG, "✅ FUNCIONÁRIO APROVADO COM DIFERENÇA SUFICIENTE: ${melhorFuncionario.nome}")
+                                Log.d(TAG, "✅ FUNCIONÁRIO APROVADO COM DIFERENÇA SUFICIENTE: ${melhorFuncionario.nome}")
                                 melhorFuncionario
                             } else {
-                                if (DEBUG_MODE) Log.w(TAG, "❌ REJEITADO: Similaridade ou distância insuficiente (sim=$melhorSimilaridade, dist=$melhorDistancia)")
+                                Log.w(TAG, "❌ REJEITADO: Similaridade ou distância insuficiente (sim=$melhorSimilaridade, dist=$melhorDistancia)")
                                 null
                             }
                         }
                     } else {
                         // ✅ ÚNICO CANDIDATO: Aprovar apenas se passar nos critérios rigorosos
                         if (melhorSimilaridade >= BASE_THRESHOLD && melhorDistancia <= MAX_EUCLIDEAN_DISTANCE) {
-                            if (DEBUG_MODE) Log.d(TAG, "✅ FUNCIONÁRIO APROVADO (ÚNICO CANDIDATO): ${melhorFuncionario.nome}")
+                            Log.d(TAG, "✅ FUNCIONÁRIO APROVADO (ÚNICO CANDIDATO): ${melhorFuncionario.nome}")
                             melhorFuncionario
                         } else {
-                            if (DEBUG_MODE) Log.w(TAG, "❌ REJEITADO: Similaridade ou distância insuficiente (sim=$melhorSimilaridade, dist=$melhorDistancia)")
+                            Log.w(TAG, "❌ REJEITADO: Similaridade ou distância insuficiente (sim=$melhorSimilaridade, dist=$melhorDistancia)")
                             null
                         }
                     }
@@ -209,7 +251,8 @@ class FaceRecognitionHelper(private val context: Context) {
                 return@withContext funcionarioEscolhido
                 
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro no reconhecimento: ${e.message}")
+                Log.e(TAG, "❌ Erro crítico no reconhecimento: ${e.message}")
+                e.printStackTrace()
                 return@withContext null
             }
         }
@@ -219,85 +262,153 @@ class FaceRecognitionHelper(private val context: Context) {
      * ✅ CACHE INTELIGENTE: Busca dados em cache ou recarrega se necessário
      */
     private suspend fun getCachedFacesData(): List<CachedFaceData> {
-        val currentTime = System.currentTimeMillis()
-        
-        // Verificar se cache ainda é válido
-        if (cachedFacesData != null && (currentTime - cacheTimestamp) < cacheExpirationMs) {
-            return cachedFacesData!!
-        }
-        
-        // Recarregar cache
-        return try {
-            if (DEBUG_MODE) Log.d(TAG, "🔄 Recarregando cache de faces...")
-            
-            val funcionarios = funcionarioDao.getUsuario()
-            val facesData = mutableListOf<CachedFaceData>()
-            
-            for (funcionario in funcionarios) {
-                try {
-                    val faceEntity = faceDao.getByFuncionarioId(funcionario.codigo)
-                    if (faceEntity != null && faceEntity.embedding.isNotBlank()) {
-                        val embedding = stringToFloatArrayFast(faceEntity.embedding)
-                        if (embedding.size == 192 || embedding.size == 512) {
-                            facesData.add(CachedFaceData(funcionario, embedding))
-                        }
-                    }
-                } catch (e: Exception) {
-                    if (DEBUG_MODE) Log.w(TAG, "⚠️ Erro ao processar ${funcionario.nome}: ${e.message}")
+        return withContext(Dispatchers.IO) {
+            try {
+                val currentTime = System.currentTimeMillis()
+                
+                // ✅ VERIFICAR SE O CACHE AINDA É VÁLIDO
+                if (cachedFacesData != null && (currentTime - cacheTimestamp) < cacheExpirationMs) {
+                    if (DEBUG_MODE) Log.d(TAG, "📦 Usando cache válido (${cachedFacesData!!.size} faces)")
+                    return@withContext cachedFacesData!!
                 }
+                
+                if (DEBUG_MODE) Log.d(TAG, "🔄 Recarregando cache de faces...")
+                
+                // ✅ CARREGAR DADOS FRESCOS DO BANCO
+                val funcionarios = funcionarioDao.getUsuario()
+                val facesData = mutableListOf<CachedFaceData>()
+                
+                for (funcionario in funcionarios) {
+                    try {
+                        val face = faceDao.getByFuncionarioId(funcionario.codigo)
+                        if (face != null && face.embedding.isNotBlank()) {
+                            try {
+                                val embedding = stringToFloatArraySafe(face.embedding)
+                                if (validarEmbedding(embedding)) {
+                                    facesData.add(CachedFaceData(funcionario, embedding))
+                                } else {
+                                    Log.w(TAG, "⚠️ Embedding inválido para ${funcionario.nome}")
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "❌ Erro ao converter embedding de ${funcionario.nome}: ${e.message}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao processar funcionário ${funcionario.nome}: ${e.message}")
+                    }
+                }
+                
+                // ✅ ATUALIZAR CACHE
+                cachedFacesData = facesData
+                cacheTimestamp = currentTime
+                
+                if (DEBUG_MODE) Log.d(TAG, "✅ Cache atualizado: ${facesData.size} faces válidas")
+                
+                return@withContext facesData
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao carregar cache: ${e.message}")
+                return@withContext emptyList()
+            }
+        }
+    }
+    
+    /**
+     * ✅ CÁLCULO SEGURO: Similaridade de cosseno com proteções
+     */
+    private fun calculateCosineSimilaritySafe(vector1: FloatArray, vector2: FloatArray): Float {
+        try {
+            // ✅ VALIDAÇÕES BÁSICAS
+            if (vector1.isEmpty() || vector2.isEmpty()) {
+                Log.w(TAG, "⚠️ Vetores vazios para cálculo de similaridade")
+                return 0f
             }
             
-            cachedFacesData = facesData
-            cacheTimestamp = currentTime
+            if (vector1.size != vector2.size) {
+                Log.w(TAG, "⚠️ Tamanhos diferentes: ${vector1.size} vs ${vector2.size}")
+                return 0f
+            }
             
-            if (DEBUG_MODE) Log.d(TAG, "✅ Cache atualizado: ${facesData.size} faces")
+            // ✅ VALIDAR VALORES DOS VETORES
+            if (vector1.any { it.isNaN() || it.isInfinite() } || vector2.any { it.isNaN() || it.isInfinite() }) {
+                Log.w(TAG, "⚠️ Vetores contêm valores inválidos")
+                return 0f
+            }
             
-            facesData
+            var dotProduct = 0f
+            var magnitude1 = 0f
+            var magnitude2 = 0f
+            
+            for (i in vector1.indices) {
+                val v1 = vector1[i]
+                val v2 = vector2[i]
+                dotProduct += v1 * v2
+                magnitude1 += v1 * v1
+                magnitude2 += v2 * v2
+            }
+            
+            val mag1 = sqrt(magnitude1)
+            val mag2 = sqrt(magnitude2)
+            
+            return if (mag1 > 0f && mag2 > 0f) {
+                val similarity = dotProduct / (mag1 * mag2)
+                // ✅ VALIDAR RESULTADO FINAL
+                if (similarity.isNaN() || similarity.isInfinite()) {
+                    Log.w(TAG, "⚠️ Similaridade calculada é inválida: $similarity")
+                    0f
+                } else {
+                    kotlin.math.abs(similarity)
+                }
+            } else {
+                Log.w(TAG, "⚠️ Magnitudes zero: mag1=$mag1, mag2=$mag2")
+                0f
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao carregar cache: ${e.message}")
-            emptyList()
+            Log.e(TAG, "❌ Erro no cálculo de similaridade: ${e.message}")
+            return 0f
         }
     }
     
     /**
-     * ✅ CONVERSÃO OTIMIZADA: String para FloatArray sem validações extras
+     * ✅ CÁLCULO SEGURO: Distância euclidiana com proteções
      */
-    private fun stringToFloatArrayFast(embeddingString: String): FloatArray {
-        val values = embeddingString.split(",")
-        val floatArray = FloatArray(values.size)
-        
-        for (i in values.indices) {
-            floatArray[i] = values[i].trim().toFloatOrNull() ?: 0f
-        }
-        
-        return floatArray
-    }
-    
-    /**
-     * ✅ CÁLCULO OTIMIZADO: Similaridade de cosseno sem verificações redundantes
-     */
-    private fun calculateCosineSimilarityFast(vector1: FloatArray, vector2: FloatArray): Float {
-        if (vector1.size != vector2.size) return 0f
-        
-        var dotProduct = 0f
-        var magnitude1 = 0f
-        var magnitude2 = 0f
-        
-        for (i in vector1.indices) {
-            val v1 = vector1[i]
-            val v2 = vector2[i]
-            dotProduct += v1 * v2
-            magnitude1 += v1 * v1
-            magnitude2 += v2 * v2
-        }
-        
-        val mag1 = sqrt(magnitude1)
-        val mag2 = sqrt(magnitude2)
-        
-        return if (mag1 > 0f && mag2 > 0f) {
-            kotlin.math.abs(dotProduct / (mag1 * mag2))
-        } else {
-            0f
+    private fun calculateEuclideanDistanceSafe(vector1: FloatArray, vector2: FloatArray): Float {
+        try {
+            // ✅ VALIDAÇÕES BÁSICAS
+            if (vector1.isEmpty() || vector2.isEmpty()) {
+                Log.w(TAG, "⚠️ Vetores vazios para cálculo de distância")
+                return Float.MAX_VALUE
+            }
+            
+            if (vector1.size != vector2.size) {
+                Log.w(TAG, "⚠️ Tamanhos diferentes: ${vector1.size} vs ${vector2.size}")
+                return Float.MAX_VALUE
+            }
+            
+            // ✅ VALIDAR VALORES DOS VETORES
+            if (vector1.any { it.isNaN() || it.isInfinite() } || vector2.any { it.isNaN() || it.isInfinite() }) {
+                Log.w(TAG, "⚠️ Vetores contêm valores inválidos")
+                return Float.MAX_VALUE
+            }
+            
+            var sum = 0f
+            for (i in vector1.indices) {
+                val diff = vector1[i] - vector2[i]
+                sum += diff * diff
+            }
+            
+            val distance = sqrt(sum)
+            
+            // ✅ VALIDAR RESULTADO FINAL
+            return if (distance.isNaN() || distance.isInfinite()) {
+                Log.w(TAG, "⚠️ Distância calculada é inválida: $distance")
+                Float.MAX_VALUE
+            } else {
+                distance
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro no cálculo de distância: ${e.message}")
+            return Float.MAX_VALUE
         }
     }
     
@@ -311,9 +422,9 @@ class FaceRecognitionHelper(private val context: Context) {
     }
     
     /**
-     * ✅ FUNÇÃO SIMPLIFICADA: Converte string para FloatArray com validação básica
+     * ✅ FUNÇÃO SEGURA: Converte string para FloatArray com validação robusta
      */
-    private fun stringToFloatArray(embeddingString: String): FloatArray {
+    private fun stringToFloatArraySafe(embeddingString: String): FloatArray {
         try {
             if (embeddingString.isBlank()) {
                 throw IllegalArgumentException("String de embedding vazia")
@@ -341,6 +452,39 @@ class FaceRecognitionHelper(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao converter string para FloatArray: ${e.message}")
             throw e
+        }
+    }
+    
+    /**
+     * ✅ VALIDAÇÃO DE EMBEDDING: Verificar se o embedding é válido
+     */
+    private fun validarEmbedding(embedding: FloatArray): Boolean {
+        try {
+            if (embedding.isEmpty()) {
+                Log.w(TAG, "❌ Embedding vazio")
+                return false
+            }
+            
+            if (embedding.size != 192 && embedding.size != 512) {
+                Log.w(TAG, "❌ Tamanho de embedding inválido: ${embedding.size}")
+                return false
+            }
+            
+            if (embedding.any { it.isNaN() || it.isInfinite() }) {
+                Log.w(TAG, "❌ Embedding contém valores inválidos")
+                return false
+            }
+            
+            // Verificar se não é um embedding zerado
+            if (embedding.all { it == 0f }) {
+                Log.w(TAG, "❌ Embedding zerado")
+                return false
+            }
+            
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro na validação de embedding: ${e.message}")
+            return false
         }
     }
     
@@ -396,35 +540,7 @@ class FaceRecognitionHelper(private val context: Context) {
         }
     }
     
-    /**
-     * ✅ CÁLCULO OTIMIZADO: Distância euclidiana rápida
-     */
-    private fun calculateEuclideanDistanceFast(vector1: FloatArray, vector2: FloatArray): Float {
-        if (vector1.size != vector2.size) return Float.MAX_VALUE
-        
-        var sum = 0f
-        for (i in vector1.indices) {
-            val diff = vector1[i] - vector2[i]
-            sum += diff * diff
-        }
-        
-        return sqrt(sum)
-    }
-    
-    /**
-     * Calcula a distância euclidiana entre dois vetores
-     */
-    private fun calculateEuclideanDistance(vector1: FloatArray, vector2: FloatArray): Float {
-        if (vector1.size != vector2.size) return Float.MAX_VALUE
-        
-        var sum = 0f
-        for (i in vector1.indices) {
-            val diff = vector1[i] - vector2[i]
-            sum += diff * diff
-        }
-        
-        return sqrt(sum)
-    }
+
     
     /**
      * ✅ FUNÇÃO CRÍTICA: Limpar faces duplicadas e problemas
@@ -504,7 +620,7 @@ class FaceRecognitionHelper(private val context: Context) {
                 val scores = mutableListOf<Pair<FuncionariosEntity, Float>>()
                 
                 for (faceData in facesData) {
-                    val similarity = calculateCosineSimilarityFast(faceEmbedding, faceData.embedding)
+                    val similarity = calculateCosineSimilaritySafe(faceEmbedding, faceData.embedding)
                     scores.add(Pair(faceData.funcionario, similarity))
                 }
                 
@@ -550,7 +666,7 @@ class FaceRecognitionHelper(private val context: Context) {
                         problemas.add("❌ ${funcionario.nome}: Sem face cadastrada")
                     } else {
                         try {
-                            val embedding = stringToFloatArray(face.embedding)
+                            val embedding = stringToFloatArraySafe(face.embedding)
                             if (embedding.size != 192 && embedding.size != 512) {
                                 problemas.add("⚠️ ${funcionario.nome}: Embedding inválido (tamanho: ${embedding.size})")
                             }
@@ -639,8 +755,8 @@ class FaceRecognitionHelper(private val context: Context) {
                 val resultados = mutableListOf<Triple<String, Float, Float>>()
                 
                 for (faceData in facesData) {
-                    val cosineSimilarity = calculateCosineSimilarityFast(faceEmbedding, faceData.embedding)
-                    val euclideanDistance = calculateEuclideanDistanceFast(faceEmbedding, faceData.embedding)
+                    val cosineSimilarity = calculateCosineSimilaritySafe(faceEmbedding, faceData.embedding)
+                    val euclideanDistance = calculateEuclideanDistanceSafe(faceEmbedding, faceData.embedding)
                     
                     resultados.add(Triple(faceData.funcionario.nome, cosineSimilarity, euclideanDistance))
                     
@@ -742,8 +858,8 @@ class FaceRecognitionHelper(private val context: Context) {
                         appendLine("      - Primeiros 10: ${storedEmbedding.take(10).joinToString(", ")}")
                         
                         // Cálculos de similaridade
-                        val cosineSimilarity = calculateCosineSimilarityFast(faceEmbedding, storedEmbedding)
-                        val euclideanDistance = calculateEuclideanDistanceFast(faceEmbedding, storedEmbedding)
+                        val cosineSimilarity = calculateCosineSimilaritySafe(faceEmbedding, storedEmbedding)
+                        val euclideanDistance = calculateEuclideanDistanceSafe(faceEmbedding, storedEmbedding)
                         
                         appendLine("   🧮 CÁLCULOS:")
                         appendLine("      - Similaridade Cosseno: $cosineSimilarity")
@@ -878,8 +994,8 @@ class FaceRecognitionHelper(private val context: Context) {
                     var melhorNome = ""
                     
                     for (faceData in facesData) {
-                        val similarity = calculateCosineSimilarityFast(faceEmbedding, faceData.embedding)
-                        val distance = calculateEuclideanDistanceFast(faceEmbedding, faceData.embedding)
+                        val similarity = calculateCosineSimilaritySafe(faceEmbedding, faceData.embedding)
+                        val distance = calculateEuclideanDistanceSafe(faceEmbedding, faceData.embedding)
                         
                         val passaMinimo = similarity >= MIN_SIMILARITY_FOR_ANY_APPROVAL
                         val passaBase = similarity >= BASE_THRESHOLD
@@ -1014,8 +1130,8 @@ class FaceRecognitionHelper(private val context: Context) {
                             val pessoa1 = facesData[i]
                             val pessoa2 = facesData[j]
                             
-                            val similaridade = calculateCosineSimilarityFast(pessoa1.embedding, pessoa2.embedding)
-                            val distancia = calculateEuclideanDistanceFast(pessoa1.embedding, pessoa2.embedding)
+                            val similaridade = calculateCosineSimilaritySafe(pessoa1.embedding, pessoa2.embedding)
+                            val distancia = calculateEuclideanDistanceSafe(pessoa1.embedding, pessoa2.embedding)
                             
                             appendLine("👥 ${pessoa1.funcionario.nome} ↔ ${pessoa2.funcionario.nome}:")
                             appendLine("   📊 Similaridade: ${String.format("%.3f", similaridade)} (${(similaridade * 100).toInt()}%)")
@@ -1085,34 +1201,6 @@ class FaceRecognitionHelper(private val context: Context) {
     }
     
     /**
-     * ✅ VALIDAÇÃO DE EMBEDDING: Verificar se o embedding é válido
-     */
-    private fun validarEmbedding(embedding: FloatArray): Boolean {
-        if (embedding.isEmpty()) {
-            Log.w(TAG, "❌ Embedding vazio")
-            return false
-        }
-        
-        if (embedding.size != 192 && embedding.size != 512) {
-            Log.w(TAG, "❌ Tamanho de embedding inválido: ${embedding.size}")
-            return false
-        }
-        
-        if (embedding.any { it.isNaN() || it.isInfinite() }) {
-            Log.w(TAG, "❌ Embedding contém valores inválidos")
-            return false
-        }
-        
-        // Verificar se não é um embedding zerado
-        if (embedding.all { it == 0f }) {
-            Log.w(TAG, "❌ Embedding zerado")
-            return false
-        }
-        
-        return true
-    }
-    
-    /**
      * ✅ TESTE DE RECONHECIMENTO: Testar com thresholds corrigidos
      */
     suspend fun testarReconhecimentoCorrigido(faceEmbedding: FloatArray): String {
@@ -1148,8 +1236,8 @@ class FaceRecognitionHelper(private val context: Context) {
                             continue
                         }
                         
-                        val similarity = calculateCosineSimilarityFast(faceEmbedding, faceData.embedding)
-                        val distance = calculateEuclideanDistanceFast(faceEmbedding, faceData.embedding)
+                        val similarity = calculateCosineSimilaritySafe(faceEmbedding, faceData.embedding)
+                        val distance = calculateEuclideanDistanceSafe(faceEmbedding, faceData.embedding)
                         
                         val passaMinimo = similarity >= MIN_SIMILARITY_FOR_ANY_APPROVAL
                         val passaBase = similarity >= BASE_THRESHOLD
@@ -1178,7 +1266,7 @@ class FaceRecognitionHelper(private val context: Context) {
                     val melhor = resultados.firstOrNull()
                     if (melhor != null) {
                         val (funcionario, similarity) = melhor
-                        val distance = calculateEuclideanDistanceFast(faceEmbedding, 
+                        val distance = calculateEuclideanDistanceSafe(faceEmbedding, 
                             facesData.find { it.funcionario.codigo == funcionario.codigo }?.embedding ?: FloatArray(0))
                         
                         appendLine("🎯 MELHOR CANDIDATO:")

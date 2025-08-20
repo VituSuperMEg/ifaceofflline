@@ -28,39 +28,70 @@ class ConfiguracoesActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        binding = ActivityConfiguracoesBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        // Inicializar SharedPreferences
-        sharedPreferences = getSharedPreferences("ConfiguracoesPrefs", MODE_PRIVATE)
-
-        setupViewPager()
-        setupUI()
-        setupListeners()
         
-        // Carregar configurações após um delay para garantir que os fragments estejam prontos
-        binding.viewPager.post {
-            carregarConfiguracoes()
+        try {
+            Log.d("ConfiguracoesActivity", "🚀 onCreate iniciado")
+            
+            binding = ActivityConfiguracoesBinding.inflate(layoutInflater)
+            setContentView(binding.root)
+            
+            Log.d("ConfiguracoesActivity", "✅ Layout inflado com sucesso")
+
+            // Inicializar SharedPreferences
+            sharedPreferences = getSharedPreferences("ConfiguracoesPrefs", MODE_PRIVATE)
+            
+            Log.d("ConfiguracoesActivity", "✅ SharedPreferences inicializado")
+
+            setupViewPager()
+            Log.d("ConfiguracoesActivity", "✅ ViewPager configurado")
+            
+            setupUI()
+            Log.d("ConfiguracoesActivity", "✅ UI configurada")
+            
+            setupListeners()
+            Log.d("ConfiguracoesActivity", "✅ Listeners configurados")
+            
+            // Carregar configurações após um delay para garantir que os fragments estejam prontos
+            binding.viewPager.post {
+                Log.d("ConfiguracoesActivity", "🔄 Iniciando carregamento de configurações")
+                carregarConfiguracoes()
+            }
+            
+            Log.d("ConfiguracoesActivity", "✅ onCreate concluído com sucesso")
+            
+        } catch (e: Exception) {
+            Log.e("ConfiguracoesActivity", "❌ ERRO CRÍTICO no onCreate: ${e.message}")
+            Log.e("ConfiguracoesActivity", "❌ Stack trace: ${e.stackTraceToString()}")
+            Toast.makeText(this, "Erro ao inicializar configurações: ${e.message}", Toast.LENGTH_LONG).show()
+            finish()
         }
     }
 
     private fun setupViewPager() {
-        pagerAdapter = ConfiguracoesPagerAdapter(this)
-        binding.viewPager.adapter = pagerAdapter
+        try {
+            Log.d("ConfiguracoesActivity", "🔄 setupViewPager iniciado")
+            
+            pagerAdapter = ConfiguracoesPagerAdapter(this)
+            binding.viewPager.adapter = pagerAdapter
+            
+            Log.d("ConfiguracoesActivity", "✅ Adapter configurado")
 
-        // Configurar TabLayout com ViewPager2
-        TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
-            tab.text = when (position) {
-                0 -> "Configurações"
-                1 -> "Histórico"
-                2 -> "Sobre"
-                else -> ""
-            }
-        }.attach()
+            // Configurar TabLayout com ViewPager2
+            TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
+                tab.text = when (position) {
+                    0 -> "Configurações"
+                    1 -> "Histórico"
+                    2 -> "Sobre"
+                    else -> ""
+                }
+            }.attach()
+            
+            Log.d("ConfiguracoesActivity", "✅ TabLayout configurado")
 
-        // Configurar orientação do ViewPager2
-        binding.viewPager.orientation = ViewPager2.ORIENTATION_HORIZONTAL
+            // Configurar orientação do ViewPager2
+            binding.viewPager.orientation = ViewPager2.ORIENTATION_HORIZONTAL
+            
+            Log.d("ConfiguracoesActivity", "✅ Orientação configurada")
         
         // Configurar listener para mostrar/ocultar botões conforme a aba
         binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
@@ -79,6 +110,14 @@ class ConfiguracoesActivity : AppCompatActivity() {
                 }
             }
         })
+        
+        Log.d("ConfiguracoesActivity", "✅ setupViewPager concluído com sucesso")
+        
+        } catch (e: Exception) {
+            Log.e("ConfiguracoesActivity", "❌ ERRO no setupViewPager: ${e.message}")
+            Log.e("ConfiguracoesActivity", "❌ Stack trace: ${e.stackTraceToString()}")
+            throw e
+        }
     }
 
     private fun setupUI() {
@@ -97,74 +136,89 @@ class ConfiguracoesActivity : AppCompatActivity() {
     }
 
     private fun carregarConfiguracoes() {
+        Log.d("ConfiguracoesActivity", "🔄 carregarConfiguracoes iniciado")
+        
         // Carregar valores salvos usando ConfiguracoesManager
         lifecycleScope.launch {
             try {
+                Log.d("ConfiguracoesActivity", "🔄 Iniciando busca de configurações no banco")
+                
                 val localizacaoId = ConfiguracoesManager.getLocalizacaoId(this@ConfiguracoesActivity)
+                Log.d("ConfiguracoesActivity", "📍 Localização ID: '$localizacaoId'")
+                
                 val codigoSincronizacao = ConfiguracoesManager.getCodigoSincronizacao(this@ConfiguracoesActivity)
+                Log.d("ConfiguracoesActivity", "🔑 Código Sincronização: '$codigoSincronizacao'")
+                
                 val sincronizacaoAtiva = ConfiguracoesManager.isSincronizacaoAtiva(this@ConfiguracoesActivity)
+                Log.d("ConfiguracoesActivity", "🔄 Sincronização Ativa: $sincronizacaoAtiva")
+                
                 val intervalo = ConfiguracoesManager.getIntervaloSincronizacao(this@ConfiguracoesActivity)
+                Log.d("ConfiguracoesActivity", "⏰ Intervalo: $intervalo")
+                
+                val entidadeId = ConfiguracoesManager.getEntidadeId(this@ConfiguracoesActivity)
+                Log.d("ConfiguracoesActivity", "🏢 Entidade ID: '$entidadeId'")
+                
+                Log.d("ConfiguracoesActivity", "✅ Configurações carregadas com sucesso")
                 
                 // Aguardar um pouco mais para garantir que os fragments estejam completamente criados
                 binding.viewPager.postDelayed({
-                    val configFragment = getCurrentConfiguracoesFragment()
-                    configFragment?.let {
-                        it.setLocalizacaoId(localizacaoId)
-                        it.setCodigoSincronizacao(codigoSincronizacao)
-                        it.setIntervalo(intervalo)
-                        it.setSincronizacaoAtiva(sincronizacaoAtiva)
+                    try {
+                        Log.d("ConfiguracoesActivity", "🔄 Tentando configurar fragments")
+                        Log.d("ConfiguracoesActivity", "📊 Total de fragments: ${supportFragmentManager.fragments.size}")
                         
-                        // Configurar callbacks
-                        it.onSincronizarClick = {
+                        // Tentar obter o fragment atual
+                        val currentFragment = supportFragmentManager.fragments.firstOrNull { 
+                            it is ConfiguracoesTabFragment && it.isAdded 
+                        } as? ConfiguracoesTabFragment
+                        
+                        Log.d("ConfiguracoesActivity", "🔍 Fragment de configurações encontrado: ${currentFragment != null}")
+                        
+                        currentFragment?.let {
+                            it.setLocalizacaoId(localizacaoId)
+                            it.setCodigoSincronizacao(codigoSincronizacao)
+                            it.setIntervalo(intervalo)
+                            it.setSincronizacaoAtiva(sincronizacaoAtiva)
+                            it.setEntidade(entidadeId)
+                            
+                            // Configurar callbacks
+                            it.onSincronizarClick = {
+                                executarSincronizacaoManual()
+                            }
+                        }
+                        
+                        // Configurar callbacks para outros fragments se necessário
+                        val historicoFragment = supportFragmentManager.fragments.firstOrNull { 
+                            it is HistoricoTabFragment && it.isAdded 
+                        } as? HistoricoTabFragment
+                        
+                        historicoFragment?.onSincronizarClick = {
                             executarSincronizacaoManual()
                         }
+                        
+                        val sobreFragment = supportFragmentManager.fragments.firstOrNull { 
+                            it is SobreTabFragment && it.isAdded 
+                        } as? SobreTabFragment
+                        
+                        sobreFragment?.onUpdateCheckClick = {
+                            Toast.makeText(this@ConfiguracoesActivity, "Verificação de atualização iniciada", Toast.LENGTH_SHORT).show()
+                        }
+                        sobreFragment?.onUpdateClick = {
+                            Toast.makeText(this@ConfiguracoesActivity, "Atualização iniciada", Toast.LENGTH_SHORT).show()
+                        }
+                        
+                    } catch (e: Exception) {
+                        Log.e("ConfiguracoesActivity", "Erro ao configurar fragments: ${e.message}")
                     }
-                    
-                    val historicoFragment = getCurrentHistoricoFragment()
-                    historicoFragment?.onSincronizarClick = {
-                        executarSincronizacaoManual()
-                    }
-                    
-                    val sobreFragment = getCurrentSobreFragment()
-                    sobreFragment?.onUpdateCheckClick = {
-                        // Aqui você pode adicionar lógica adicional quando verificar atualizações
-                        Toast.makeText(this@ConfiguracoesActivity, "Verificação de atualização iniciada", Toast.LENGTH_SHORT).show()
-                    }
-                    sobreFragment?.onUpdateClick = {
-                        // Aqui você pode adicionar lógica adicional quando atualizar
-                        Toast.makeText(this@ConfiguracoesActivity, "Atualização iniciada", Toast.LENGTH_SHORT).show()
-                    }
-                }, 500)
+                }, 1000) // Aumentar delay para 1 segundo
                 
             } catch (e: Exception) {
+                Log.e("ConfiguracoesActivity", "Erro ao carregar configurações: ${e.message}")
                 Toast.makeText(this@ConfiguracoesActivity, "Erro ao carregar configurações: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    private fun getCurrentConfiguracoesFragment(): ConfiguracoesTabFragment? {
-        return try {
-            supportFragmentManager.findFragmentByTag("f0") as? ConfiguracoesTabFragment
-        } catch (e: Exception) {
-            null
-        }
-    }
 
-    private fun getCurrentHistoricoFragment(): HistoricoTabFragment? {
-        return try {
-            supportFragmentManager.findFragmentByTag("f1") as? HistoricoTabFragment
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun getCurrentSobreFragment(): SobreTabFragment? {
-        return try {
-            supportFragmentManager.findFragmentByTag("f2") as? SobreTabFragment
-        } catch (e: Exception) {
-            null
-        }
-    }
 
     private fun setupListeners() {
         binding.btnSalvar.setOnClickListener {
@@ -190,7 +244,9 @@ class ConfiguracoesActivity : AppCompatActivity() {
 
     private fun salvarConfiguracoes() {
         try {
-            val configFragment = getCurrentConfiguracoesFragment()
+            val configFragment = supportFragmentManager.fragments.firstOrNull { 
+                it is ConfiguracoesTabFragment && it.isAdded 
+            } as? ConfiguracoesTabFragment
             
             if (configFragment == null) {
                 Toast.makeText(this, "Erro: Fragment de configurações não encontrado", Toast.LENGTH_SHORT).show()
@@ -200,6 +256,7 @@ class ConfiguracoesActivity : AppCompatActivity() {
             val localizacaoId = configFragment.getLocalizacaoId()
             val codigoSincronizacao = configFragment.getCodigoSincronizacao()
             val sincronizacaoAtiva = configFragment.isSincronizacaoAtiva()
+            val entidadeId = configFragment.getEntidade()
             val intervalo = configFragment.getIntervalo()
 
             // Validações básicas
@@ -213,6 +270,11 @@ class ConfiguracoesActivity : AppCompatActivity() {
                 return
             }
 
+            if (entidadeId.isEmpty()) {
+                configFragment.setEntidadeError("Código da Entidade é obrigatório")
+                return
+            }
+
             if (intervalo <= 0) {
                 Toast.makeText(this, "Intervalo deve ser maior que zero", Toast.LENGTH_SHORT).show()
                 return
@@ -221,6 +283,7 @@ class ConfiguracoesActivity : AppCompatActivity() {
             // Limpar erros
             configFragment.setLocalizacaoIdError(null)
             configFragment.setCodigoSincronizacaoError(null)
+            configFragment.setEntidadeError(null)
 
             // Salvar usando ConfiguracoesManager
             lifecycleScope.launch {
@@ -231,7 +294,8 @@ class ConfiguracoesActivity : AppCompatActivity() {
                     8, // hora padrão
                     0, // minuto padrão
                     sincronizacaoAtiva,
-                    intervalo
+                    intervalo,
+                    entidadeId
                 )
             }
 
@@ -277,7 +341,10 @@ class ConfiguracoesActivity : AppCompatActivity() {
         
         // Aguardar um pouco e atualizar o histórico
         binding.viewPager.postDelayed({
-            getCurrentHistoricoFragment()?.atualizarHistorico()
+            val historicoFragment = supportFragmentManager.fragments.firstOrNull { 
+                it is HistoricoTabFragment && it.isAdded 
+            } as? HistoricoTabFragment
+            historicoFragment?.atualizarHistorico()
             Toast.makeText(this, "🔄 Histórico atualizado", Toast.LENGTH_SHORT).show()
         }, 2000)
     }

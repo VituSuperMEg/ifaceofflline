@@ -10,8 +10,13 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import com.example.iface_offilne.EntidadeActivity
 import com.example.iface_offilne.databinding.FragmentConfiguracoesTabBinding
+import com.example.iface_offilne.util.ConfiguracoesManager
 import com.example.iface_offilne.util.DuplicatePointManager
 import com.example.iface_offilne.util.SessionManager
+import androidx.lifecycle.lifecycleScope
+import androidx.appcompat.app.AlertDialog
+import com.example.iface_offilne.util.DiagnosticoHelper
+import kotlinx.coroutines.launch
 
 class ConfiguracoesTabFragment : Fragment() {
 
@@ -47,9 +52,7 @@ class ConfiguracoesTabFragment : Fragment() {
         binding.btnSincronizarAgora.backgroundTintList = null
         binding.btnVerificarDuplicatas.backgroundTintList = null
         binding.btnForcarMarcacao.backgroundTintList = null
-        binding.btnConfigurarEntidade.backgroundTintList = null
-        binding.btnAlterarEntidade.backgroundTintList = null
-        
+
         binding.switchSincronizacao.setOnCheckedChangeListener { _, isChecked ->
             binding.layoutIntervaloSincronizacao.visibility = if (isChecked) View.VISIBLE else View.GONE
             onSwitchChange?.invoke(isChecked)
@@ -89,14 +92,14 @@ class ConfiguracoesTabFragment : Fragment() {
             forcarMarcacaoTodasBatidas()
         }
 
-        // ✅ NOVO: Botão para configurar entidade
-        binding.btnConfigurarEntidade.setOnClickListener {
-            configurarEntidade()
+        // ✅ NOVO: Botão para executar diagnóstico
+        binding.btnDiagnostico.setOnClickListener {
+            executarDiagnostico()
         }
 
-        // ✅ NOVO: Botão para alterar entidade
-        binding.btnAlterarEntidade.setOnClickListener {
-            alterarEntidade()
+        // ✅ NOVO: Botão para limpar dados
+        binding.btnLimparDados.setOnClickListener {
+            executarLimpezaDados()
         }
     }
 
@@ -105,38 +108,20 @@ class ConfiguracoesTabFragment : Fragment() {
      */
     private fun atualizarStatusEntidade() {
         try {
-            val entidadeConfigurada = SessionManager.isEntidadeConfigurada()
-            
-            if (entidadeConfigurada) {
-                // Entidade configurada - mostrar status positivo
-                binding.iconEntidadeStatus.setImageResource(com.example.iface_offilne.R.drawable.ic_check_circle_green)
-                binding.iconEntidadeStatus.imageTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4CAF50"))
+            lifecycleScope.launch {
+                val entidadeConfigurada = ConfiguracoesManager.isEntidadeConfigurada(requireContext())
                 
-                val entidadeName = SessionManager.getEntidadeName()
-                val entidadeId = SessionManager.getEntidadeId()
-                binding.textEntidadeStatus.text = "Entidade configurada: $entidadeName"
-                
-                // Mostrar botão de alterar e ocultar botão de configurar
-                binding.btnAlterarEntidade.visibility = View.VISIBLE
-                binding.btnConfigurarEntidade.visibility = View.GONE
-                
-                Log.d("ConfigTab", "✅ Status da entidade atualizado: $entidadeName ($entidadeId)")
-            } else {
-                // Entidade não configurada - mostrar status negativo
-                binding.iconEntidadeStatus.setImageResource(com.example.iface_offilne.R.drawable.ic_warning)
-                binding.iconEntidadeStatus.imageTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#FF9800"))
-                
-                binding.textEntidadeStatus.text = "Entidade não configurada"
-                
-                // Mostrar botão de configurar e ocultar botão de alterar
-                binding.btnAlterarEntidade.visibility = View.GONE
-                binding.btnConfigurarEntidade.visibility = View.VISIBLE
-                
-                Log.d("ConfigTab", "⚠️ Status da entidade atualizado: não configurada")
+                if (entidadeConfigurada) {
+                    // Entidade configurada - mostrar status positivo
+                    val entidadeId = ConfiguracoesManager.getEntidadeId(requireContext())
+                    Log.d("ConfigTab", "✅ Status da entidade atualizado: $entidadeId")
+                } else {
+                    // Entidade não configurada - mostrar status negativo
+                    Log.d("ConfigTab", "⚠️ Status da entidade atualizado: não configurada")
+                }
             }
         } catch (e: Exception) {
             Log.e("ConfigTab", "❌ Erro ao atualizar status da entidade: ${e.message}")
-            binding.textEntidadeStatus.text = "Erro ao verificar entidade"
         }
     }
 
@@ -196,6 +181,11 @@ class ConfiguracoesTabFragment : Fragment() {
         return _binding?.editTextLocalizacaoId?.text?.toString()?.trim() ?: ""
     }
 
+    fun getEntidade(): String {
+        return _binding?.editTextEntidadeId?.text?.toString()?.trim() ?: ""
+    }
+
+
     fun getCodigoSincronizacao(): String {
         return _binding?.editTextCodigoSincronizacao?.text?.toString()?.trim() ?: ""
     }
@@ -235,6 +225,14 @@ class ConfiguracoesTabFragment : Fragment() {
         _binding?.editTextCodigoSincronizacao?.error = error
     }
     
+    fun setEntidade(value: String) {
+        _binding?.editTextEntidadeId?.setText(value)
+    }
+    
+    fun setEntidadeError(error: String?) {
+        _binding?.editTextEntidadeId?.error = error
+    }
+    
     private fun verificarDuplicatas() {
         binding.btnVerificarDuplicatas.isEnabled = false
         binding.btnVerificarDuplicatas.text = "🔄 Verificando..."
@@ -255,6 +253,98 @@ class ConfiguracoesTabFragment : Fragment() {
                 Toast.makeText(context, "❌ ${result.message}", Toast.LENGTH_LONG).show()
             }
         }
+    }
+    
+    /**
+     * 🔍 EXECUTAR DIAGNÓSTICO COMPLETO
+     */
+    private fun executarDiagnostico() {
+        binding.btnDiagnostico.isEnabled = false
+        binding.btnDiagnostico.text = "🔍 Executando..."
+        
+        lifecycleScope.launch {
+            try {
+                val resultado = DiagnosticoHelper.executarDiagnosticoCompleto(requireContext())
+                val relatorio = DiagnosticoHelper.gerarRelatorio(resultado)
+                
+                binding.btnDiagnostico.isEnabled = true
+                binding.btnDiagnostico.text = "🔍 Executar Diagnóstico"
+                
+                // Mostrar relatório em dialog
+                mostrarRelatorioDiagnostico(relatorio, resultado)
+                
+            } catch (e: Exception) {
+                binding.btnDiagnostico.isEnabled = true
+                binding.btnDiagnostico.text = "🔍 Executar Diagnóstico"
+                
+                Toast.makeText(context, "❌ Erro no diagnóstico: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    
+    /**
+     * 📋 MOSTRAR RELATÓRIO DE DIAGNÓSTICO
+     */
+    private fun mostrarRelatorioDiagnostico(relatorio: String, resultado: DiagnosticoHelper.DiagnosticoResult) {
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle("🔍 Relatório de Diagnóstico")
+            .setMessage(relatorio)
+            .setPositiveButton("✅ OK") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .setNeutralButton("🧹 Limpar Dados") { dialog, _ ->
+                dialog.dismiss()
+                executarLimpezaDados()
+            }
+            .setCancelable(true)
+            .create()
+        
+        dialog.show()
+    }
+    
+    /**
+     * 🧹 EXECUTAR LIMPEZA DE DADOS
+     */
+    private fun executarLimpezaDados() {
+        val confirmDialog = AlertDialog.Builder(requireContext())
+            .setTitle("🧹 Limpeza de Dados")
+            .setMessage("Esta ação irá remover dados problemáticos como:\n\n• Pontos duplicados\n• Sincronizações antigas\n• Dados corrompidos\n\nDeseja continuar?")
+            .setPositiveButton("✅ Sim, Limpar") { dialog, _ ->
+                dialog.dismiss()
+                
+                binding.btnLimparDados.isEnabled = false
+                binding.btnLimparDados.text = "🧹 Limpando..."
+                
+                lifecycleScope.launch {
+                    try {
+                        val resultado = DiagnosticoHelper.limparDadosProblematicos(requireContext())
+                        
+                        binding.btnLimparDados.isEnabled = true
+                        binding.btnLimparDados.text = "🧹 Limpar Dados"
+                        
+                        val message = if (resultado.sucesso) {
+                            "✅ Limpeza concluída!\n\n• Pontos removidos: ${resultado.pontosRemovidos}\n• Sincronizações removidas: ${resultado.sincronizacoesRemovidas}"
+                        } else {
+                            "❌ Erro na limpeza: ${resultado.mensagem}"
+                        }
+                        
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                        
+                    } catch (e: Exception) {
+                        binding.btnLimparDados.isEnabled = true
+                        binding.btnLimparDados.text = "🧹 Limpar Dados"
+                        
+                        Toast.makeText(context, "❌ Erro na limpeza: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton("❌ Cancelar") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .setCancelable(true)
+            .create()
+        
+        confirmDialog.show()
     }
     
     private fun forcarMarcacaoTodasBatidas() {

@@ -8,6 +8,7 @@ data class ConfiguracoesEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 1, // Sempre será 1, pois só teremos uma configuração
     
+    val entidadeId: String,
     val localizacaoId: String,
     val codigoSincronizacao: String,
     val horaSincronizacao: Int,

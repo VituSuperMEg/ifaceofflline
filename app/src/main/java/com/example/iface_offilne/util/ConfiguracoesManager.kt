@@ -31,7 +31,8 @@ object ConfiguracoesManager {
                     codigoSincronizacao = "",
                     horaSincronizacao = 8,
                     minutoSincronizacao = 0,
-                    sincronizacaoAtiva = false
+                    sincronizacaoAtiva = false,
+                    entidadeId = ""
                 )
                 database.configuracoesDao().insertConfiguracoes(newConfig)
             }
@@ -61,7 +62,8 @@ object ConfiguracoesManager {
                     codigoSincronizacao = codigo,
                     horaSincronizacao = 8,
                     minutoSincronizacao = 0,
-                    sincronizacaoAtiva = false
+                    sincronizacaoAtiva = false,
+                    entidadeId = ""
                 )
                 database.configuracoesDao().insertConfiguracoes(newConfig)
             }
@@ -102,7 +104,8 @@ object ConfiguracoesManager {
                     codigoSincronizacao = "",
                     horaSincronizacao = hora,
                     minutoSincronizacao = minuto,
-                    sincronizacaoAtiva = false
+                    sincronizacaoAtiva = false,
+                    entidadeId = ""
                 )
                 database.configuracoesDao().insertConfiguracoes(newConfig)
             }
@@ -132,7 +135,8 @@ object ConfiguracoesManager {
                     codigoSincronizacao = "",
                     horaSincronizacao = 8,
                     minutoSincronizacao = 0,
-                    sincronizacaoAtiva = ativa
+                    sincronizacaoAtiva = ativa,
+                    entidadeId = ""
                 )
                 database.configuracoesDao().insertConfiguracoes(newConfig)
             }
@@ -185,7 +189,8 @@ object ConfiguracoesManager {
                     horaSincronizacao = 8,
                     minutoSincronizacao = 0,
                     sincronizacaoAtiva = false,
-                    intervaloSincronizacao = intervalo
+                    intervaloSincronizacao = intervalo,
+                    entidadeId = ""
                 )
                 database.configuracoesDao().insertConfiguracoes(newConfig)
             }
@@ -200,7 +205,8 @@ object ConfiguracoesManager {
         hora: Int,
         minuto: Int,
         sincronizacaoAtiva: Boolean,
-        intervalo: Int = 24
+        intervalo: Int = 24,
+        entidadeId: String
     ) {
         withContext(Dispatchers.IO) {
             val database = AppDatabase.getInstance(context)
@@ -210,9 +216,54 @@ object ConfiguracoesManager {
                 horaSincronizacao = hora,
                 minutoSincronizacao = minuto,
                 sincronizacaoAtiva = sincronizacaoAtiva,
-                intervaloSincronizacao = intervalo
+                intervaloSincronizacao = intervalo,
+                entidadeId = entidadeId
             )
             database.configuracoesDao().insertConfiguracoes(configuracoes)
+        }
+    }
+
+    // ===== MÉTODOS PARA GERENCIAR ENTIDADE NAS CONFIGURAÇÕES =====
+    
+    // Obter entidade ID das configurações
+    suspend fun getEntidadeId(context: Context): String {
+        return withContext(Dispatchers.IO) {
+            val database = AppDatabase.getInstance(context)
+            val configuracoes = database.configuracoesDao().getConfiguracoes()
+            configuracoes?.entidadeId ?: ""
+        }
+    }
+    
+    // Salvar entidade ID nas configurações
+    suspend fun setEntidadeId(context: Context, entidadeId: String) {
+        withContext(Dispatchers.IO) {
+            val database = AppDatabase.getInstance(context)
+            val configuracoes = database.configuracoesDao().getConfiguracoes()
+            
+            if (configuracoes != null) {
+                val updatedConfig = configuracoes.copy(entidadeId = entidadeId)
+                database.configuracoesDao().updateConfiguracoes(updatedConfig)
+            } else {
+                val newConfig = ConfiguracoesEntity(
+                    localizacaoId = "",
+                    codigoSincronizacao = "",
+                    horaSincronizacao = 8,
+                    minutoSincronizacao = 0,
+                    sincronizacaoAtiva = false,
+                    entidadeId = entidadeId
+                )
+                database.configuracoesDao().insertConfiguracoes(newConfig)
+            }
+        }
+    }
+    
+    // Verificar se entidade está configurada
+    suspend fun isEntidadeConfigurada(context: Context): Boolean {
+        return withContext(Dispatchers.IO) {
+            val database = AppDatabase.getInstance(context)
+            val configuracoes = database.configuracoesDao().getConfiguracoes()
+            val entidadeId = configuracoes?.entidadeId ?: ""
+            entidadeId.isNotEmpty()
         }
     }
 } 
