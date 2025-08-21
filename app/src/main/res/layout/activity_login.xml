@@ -46,7 +46,7 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent"
                 app:layout_constraintVertical_bias="0.12"
-                app:srcCompat="@drawable/logo_rh247" />
+                app:srcCompat="@drawable/logo_quadrada" />
 
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/layoutCpfLogin"

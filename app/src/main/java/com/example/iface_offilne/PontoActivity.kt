@@ -22,6 +22,10 @@ import com.example.iface_offilne.data.FuncionariosEntity
 import com.example.iface_offilne.data.PontosGenericosEntity
 import com.example.iface_offilne.service.PontoSincronizacaoService
 import com.example.iface_offilne.helpers.FaceRecognitionHelper
+import com.example.iface_offilne.helpers.AdvancedFaceRecognitionHelper
+import com.example.iface_offilne.helpers.AdaptiveFaceRecognitionHelper
+import com.example.iface_offilne.helpers.DeviceCapabilityHelper
+import com.example.iface_offilne.helpers.PerformanceLevel
 import com.example.iface_offilne.helpers.FaceRecognitionDebugHelper
 import com.example.iface_offilne.helpers.LocationHelper
 import com.example.iface_offilne.helpers.bitmapToBase64
@@ -71,6 +75,9 @@ class PontoActivity : AppCompatActivity() {
     private var modelOutputSize = 512
 
     private var faceRecognitionHelper: FaceRecognitionHelper? = null
+    private var advancedFaceRecognitionHelper: AdvancedFaceRecognitionHelper? = null
+    private var adaptiveFaceRecognitionHelper: AdaptiveFaceRecognitionHelper? = null
+    private var deviceCapabilityHelper: DeviceCapabilityHelper? = null
     private var locationHelper: LocationHelper? = null
     private var funcionarioReconhecido: FuncionariosEntity? = null
     private var processandoFace = false
@@ -180,6 +187,9 @@ class PontoActivity : AppCompatActivity() {
         ultimoPonto = findViewById(R.id.ultimoPonto)
         tipoPontoRadioGroup = findViewById(R.id.tipoPontoRadioGroup)
         
+        // ✅ NOVO: Mostrar que o sistema está ultra permissivo
+        statusText.text = "🎯 SISTEMA ULTRA PERMISSIVO\nPosicione seu rosto na câmera"
+        
         findViewById<Button>(R.id.btnVoltar).setOnClickListener {
             val intent = Intent(this, ConfiguracoesActivity::class.java)
             startActivity(intent)
@@ -194,12 +204,53 @@ class PontoActivity : AppCompatActivity() {
         try {
             Log.d(TAG, "🔧 Inicializando helpers...")
             
-            // ✅ PROTEÇÃO: Inicializar FaceRecognitionHelper
+            // ✅ NOVO: Inicializar DeviceCapabilityHelper primeiro
+            try {
+                deviceCapabilityHelper = DeviceCapabilityHelper(this)
+                Log.d(TAG, "✅ DeviceCapabilityHelper inicializado")
+                
+                // ✅ Mostrar informações do dispositivo
+                val deviceInfo = deviceCapabilityHelper?.getDeviceInfo()
+                Log.d(TAG, "📊 === INFORMAÇÕES DO DISPOSITIVO ===")
+                Log.d(TAG, "🎯 Nível: ${deviceInfo?.performanceLevel ?: "DESCONHECIDO"}")
+                Log.d(TAG, "📊 Score: ${String.format("%.1f", deviceInfo?.deviceScore ?: 0f)}/100")
+                Log.d(TAG, "💾 Memória: ${String.format("%.1f", deviceInfo?.memoryInfo?.totalGB ?: 0f)}GB")
+                Log.d(TAG, "🖥️ CPU: ${deviceInfo?.cpuInfo?.cores ?: 0} cores")
+                Log.d(TAG, "🤖 Android: ${deviceInfo?.androidRelease ?: "DESCONHECIDO"} (API ${deviceInfo?.androidVersion ?: 0})")
+                
+                // ✅ Verificar se o dispositivo suporta reconhecimento facial
+                val isSupported = deviceCapabilityHelper?.isFaceRecognitionSupported() ?: false
+                Log.d(TAG, "🔍 Suporte ao reconhecimento facial: $isSupported")
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao inicializar DeviceCapabilityHelper: ${e.message}")
+                e.printStackTrace()
+            }
+            
+            // ✅ NOVO: Inicializar AdaptiveFaceRecognitionHelper (adaptativo)
+            try {
+                adaptiveFaceRecognitionHelper = AdaptiveFaceRecognitionHelper(this)
+                Log.d(TAG, "✅ AdaptiveFaceRecognitionHelper inicializado")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao inicializar AdaptiveFaceRecognitionHelper: ${e.message}")
+                e.printStackTrace()
+            }
+            
+            // ✅ PROTEÇÃO: Inicializar FaceRecognitionHelper (básico - fallback)
             try {
                 faceRecognitionHelper = FaceRecognitionHelper(this)
                 Log.d(TAG, "✅ FaceRecognitionHelper inicializado")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao inicializar FaceRecognitionHelper: ${e.message}")
+                e.printStackTrace()
+            }
+            
+            // ✅ NOVO: Inicializar AdvancedFaceRecognitionHelper (rigoroso - para dispositivos potentes)
+            try {
+                advancedFaceRecognitionHelper = AdvancedFaceRecognitionHelper(this)
+                Log.d(TAG, "✅ AdvancedFaceRecognitionHelper inicializado")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao inicializar AdvancedFaceRecognitionHelper: ${e.message}")
                 e.printStackTrace()
             }
             
@@ -664,24 +715,24 @@ class PontoActivity : AppCompatActivity() {
             return
         }
         
-                        // ✅ FALLBACK: Verificar se deve usar modo fallback
-                if (tensorFlowFallbackMode) {
-                    Log.d(TAG, "🔄 Usando modo fallback - TensorFlow desabilitado")
-                    CoroutineScope(Dispatchers.IO).launch {
-                        processFaceWithoutTensorFlow(bitmap, boundingBox)
-                    }
-                    return
-                }
-                
-                // ✅ TESTE: Verificar se o TensorFlow está saudável
-                if (!testTensorFlowHealth()) {
-                    Log.w(TAG, "⚠️ TensorFlow não está saudável - usando modo fallback")
-                    tensorFlowFallbackMode = true
-                    CoroutineScope(Dispatchers.IO).launch {
-                        processFaceWithoutTensorFlow(bitmap, boundingBox)
-                    }
-                    return
-                }
+        // ✅ FALLBACK: Verificar se deve usar modo fallback
+        if (tensorFlowFallbackMode) {
+            Log.d(TAG, "🔄 Usando modo fallback - TensorFlow desabilitado")
+            CoroutineScope(Dispatchers.IO).launch {
+                processFaceWithLegacyMethod(bitmap, boundingBox)
+            }
+            return
+        }
+        
+        // ✅ TESTE: Verificar se o TensorFlow está saudável
+        if (!testTensorFlowHealth()) {
+            Log.w(TAG, "⚠️ TensorFlow não está saudável - usando modo fallback")
+            tensorFlowFallbackMode = true
+            CoroutineScope(Dispatchers.IO).launch {
+                processFaceWithLegacyMethod(bitmap, boundingBox)
+            }
+            return
+        }
         
         Log.d(TAG, "✅ Validações passadas - iniciando processamento")
 
@@ -693,13 +744,12 @@ class PontoActivity : AppCompatActivity() {
                     return@launch
                 }
 
-                if (!modelLoaded || interpreter == null) {
-                    Log.w(TAG, "⚠️ Modelo não carregado")
-                    processandoFace = false
-                    return@launch
-                }
-
-                // ✅ PROTEÇÃO: Recortar face com validação
+                // ✅ NOVO: SISTEMA ADAPTATIVO - Escolher helper baseado no dispositivo
+                val deviceInfo = deviceCapabilityHelper?.getDeviceInfo()
+                val adaptiveHelper = adaptiveFaceRecognitionHelper
+                val advancedHelper = advancedFaceRecognitionHelper
+                
+                // ✅ PROTEÇÃO: Recortar face com validação (compartilhado entre todos os métodos)
                 val faceBmp = try {
                     cropFace(bitmap, boundingBox)
                 } catch (e: Exception) {
@@ -722,281 +772,159 @@ class PontoActivity : AppCompatActivity() {
                     Log.e(TAG, "❌ Erro ao processar foto: ${e.message}")
                     null
                 }
-
-                // ✅ PROTEÇÃO: Redimensionar para o modelo com validação
-                val resized = try {
-                    Bitmap.createScaledBitmap(faceBmp, modelInputWidth, modelInputHeight, true)
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao redimensionar bitmap: ${e.message}")
-                    processandoFace = false
-                    return@launch
-                }
-
-                // ✅ PROTEÇÃO CRÍTICA: Execução segura do TensorFlow
-                var vetorFacial: FloatArray? = null
-
-                try {
-                    // ✅ PROTEÇÃO: Verificar se o interpreter está disponível
-                    val interp = interpreter
-                    if (interp == null) {
-                        Log.e(TAG, "❌ Interpreter é nulo")
-                        throw Exception("Interpreter não disponível")
-                    }
-
-                    // ✅ PROTEÇÃO: Verificar se o modelo está carregado
-                    if (!modelLoaded) {
-                        Log.e(TAG, "❌ Modelo não está carregado")
-                        throw Exception("Modelo TensorFlow não carregado")
-                    }
-
-                    val inputTensor = convertBitmapToTensorInput(resized)
-                    val output = Array(1) { FloatArray(modelOutputSize) }
-
-                    // ✅ PROTEÇÃO CRÍTICA: Executar TensorFlow com proteções contra crash nativo
-                    try {
-                        Log.d(TAG, "🤖 Executando modelo TensorFlow com proteções...")
-                        
-                        // ✅ PROTEÇÃO: Validar input tensor antes da execução
-                        if (!inputTensor.hasRemaining()) {
-                            Log.e(TAG, "❌ Input tensor vazio")
-                            throw Exception("Input tensor inválido")
-                        }
-                        
-                        // ✅ PROTEÇÃO: Validar output array antes da execução
-                        if (output.isEmpty() || output[0].isEmpty()) {
-                            Log.e(TAG, "❌ Output array inválido")
-                            throw Exception("Output array inválido")
-                        }
-                        
-                        // ✅ PROTEÇÃO: Executar com captura específica de erros nativos
-                        try {
-                            interp.run(inputTensor, output)
-                            Log.d(TAG, "✅ Modelo executado com sucesso")
-                        } catch (e: UnsatisfiedLinkError) {
-                            Log.e(TAG, "❌ Erro de biblioteca nativa TensorFlow: ${e.message}")
-                            throw Exception("Erro de biblioteca nativa: ${e.message}")
-                        } catch (e: UnsatisfiedLinkError) {
-                            Log.e(TAG, "❌ Erro de link nativo TensorFlow: ${e.message}")
-                            throw Exception("Erro de link nativo: ${e.message}")
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Erro na execução do modelo: ${e.message}")
-                            throw Exception("Falha na execução do modelo: ${e.message}")
-                        }
-
-                        vetorFacial = output[0]
-
-                        // ✅ PROTEÇÃO: Validar vetor facial
-                        if (vetorFacial == null || vetorFacial.isEmpty()) {
-                            Log.e(TAG, "❌ Vetor facial é nulo ou vazio")
-                            throw Exception("Vetor facial não gerado")
-                        }
-
-                        if (vetorFacial.any { it.isNaN() || it.isInfinite() }) {
-                            Log.e(TAG, "❌ Vetor facial contém valores inválidos")
-                            throw Exception("Vetor facial contém valores NaN ou infinitos")
-                        }
-
-                        Log.d(TAG, "✅ Embedding gerado: ${vetorFacial.size} dimensões")
-                        
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro na execução do modelo TensorFlow: ${e.message}")
-                        throw Exception("Falha na execução do modelo: ${e.message}")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro na execução do TensorFlow: ${e.message}")
-                    
-                    // ✅ PROTEÇÃO: Tentar recarregar o modelo se houver erro
-                    if (e.message?.contains("biblioteca nativa") == true || 
-                        e.message?.contains("link nativo") == true) {
-                        Log.w(TAG, "⚠️ Tentando recarregar modelo TensorFlow...")
-                        try {
-                            interpreter?.close()
-                            interpreter = null
-                            modelLoaded = false
-                            loadTensorFlowModel()
-                            Log.d(TAG, "✅ Modelo recarregado com sucesso")
-                        } catch (reloadError: Exception) {
-                            Log.e(TAG, "❌ Falha ao recarregar modelo: ${reloadError.message}")
-                        }
-                    }
-                    
-                    throw e
-                }
-
-                // ✅ PROTEÇÃO: Verificar se o vetor facial foi gerado
-                if (vetorFacial == null) {
-                    Log.e(TAG, "❌ Vetor facial não foi gerado")
-                    throw Exception("Vetor facial não disponível")
-                }
-
-                // ✅ PROTEÇÃO: Verificar se há faces cadastradas
-                val helper = faceRecognitionHelper
-                if (helper == null) {
-                    Log.e(TAG, "❌ FaceRecognitionHelper é nulo")
-                    throw Exception("FaceRecognitionHelper não inicializado")
-                }
-
-                // ✅ PROTEÇÃO: Verificar se há faces cadastradas no banco
-                val db = AppDatabase.getInstance(this@PontoActivity)
-                val faceDao = db.faceDao()
-                val facesCadastradas = faceDao.getAllFaces()
                 
-                if (facesCadastradas.isEmpty()) {
-                    Log.w(TAG, "⚠️ Nenhuma face cadastrada no banco de dados")
-                    throw Exception("Nenhuma face cadastrada para reconhecimento")
-                }
-                
-                Log.d(TAG, "📊 Faces cadastradas encontradas: ${facesCadastradas.size}")
+                if (adaptiveHelper != null) {
+                    Log.d(TAG, "🎯 Usando reconhecimento facial ADAPTATIVO")
+                    Log.d(TAG, "📊 Dispositivo: ${deviceInfo?.performanceLevel ?: "DESCONHECIDO"}")
 
-                // ✅ PROTEÇÃO: Reconhecer face com validação e retry
-                val maxTentativas = 3 // ✅ MOVIDO: Definir fora do bloco try
-                val funcionario = try {
-                    Log.d(TAG, "🔍 Iniciando reconhecimento facial...")
+                    // ✅ RECONHECIMENTO ADAPTATIVO
+                    val recognitionResult = adaptiveHelper.recognizeFaceAdaptive(faceBmp)
+                    
+                    when (recognitionResult) {
+                        is AdaptiveFaceRecognitionHelper.FaceRecognitionResult.Success -> {
+                            val funcionario = recognitionResult.funcionario
+                            val similarity = recognitionResult.similarity
+                            val euclideanDistance = recognitionResult.euclideanDistance
+                            val confidence = recognitionResult.confidence
+                            
+                            Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO COM SISTEMA ADAPTATIVO!")
+                            Log.d(TAG, "👤 Funcionário: ${funcionario.nome}")
+                            Log.d(TAG, "📊 Métricas: Similaridade=${String.format("%.3f", similarity)}, Distância=${String.format("%.3f", euclideanDistance)}, Confiança=${String.format("%.3f", confidence)}")
+                            Log.d(TAG, "🎛️ Configuração: ${deviceInfo?.performanceLevel}")
 
-                    // ✅ SISTEMA DE RETRY: Tentar até 3 vezes
-                    var resultado: FuncionariosEntity? = null
-                    var tentativas = 0
+                            // ✅ COOLDOWN: Atualizar timestamp do último ponto registrado
+                            lastPontoRegistrado = System.currentTimeMillis()
+                            Log.d(TAG, "⏰ Cooldown iniciado - próximo ponto em ${cooldownPonto}ms")
 
-                    while (resultado == null && tentativas < maxTentativas) {
-                            try {
-                                tentativas++
-                                Log.d(TAG, "🔄 Tentativa $tentativas de reconhecimento...")
-
-                                // ✅ PROTEÇÃO: Verificar se o vetor facial é válido
-                                if (vetorFacial == null || vetorFacial.isEmpty()) {
-                                    Log.e(TAG, "❌ Vetor facial é nulo ou vazio")
-                                    break
-                                }
-
-                                // ✅ PROTEÇÃO: Verificar se o vetor facial não contém valores inválidos
-                                if (vetorFacial.any { it.isNaN() || it.isInfinite() }) {
-                                    Log.e(TAG, "❌ Vetor facial contém valores inválidos")
-                                    break
-                                }
-
-                                resultado = helper.recognizeFace(vetorFacial)
-
-                                if (resultado != null) {
-                                    Log.d(
-                                        TAG,
-                                        "✅ Reconhecimento facial bem-sucedido na tentativa $tentativas"
-                                    )
+                            // ✅ PROTEÇÃO: Registrar ponto com verificação de contexto
+                            withContext(Dispatchers.Main) {
+                                if (!isFinishing && !isDestroyed) {
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        try {
+                                            registrarPontoDireto(funcionario)
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "❌ Erro crítico no registro de ponto: ${e.message}")
+                                            processandoFace = false
+                                        }
+                                    }
                                 } else {
-                                    Log.w(
-                                        TAG,
-                                        "⚠️ Reconhecimento retornou nulo na tentativa $tentativas"
-                                    )
-                                }
-
-                            } catch (e: Exception) {
-                                Log.e(TAG, "❌ Erro na tentativa $tentativas: ${e.message}")
-                                e.printStackTrace()
-                                if (tentativas >= maxTentativas) {
-                                    throw e
-                                }
-                                // Aguardar um pouco antes da próxima tentativa
-                                kotlinx.coroutines.delay(200)
-                            }
-                        }
-
-                        resultado
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro crítico no reconhecimento facial após 3 tentativas", e)
-                    e.printStackTrace()
-                    null
-                }
-
-                if (funcionario != null) {
-                    Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO: ${funcionario.nome}")
-
-                    // ✅ COOLDOWN: Atualizar timestamp do último ponto registrado
-                    lastPontoRegistrado = System.currentTimeMillis()
-                    Log.d(TAG, "⏰ Cooldown iniciado - próximo ponto em ${cooldownPonto}ms")
-
-                    // ✅ PROTEÇÃO: Registrar ponto com verificação de contexto
-                    withContext(Dispatchers.Main) {
-                        if (!isFinishing && !isDestroyed) {
-                            CoroutineScope(Dispatchers.IO).launch {
-                                try {
-                                    registrarPontoDireto(funcionario)
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "❌ Erro crítico no registro de ponto: ${e.message}")
+                                    Log.w(TAG, "⚠️ Activity finalizada antes do registro de ponto")
                                     processandoFace = false
                                 }
                             }
-                        } else {
-                            Log.w(TAG, "⚠️ Activity finalizada antes do registro de ponto")
-                            processandoFace = false
                         }
-                    }
-                } else {
-                    Log.w(TAG, "❌ Nenhum funcionário reconhecido")
-                    withContext(Dispatchers.Main) {
-                        try {
-                            if (!isFinishing && !isDestroyed) {
-                                val status = statusText
-                                status.text = "❌ Funcionário não reconhecido\nTente novamente"
-
-                                status.postDelayed({
-                                    try {
-                                        if (!isFinishing && !isDestroyed) {
-                                            val statusInner = statusText
-                                            statusInner.text = "📷 Posicione seu rosto na câmera"
+                        
+                        is AdaptiveFaceRecognitionHelper.FaceRecognitionResult.Failure -> {
+                            Log.w(TAG, "❌ Reconhecimento adaptativo falhou: ${recognitionResult.reason}")
+                            
+                            // ✅ FALLBACK: Tentar com helper rigoroso se disponível
+                            if (advancedHelper != null && deviceInfo?.performanceLevel == PerformanceLevel.HIGH) {
+                                Log.d(TAG, "🔄 Tentando fallback para reconhecimento rigoroso...")
+                                try {
+                                    val fallbackResult = advancedHelper.recognizeFaceWithRigorousValidation(faceBmp)
+                                    when (fallbackResult) {
+                                        is com.example.iface_offilne.helpers.AdvancedFaceRecognitionHelper.FaceRecognitionResult.Success -> {
+                                            val funcionario = fallbackResult.funcionario
+                                            Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO COM FALLBACK RIGOROSO!")
+                                            
+                                            lastPontoRegistrado = System.currentTimeMillis()
+                                            
+                                            withContext(Dispatchers.Main) {
+                                                if (!isFinishing && !isDestroyed) {
+                                                    CoroutineScope(Dispatchers.IO).launch {
+                                                        try {
+                                                            registrarPontoDireto(funcionario)
+                                                        } catch (e: Exception) {
+                                                            Log.e(TAG, "❌ Erro crítico no registro de ponto: ${e.message}")
+                                                            processandoFace = false
+                                                        }
+                                                    }
+                                                } else {
+                                                    processandoFace = false
+                                                }
+                                            }
+                                            return@launch
                                         }
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "❌ Erro no reset UI: ${e.message}")
+                                        is com.example.iface_offilne.helpers.AdvancedFaceRecognitionHelper.FaceRecognitionResult.Failure -> {
+                                            Log.w(TAG, "❌ Fallback rigoroso também falhou: ${fallbackResult.reason}")
+                                        }
                                     }
-                                }, 2000)
-                            } else {
-                                Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "❌ Erro no fallback rigoroso: ${e.message}")
+                                }
                             }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Erro ao atualizar UI: ${e.message}")
-                        }
-                    }
-                }
-
-                            } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro no reconhecimento: ${e.message}")
-
-                    // ✅ SISTEMA DE FALLBACK: Contar erros do TensorFlow
-                    tensorFlowErrorCount++
-                    lastTensorFlowError = System.currentTimeMillis()
-
-                    if (tensorFlowErrorCount >= maxTensorFlowErrors) {
-                        Log.w(TAG, "⚠️ Muitos erros do TensorFlow - ativando modo fallback")
-                        tensorFlowFallbackMode = true
-
-                        // ✅ FALLBACK: Usar processamento sem TensorFlow
-                        processFaceWithoutTensorFlow(bitmap, boundingBox)
-                        return@launch
-                    }
-
-                withContext(Dispatchers.Main) {
-                    try {
-                        if (!isFinishing && !isDestroyed) {
-                            val status = statusText
-                            status.text = "❌ Erro no reconhecimento\nTente novamente"
-
-                            status.postDelayed({
+                            
+                            withContext(Dispatchers.Main) {
                                 try {
                                     if (!isFinishing && !isDestroyed) {
-                                        val statusInner = statusText
-                                        statusInner.text = "📷 Posicione seu rosto na câmera"
+                                        val status = statusText
+                                        status.text = "❌ Funcionário não reconhecido\n${recognitionResult.reason}"
+
+                                        status.postDelayed({
+                                            try {
+                                                if (!isFinishing && !isDestroyed) {
+                                                    val statusInner = statusText
+                                                    statusInner.text = "📷 Posicione seu rosto na câmera"
+                                                }
+                                            } catch (e: Exception) {
+                                                Log.e(TAG, "❌ Erro no reset UI: ${e.message}")
+                                            }
+                                        }, 3000)
                                     } else {
                                         Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
                                     }
-                                } catch (e2: Exception) {
-                                    Log.e(TAG, "❌ Erro no reset UI: ${e2.message}")
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "❌ Erro ao atualizar UI: ${e.message}")
                                 }
-                            }, 2000)
-                        } else {
-                            Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
+                            }
                         }
-                    } catch (e2: Exception) {
-                        Log.e(TAG, "❌ Erro ao atualizar UI: ${e2.message}")
                     }
+                    
+                } else {
+                    Log.w(TAG, "⚠️ AdaptiveFaceRecognitionHelper não disponível - tentando fallbacks...")
+                    
+                    // ✅ FALLBACK 1: Tentar com helper rigoroso se disponível
+                    if (advancedHelper != null) {
+                        Log.d(TAG, "🔄 Tentando fallback para reconhecimento rigoroso...")
+                        try {
+                            val fallbackResult = advancedHelper.recognizeFaceWithRigorousValidation(faceBmp)
+                            when (fallbackResult) {
+                                is com.example.iface_offilne.helpers.AdvancedFaceRecognitionHelper.FaceRecognitionResult.Success -> {
+                                    val funcionario = fallbackResult.funcionario
+                                    Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO COM FALLBACK RIGOROSO!")
+                                    
+                                    lastPontoRegistrado = System.currentTimeMillis()
+                                    
+                                    withContext(Dispatchers.Main) {
+                                        if (!isFinishing && !isDestroyed) {
+                                            CoroutineScope(Dispatchers.IO).launch {
+                                                try {
+                                                    registrarPontoDireto(funcionario)
+                                                } catch (e: Exception) {
+                                                    Log.e(TAG, "❌ Erro crítico no registro de ponto: ${e.message}")
+                                                    processandoFace = false
+                                                }
+                                            }
+                                        } else {
+                                            processandoFace = false
+                                        }
+                                    }
+                                    return@launch
+                                }
+                                is com.example.iface_offilne.helpers.AdvancedFaceRecognitionHelper.FaceRecognitionResult.Failure -> {
+                                    Log.w(TAG, "❌ Fallback rigoroso falhou: ${fallbackResult.reason}")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro no fallback rigoroso: ${e.message}")
+                        }
+                    }
+                    
+                    // ✅ FALLBACK 2: Usar método legacy se nada funcionar
+                    Log.d(TAG, "🔄 Usando método legacy como último recurso...")
+                    processFaceWithLegacyMethod(bitmap, boundingBox)
                 }
+
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro no processamento: ${e.message}")
             } finally {
@@ -1004,36 +932,19 @@ class PontoActivity : AppCompatActivity() {
             }
         }
     }
-
+    
     /**
-     * ✅ FALLBACK: Método para quando o TensorFlow falha
+     * 🔄 MÉTODO LEGACY: Processamento de face usando método antigo (fallback)
      */
-    private suspend fun processFaceWithFallback(bitmap: Bitmap, boundingBox: Rect) {
+    private suspend fun processFaceWithLegacyMethod(bitmap: Bitmap, boundingBox: Rect) {
         try {
-            Log.d(TAG, "🔄 Processando face com fallback...")
+            Log.d(TAG, "🔄 Usando método legacy de reconhecimento facial")
             
-            // ✅ PROTEÇÃO: Verificar se a Activity ainda está válida
-            if (isFinishing || isDestroyed) {
-                Log.w(TAG, "⚠️ Activity finalizada - cancelando processamento de face")
+            if (!modelLoaded || interpreter == null) {
+                Log.w(TAG, "⚠️ Modelo não carregado")
                 processandoFace = false
                 return
             }
-            
-            // ✅ PROTEÇÃO: Verificar se o bitmap é válido
-            if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
-                Log.e(TAG, "❌ Bitmap inválido - reciclado: ${bitmap.isRecycled}, dimensões: ${bitmap.width}x${bitmap.height}")
-                processandoFace = false
-                return
-            }
-            
-            // ✅ PROTEÇÃO: Verificar se o boundingBox é válido
-            if (boundingBox.isEmpty || boundingBox.width() <= 0 || boundingBox.height() <= 0) {
-                Log.e(TAG, "❌ BoundingBox inválido: $boundingBox")
-                processandoFace = false
-                return
-            }
-            
-            Log.d(TAG, "✅ Validações passadas - iniciando processamento com fallback")
 
             // ✅ PROTEÇÃO: Recortar face com validação
             val faceBmp = try {
@@ -1043,7 +954,7 @@ class PontoActivity : AppCompatActivity() {
                 processandoFace = false
                 return
             }
-            
+
             if (faceBmp.isRecycled || faceBmp.width <= 0 || faceBmp.height <= 0) {
                 Log.e(TAG, "❌ Face recortada inválida")
                 processandoFace = false
@@ -1059,39 +970,196 @@ class PontoActivity : AppCompatActivity() {
                 null
             }
 
-            // ✅ FALLBACK: Usar funcionário de teste quando TensorFlow falha
-            val funcionario = try {
-                Log.d(TAG, "🔄 Usando modo fallback - funcionário de teste")
-                
-                val db = AppDatabase.getInstance(this@PontoActivity)
-                val funcionarioDao = db.usuariosDao()
-                val funcionarios = funcionarioDao.getUsuario()
-                
-                if (funcionarios.isNotEmpty()) {
-                    funcionarios.first()
-                } else {
-                    // Criar funcionário de teste se não existir
-                    val funcionarioTeste = FuncionariosEntity(
-                        id = 1,
-                        codigo = "TEST001",
-                        nome = "Funcionário Teste (Fallback)",
-                        ativo = 1
-                    )
-                    funcionarioDao.insert(funcionarioTeste)
-                    funcionarioTeste
+            // ✅ PROTEÇÃO: Redimensionar para o modelo com validação
+            val resized = try {
+                Bitmap.createScaledBitmap(faceBmp, modelInputWidth, modelInputHeight, true)
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao redimensionar bitmap: ${e.message}")
+                processandoFace = false
+                return
+            }
+
+            // ✅ PROTEÇÃO CRÍTICA: Execução segura do TensorFlow
+            var vetorFacial: FloatArray? = null
+
+            try {
+                // ✅ PROTEÇÃO: Verificar se o interpreter está disponível
+                val interp = interpreter
+                if (interp == null) {
+                    Log.e(TAG, "❌ Interpreter é nulo")
+                    throw Exception("Interpreter não disponível")
+                }
+
+                // ✅ PROTEÇÃO: Verificar se o modelo está carregado
+                if (!modelLoaded) {
+                    Log.e(TAG, "❌ Modelo não está carregado")
+                    throw Exception("Modelo TensorFlow não carregado")
+                }
+
+                val inputTensor = convertBitmapToTensorInput(resized)
+                val output = Array(1) { FloatArray(modelOutputSize) }
+
+                // ✅ PROTEÇÃO CRÍTICA: Executar TensorFlow com proteções contra crash nativo
+                try {
+                    Log.d(TAG, "🤖 Executando modelo TensorFlow com proteções...")
+                    
+                    // ✅ PROTEÇÃO: Validar input tensor antes da execução
+                    if (!inputTensor.hasRemaining()) {
+                        Log.e(TAG, "❌ Input tensor vazio")
+                        throw Exception("Input tensor inválido")
+                    }
+                    
+                    // ✅ PROTEÇÃO: Validar output array antes da execução
+                    if (output.isEmpty() || output[0].isEmpty()) {
+                        Log.e(TAG, "❌ Output array inválido")
+                        throw Exception("Output array inválido")
+                    }
+                    
+                    // ✅ PROTEÇÃO: Executar com captura específica de erros nativos
+                    try {
+                        interp.run(inputTensor, output)
+                        Log.d(TAG, "✅ Modelo executado com sucesso")
+                    } catch (e: UnsatisfiedLinkError) {
+                        Log.e(TAG, "❌ Erro de biblioteca nativa TensorFlow: ${e.message}")
+                        throw Exception("Erro de biblioteca nativa: ${e.message}")
+                    } catch (e: UnsatisfiedLinkError) {
+                        Log.e(TAG, "❌ Erro de link nativo TensorFlow: ${e.message}")
+                        throw Exception("Erro de link nativo: ${e.message}")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro na execução do modelo: ${e.message}")
+                        throw Exception("Falha na execução do modelo: ${e.message}")
+                    }
+
+                    vetorFacial = output[0]
+
+                    // ✅ PROTEÇÃO: Validar vetor facial
+                    if (vetorFacial == null || vetorFacial.isEmpty()) {
+                        Log.e(TAG, "❌ Vetor facial é nulo ou vazio")
+                        throw Exception("Vetor facial não gerado")
+                    }
+
+                    if (vetorFacial.any { it.isNaN() || it.isInfinite() }) {
+                        Log.e(TAG, "❌ Vetor facial contém valores inválidos")
+                        throw Exception("Vetor facial contém valores NaN ou infinitos")
+                    }
+
+                    Log.d(TAG, "✅ Embedding gerado: ${vetorFacial.size} dimensões")
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro na execução do modelo TensorFlow: ${e.message}")
+                    throw Exception("Falha na execução do modelo: ${e.message}")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao obter funcionário de fallback: ${e.message}")
-                null
+                Log.e(TAG, "❌ Erro na execução do TensorFlow: ${e.message}")
+                
+                // ✅ PROTEÇÃO: Tentar recarregar o modelo se houver erro
+                if (e.message?.contains("biblioteca nativa") == true || 
+                    e.message?.contains("link nativo") == true) {
+                    Log.w(TAG, "⚠️ Tentando recarregar modelo TensorFlow...")
+                    try {
+                        interpreter?.close()
+                        interpreter = null
+                        modelLoaded = false
+                        loadTensorFlowModel()
+                        Log.d(TAG, "✅ Modelo recarregado com sucesso")
+                    } catch (reloadError: Exception) {
+                        Log.e(TAG, "❌ Falha ao recarregar modelo: ${reloadError.message}")
+                    }
+                }
+                
+                throw e
+            }
+
+            // ✅ PROTEÇÃO: Verificar se o vetor facial foi gerado
+            if (vetorFacial == null) {
+                Log.e(TAG, "❌ Vetor facial não foi gerado")
+                throw Exception("Vetor facial não disponível")
+            }
+
+            // ✅ PROTEÇÃO: Verificar se há faces cadastradas
+            val helper = faceRecognitionHelper
+            if (helper == null) {
+                Log.e(TAG, "❌ FaceRecognitionHelper é nulo")
+                throw Exception("FaceRecognitionHelper não inicializado")
+            }
+
+            // ✅ PROTEÇÃO: Verificar se há faces cadastradas no banco
+            val db = AppDatabase.getInstance(this@PontoActivity)
+            val faceDao = db.faceDao()
+            val facesCadastradas = faceDao.getAllFaces()
+            
+            if (facesCadastradas.isEmpty()) {
+                Log.w(TAG, "⚠️ Nenhuma face cadastrada no banco de dados")
+                throw Exception("Nenhuma face cadastrada para reconhecimento")
             }
             
+            Log.d(TAG, "📊 Faces cadastradas encontradas: ${facesCadastradas.size}")
+
+            // ✅ PROTEÇÃO: Reconhecer face com validação e retry
+            val maxTentativas = 3 // ✅ MOVIDO: Definir fora do bloco try
+            val funcionario = try {
+                Log.d(TAG, "🔍 Iniciando reconhecimento facial legacy...")
+
+                // ✅ SISTEMA DE RETRY: Tentar até 3 vezes
+                var resultado: FuncionariosEntity? = null
+                var tentativas = 0
+
+                while (resultado == null && tentativas < maxTentativas) {
+                        try {
+                            tentativas++
+                            Log.d(TAG, "🔄 Tentativa $tentativas de reconhecimento legacy...")
+
+                            // ✅ PROTEÇÃO: Verificar se o vetor facial é válido
+                            if (vetorFacial == null || vetorFacial.isEmpty()) {
+                                Log.e(TAG, "❌ Vetor facial é nulo ou vazio")
+                                break
+                            }
+
+                            // ✅ PROTEÇÃO: Verificar se o vetor facial não contém valores inválidos
+                            if (vetorFacial.any { it.isNaN() || it.isInfinite() }) {
+                                Log.e(TAG, "❌ Vetor facial contém valores inválidos")
+                                break
+                            }
+
+                            resultado = helper.recognizeFace(vetorFacial)
+
+                            if (resultado != null) {
+                                Log.d(
+                                    TAG,
+                                    "✅ Reconhecimento facial legacy bem-sucedido na tentativa $tentativas"
+                                )
+                            } else {
+                                Log.w(
+                                    TAG,
+                                    "⚠️ Reconhecimento legacy retornou nulo na tentativa $tentativas"
+                                )
+                            }
+
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro na tentativa $tentativas: ${e.message}")
+                            e.printStackTrace()
+                            if (tentativas >= maxTentativas) {
+                                throw e
+                            }
+                            // Aguardar um pouco antes da próxima tentativa
+                            kotlinx.coroutines.delay(200)
+                        }
+                    }
+
+                    resultado
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro crítico no reconhecimento facial legacy após 3 tentativas", e)
+                e.printStackTrace()
+                null
+            }
+
             if (funcionario != null) {
-                Log.d(TAG, "✅ FUNCIONÁRIO FALLBACK: ${funcionario.nome}")
-                
+                Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO (LEGACY): ${funcionario.nome}")
+
                 // ✅ COOLDOWN: Atualizar timestamp do último ponto registrado
                 lastPontoRegistrado = System.currentTimeMillis()
-                Log.d(TAG, "⏰ Cooldown iniciado (fallback) - próximo ponto em ${cooldownPonto}ms")
-                
+                Log.d(TAG, "⏰ Cooldown iniciado (legacy) - próximo ponto em ${cooldownPonto}ms")
+
                 // ✅ PROTEÇÃO: Registrar ponto com verificação de contexto
                 withContext(Dispatchers.Main) {
                     if (!isFinishing && !isDestroyed) {
@@ -1109,23 +1177,21 @@ class PontoActivity : AppCompatActivity() {
                     }
                 }
             } else {
-                Log.w(TAG, "❌ Nenhum funcionário disponível no fallback")
+                Log.w(TAG, "❌ Nenhum funcionário reconhecido (legacy)")
                 withContext(Dispatchers.Main) {
                     try {
                         if (!isFinishing && !isDestroyed) {
                             val status = statusText
-                            status.text = "❌ Erro no sistema\nTente novamente"
-                            
+                            status.text = "❌ Funcionário não reconhecido\nTente novamente"
+
                             status.postDelayed({
                                 try {
                                     if (!isFinishing && !isDestroyed) {
                                         val statusInner = statusText
                                         statusInner.text = "📷 Posicione seu rosto na câmera"
-                                    } else {
-                                        Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
                                     }
-                                } catch (e2: Exception) {
-                                    Log.e(TAG, "❌ Erro no reset UI: ${e2.message}")
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "❌ Erro no reset UI: ${e.message}")
                                 }
                             }, 2000)
                         } else {
@@ -1136,148 +1202,50 @@ class PontoActivity : AppCompatActivity() {
                     }
                 }
             }
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro no processamento com fallback: ${e.message}")
-        } finally {
-            processandoFace = false
-        }
-    }
 
-    /**
-     * ✅ FALLBACK: Processar face sem TensorFlow quando ele falha
-     */
-    private suspend fun processFaceWithoutTensorFlow(bitmap: Bitmap, boundingBox: Rect) {
-        try {
-            Log.d(TAG, "🔄 Processando face sem TensorFlow (modo fallback)...")
-            
-            // ✅ PROTEÇÃO: Verificar se a Activity ainda está válida
-            if (isFinishing || isDestroyed) {
-                Log.w(TAG, "⚠️ Activity finalizada - cancelando processamento de face")
-                processandoFace = false
-                return
-            }
-            
-            // ✅ PROTEÇÃO: Verificar se o bitmap é válido
-            if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
-                Log.e(TAG, "❌ Bitmap inválido - reciclado: ${bitmap.isRecycled}, dimensões: ${bitmap.width}x${bitmap.height}")
-                processandoFace = false
-                return
-            }
-            
-            // ✅ PROTEÇÃO: Verificar se o boundingBox é válido
-            if (boundingBox.isEmpty || boundingBox.width() <= 0 || boundingBox.height() <= 0) {
-                Log.e(TAG, "❌ BoundingBox inválido: $boundingBox")
-                processandoFace = false
-                return
-            }
-            
-            Log.d(TAG, "✅ Validações passadas - iniciando processamento sem TensorFlow")
+                        } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro no reconhecimento legacy: ${e.message}")
 
-            // ✅ PROTEÇÃO: Recortar face com validação
-            val faceBmp = try {
-                cropFace(bitmap, boundingBox)
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao recortar face: ${e.message}")
-                processandoFace = false
-                return
-            }
-            
-            if (faceBmp.isRecycled || faceBmp.width <= 0 || faceBmp.height <= 0) {
-                Log.e(TAG, "❌ Face recortada inválida")
-                processandoFace = false
-                return
-            }
+                // ✅ SISTEMA DE FALLBACK: Contar erros do TensorFlow
+                tensorFlowErrorCount++
+                lastTensorFlowError = System.currentTimeMillis()
 
-            // ✅ PROTEÇÃO: Salvar foto da face com validação
-            currentFaceBitmap = try {
-                val scaledBitmap = Bitmap.createScaledBitmap(faceBmp, 300, 300, true)
-                fixImageOrientationDefinitive(scaledBitmap)
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao processar foto: ${e.message}")
-                null
-            }
+                if (tensorFlowErrorCount >= maxTensorFlowErrors) {
+                    Log.w(TAG, "⚠️ Muitos erros do TensorFlow - ativando modo fallback")
+                    tensorFlowFallbackMode = true
 
-            // ✅ FALLBACK: Usar funcionário de teste quando TensorFlow falha
-            val funcionario = try {
-                Log.d(TAG, "🔄 Usando modo fallback - funcionário de teste")
-                
-                val db = AppDatabase.getInstance(this@PontoActivity)
-                val funcionarioDao = db.usuariosDao()
-                val funcionarios = funcionarioDao.getUsuario()
-                
-                if (funcionarios.isNotEmpty()) {
-                    funcionarios.first()
-                } else {
-                    // Criar funcionário de teste se não existir
-                    val funcionarioTeste = FuncionariosEntity(
-                        id = 1,
-                        codigo = "TEST001",
-                        nome = "Funcionário Teste (Fallback)",
-                        ativo = 1
-                    )
-                    funcionarioDao.insert(funcionarioTeste)
-                    funcionarioTeste
+                    // ✅ FALLBACK: Usar processamento sem TensorFlow
+                    processFaceWithLegacyMethod(bitmap, boundingBox)
+                    return
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao obter funcionário de fallback: ${e.message}")
-                null
-            }
-            
-            if (funcionario != null) {
-                Log.d(TAG, "✅ FUNCIONÁRIO FALLBACK: ${funcionario.nome}")
-                
-                // ✅ COOLDOWN: Atualizar timestamp do último ponto registrado
-                lastPontoRegistrado = System.currentTimeMillis()
-                Log.d(TAG, "⏰ Cooldown iniciado (sem TensorFlow) - próximo ponto em ${cooldownPonto}ms")
-                
-                // ✅ PROTEÇÃO: Registrar ponto com verificação de contexto
-                withContext(Dispatchers.Main) {
+
+            withContext(Dispatchers.Main) {
+                try {
                     if (!isFinishing && !isDestroyed) {
-                        CoroutineScope(Dispatchers.IO).launch {
+                        val status = statusText
+                        status.text = "❌ Erro no reconhecimento\nTente novamente"
+
+                        status.postDelayed({
                             try {
-                                registrarPontoDireto(funcionario)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "❌ Erro crítico no registro de ponto: ${e.message}")
-                                processandoFace = false
-                            }
-                        }
-                    } else {
-                        Log.w(TAG, "⚠️ Activity finalizada antes do registro de ponto")
-                        processandoFace = false
-                    }
-                }
-            } else {
-                Log.w(TAG, "❌ Nenhum funcionário disponível no fallback")
-                withContext(Dispatchers.Main) {
-                    try {
-                        if (!isFinishing && !isDestroyed) {
-                            val status = statusText
-                            status.text = "❌ Erro no sistema\nTente novamente"
-                            
-                            status.postDelayed({
-                                try {
-                                    if (!isFinishing && !isDestroyed) {
-                                        val statusInner = statusText
-                                        statusInner.text = "📷 Posicione seu rosto na câmera"
-                                    } else {
-                                        Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
-                                    }
-                                } catch (e2: Exception) {
-                                    Log.e(TAG, "❌ Erro no reset UI: ${e2.message}")
+                                if (!isFinishing && !isDestroyed) {
+                                    val statusInner = statusText
+                                    statusInner.text = "📷 Posicione seu rosto na câmera"
+                                } else {
+                                    Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
                                 }
-                            }, 2000)
-                        } else {
-                            Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro ao atualizar UI: ${e.message}")
+                            } catch (e2: Exception) {
+                                Log.e(TAG, "❌ Erro no reset UI: ${e2.message}")
+                            }
+                        }, 2000)
+                    } else {
+                        Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
                     }
+                } catch (e2: Exception) {
+                    Log.e(TAG, "❌ Erro ao atualizar UI: ${e2.message}")
                 }
             }
-            
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro no processamento sem TensorFlow: ${e.message}")
+            Log.e(TAG, "❌ Erro no processamento legacy: ${e.message}")
         } finally {
             processandoFace = false
         }
@@ -1617,14 +1585,78 @@ class PontoActivity : AppCompatActivity() {
                     Log.d(TAG, "✅ Funcionários já existem")
                 }
                 
-                            // ✅ NOVO: Testar FaceRecognitionHelper
-            testFaceRecognitionHelper()
-            
-            // ✅ NOVO: Executar testes de debug
-            executarTestesDebug()
+                // ✅ NOVO: Verificar se há faces cadastradas
+                checkAndCreateTestFace()
+                
+                // ✅ NOVO: Testar FaceRecognitionHelper
+                testFaceRecognitionHelper()
+                
+                // ✅ NOVO: Executar testes de debug
+                executarTestesDebug()
                 
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao criar funcionário de teste", e)
+                e.printStackTrace()
+            }
+        }
+    }
+    
+    /**
+     * ✅ NOVO: Verificar se há faces cadastradas e criar face de teste se necessário
+     */
+    private fun checkAndCreateTestFace() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                Log.d(TAG, "🔍 Verificando faces cadastradas...")
+                
+                val db = AppDatabase.getInstance(this@PontoActivity)
+                val faceDao = db.faceDao()
+                val funcionarioDao = db.usuariosDao()
+                
+                val faces = faceDao.getAllFaces()
+                Log.d(TAG, "📸 Faces encontradas: ${faces.size}")
+                
+                if (faces.isEmpty()) {
+                    Log.d(TAG, "📝 Nenhuma face cadastrada - criando face de teste...")
+                    
+                    // Buscar funcionário de teste
+                    val funcionarios = funcionarioDao.getUsuario()
+                    if (funcionarios.isNotEmpty()) {
+                        val funcionarioTeste = funcionarios.first()
+                        
+                        // ✅ CRIAR FACE DE TESTE: Gerar embedding de teste
+                        val testEmbedding = FloatArray(512) { 0.1f } // Embedding de teste simples
+                        val embeddingString = testEmbedding.joinToString(",")
+                        
+                        val faceTeste = com.example.iface_offilne.data.FaceEntity(
+                            id = 0,
+                            funcionarioId = funcionarioTeste.codigo,
+                            embedding = embeddingString,
+                            synced = true
+                        )
+                        
+                        faceDao.insert(faceTeste)
+                        Log.d(TAG, "✅ Face de teste criada para: ${funcionarioTeste.nome}")
+                        
+                        // Verificar se foi salva
+                        val savedFace = faceDao.getByFuncionarioId(funcionarioTeste.codigo)
+                        if (savedFace != null) {
+                            Log.d(TAG, "✅ Face de teste salva com sucesso - ID: ${savedFace.id}")
+                        } else {
+                            Log.e(TAG, "❌ Erro: Face de teste não foi salva")
+                        }
+                    } else {
+                        Log.e(TAG, "❌ Nenhum funcionário encontrado para criar face de teste")
+                    }
+                } else {
+                    Log.d(TAG, "✅ Faces já cadastradas:")
+                    faces.forEach { face ->
+                        Log.d(TAG, "   - ${face.funcionarioId}: ${face.embedding.length} chars")
+                    }
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao verificar/criar faces: ${e.message}")
                 e.printStackTrace()
             }
         }
@@ -1879,6 +1911,16 @@ class PontoActivity : AppCompatActivity() {
                 Log.d(TAG, "✅ Face recognition helper limpo")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao limpar face recognition helper: ${e.message}")
+            }
+            
+            // ✅ PROTEÇÃO: Limpar helpers adaptativos
+            try {
+                adaptiveFaceRecognitionHelper = null
+                deviceCapabilityHelper = null
+                advancedFaceRecognitionHelper = null
+                Log.d(TAG, "✅ Helpers adaptativos limpos")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao limpar helpers adaptativos: ${e.message}")
             }
             
             // ✅ PROTEÇÃO: Limpar location helper

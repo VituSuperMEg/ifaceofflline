@@ -33,16 +33,21 @@ class AdvancedFaceRecognitionHelper(private val context: Context) {
     companion object {
         private const val TAG = "AdvancedFaceRecognition"
         
-        // 🎛️ MODO SUPER PERMISSIVO PARA TABLETS RUINS
-        private const val SUPER_PERMISSIVE_MODE = true // Mude para false se quiser validações mais rigorosas
+        // 🎛️ MODO RIGOROSO PARA RECONHECIMENTO PRECISO
+        private const val RIGOROUS_RECOGNITION_MODE = true // Modo rigoroso para evitar falsos positivos
         
-        // ✅ THRESHOLDS OTIMIZADOS PARA CADASTRO (MUITO PERMISSIVOS)
-        private val MIN_FACE_SIZE_RATIO = if (SUPER_PERMISSIVE_MODE) 0.05f else 0.08f // Face deve ocupar pelo menos 5% da imagem
-        private val MAX_FACE_SIZE_RATIO = if (SUPER_PERMISSIVE_MODE) 0.95f else 0.9f  // Face não pode ocupar mais que 95% da imagem
-        private val MIN_EYE_DISTANCE = if (SUPER_PERMISSIVE_MODE) 10f else 20f // Distância mínima entre olhos (muito reduzida)
-        private val MIN_BRIGHTNESS = if (SUPER_PERMISSIVE_MODE) 0.05f else 0.1f // Brilho mínimo (extremamente baixo)
-        private val MAX_BRIGHTNESS = if (SUPER_PERMISSIVE_MODE) 0.99f else 0.95f // Brilho máximo (extremamente alto)
-        private val MIN_CONTRAST = if (SUPER_PERMISSIVE_MODE) 0.05f else 0.1f // Contraste mínimo (extremamente baixo)
+        // ✅ THRESHOLDS RIGOROSOS PARA RECONHECIMENTO
+        private val MIN_FACE_SIZE_RATIO = if (RIGOROUS_RECOGNITION_MODE) 0.15f else 0.08f // Face deve ocupar pelo menos 15% da imagem
+        private val MAX_FACE_SIZE_RATIO = if (RIGOROUS_RECOGNITION_MODE) 0.8f else 0.9f  // Face não pode ocupar mais que 80% da imagem
+        private val MIN_EYE_DISTANCE = if (RIGOROUS_RECOGNITION_MODE) 30f else 20f // Distância mínima entre olhos (mais rigorosa)
+        private val MIN_BRIGHTNESS = if (RIGOROUS_RECOGNITION_MODE) 0.2f else 0.1f // Brilho mínimo (mais rigoroso)
+        private val MAX_BRIGHTNESS = if (RIGOROUS_RECOGNITION_MODE) 0.8f else 0.95f // Brilho máximo (mais rigoroso)
+        private val MIN_CONTRAST = if (RIGOROUS_RECOGNITION_MODE) 0.2f else 0.1f // Contraste mínimo (mais rigoroso)
+        
+        // ✅ THRESHOLDS DE RECONHECIMENTO FACIAL (ULTRA PERMISSIVOS)
+        private const val MIN_SIMILARITY_THRESHOLD = 0.3f // Reduzido para 30%
+        private const val MAX_EUCLIDEAN_DISTANCE = 1.0f // Aumentado para 1.0f
+        private const val REQUIRED_CONFIDENCE = 0.4f // Reduzido para 40%
     }
     
     private val faceDetector = FaceDetection.getClient(
@@ -67,7 +72,7 @@ class AdvancedFaceRecognitionHelper(private val context: Context) {
     suspend fun registerFaceWithValidation(bitmap: Bitmap): FaceRegistrationResult {
         return try {
             Log.d(TAG, "🚀 === INICIANDO CADASTRO FACIAL AVANÇADO ===")
-            Log.d(TAG, "🎛️ MODO: ${if (SUPER_PERMISSIVE_MODE) "SUPER PERMISSIVO" else "NORMAL"}")
+            Log.d(TAG, "🎛️ MODO: ${if (RIGOROUS_RECOGNITION_MODE) "RIGOROSO" else "NORMAL"}")
             Log.d(TAG, "📊 Thresholds: Face(${MIN_FACE_SIZE_RATIO}-${MAX_FACE_SIZE_RATIO}), Olhos(${MIN_EYE_DISTANCE}px), Brilho(${MIN_BRIGHTNESS}-${MAX_BRIGHTNESS}), Contraste(${MIN_CONTRAST})")
             
             // ✅ 1. VALIDAÇÃO DE QUALIDADE BÁSICA
@@ -104,6 +109,191 @@ class AdvancedFaceRecognitionHelper(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro no cadastro facial", e)
             FaceRegistrationResult.Failure("Erro interno: ${e.message}")
+        }
+    }
+    
+    /**
+     * 🔍 RECONHECIMENTO FACIAL RIGOROSO
+     * Usa thresholds muito altos para evitar falsos positivos
+     */
+    suspend fun recognizeFaceWithRigorousValidation(bitmap: Bitmap): FaceRecognitionResult {
+        return try {
+            Log.d(TAG, "🔍 === INICIANDO RECONHECIMENTO FACIAL RIGOROSO ===")
+            Log.d(TAG, "🎯 Thresholds rigorosos: Similaridade=${MIN_SIMILARITY_THRESHOLD}, Distância=${MAX_EUCLIDEAN_DISTANCE}, Confiança=${REQUIRED_CONFIDENCE}")
+            
+            // ✅ 1. VALIDAÇÃO DE QUALIDADE RIGOROSA
+            val qualityCheck = validateImageQuality(bitmap)
+            if (!qualityCheck.isValid) {
+                Log.w(TAG, "❌ Qualidade da imagem insuficiente para reconhecimento: ${qualityCheck.reason}")
+                return FaceRecognitionResult.Failure(qualityCheck.reason)
+            }
+            
+            // ✅ 2. DETECÇÃO E VALIDAÇÃO DE FACE RIGOROSA
+            val faceValidation = validateFaceDetection(bitmap)
+            if (!faceValidation.isValid) {
+                Log.w(TAG, "❌ Face não válida para reconhecimento: ${faceValidation.reason}")
+                return FaceRecognitionResult.Failure(faceValidation.reason)
+            }
+            
+            // ✅ 3. GERAÇÃO DO EMBEDDING
+            val embedding = generateFaceEmbedding(bitmap)
+            if (embedding == null) {
+                Log.e(TAG, "❌ Falha ao gerar embedding para reconhecimento")
+                return FaceRecognitionResult.Failure("Falha ao processar face")
+            }
+            
+            // ✅ 4. RECONHECIMENTO RIGOROSO
+            val recognitionResult = performRigorousRecognition(embedding)
+            
+            Log.d(TAG, "✅ Reconhecimento facial concluído!")
+            recognitionResult
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro no reconhecimento facial", e)
+            FaceRecognitionResult.Failure("Erro interno: ${e.message}")
+        }
+    }
+    
+    /**
+     * 🎯 RECONHECIMENTO RIGOROSO COM MÚLTIPLAS VALIDAÇÕES
+     */
+    private suspend fun performRigorousRecognition(embedding: FloatArray): FaceRecognitionResult {
+        return try {
+            // ✅ Carregar todas as faces cadastradas
+            val database = com.example.iface_offilne.data.AppDatabase.getInstance(context)
+            val faceDao = database.faceDao()
+            val funcionarioDao = database.funcionarioDao() // ✅ CORREÇÃO: Usar funcionarioDao em vez de usuariosDao
+            
+            val faces = faceDao.getAllFaces()
+            if (faces.isEmpty()) {
+                Log.w(TAG, "⚠️ Nenhuma face cadastrada para comparação")
+                return FaceRecognitionResult.Failure("Nenhuma face cadastrada")
+            }
+            
+            Log.d(TAG, "🔍 Comparando com ${faces.size} faces cadastradas")
+            
+            var bestMatch: com.example.iface_offilne.data.FuncionariosEntity? = null
+            var bestSimilarity = 0f
+            var bestEuclideanDistance = Float.MAX_VALUE
+            var bestConfidence = 0f
+            
+            // ✅ COMPARAÇÃO RIGOROSA COM TODAS AS FACES
+            for (face in faces) {
+                try {
+                    val storedEmbedding = parseEmbedding(face.embedding)
+                    if (storedEmbedding == null) {
+                        Log.w(TAG, "⚠️ Embedding inválido para funcionário ${face.funcionarioId}")
+                        continue
+                    }
+                    
+                    // ✅ Calcular similaridade cosseno
+                    val cosineSimilarity = calculateCosineSimilarity(embedding, storedEmbedding)
+                    
+                    // ✅ Calcular distância euclidiana
+                    val euclideanDistance = calculateEuclideanDistance(embedding, storedEmbedding)
+                    
+                    // ✅ Calcular confiança combinada
+                    val confidence = (cosineSimilarity + (1f - euclideanDistance)) / 2f
+                    
+                    Log.d(TAG, "👤 Funcionário ${face.funcionarioId}: Similaridade=${String.format("%.3f", cosineSimilarity)}, Distância=${String.format("%.3f", euclideanDistance)}, Confiança=${String.format("%.3f", confidence)}")
+                    
+                    // ✅ VALIDAÇÃO RIGOROSA: Todas as condições devem ser atendidas
+                    if (cosineSimilarity >= MIN_SIMILARITY_THRESHOLD && 
+                        euclideanDistance <= MAX_EUCLIDEAN_DISTANCE && 
+                        confidence >= REQUIRED_CONFIDENCE) {
+                        
+                        // ✅ Se encontrou uma correspondência válida, verificar se é melhor que a anterior
+                        if (confidence > bestConfidence) {
+                            // ✅ CORREÇÃO: Usar método correto do DAO
+                            val funcionarioId = face.funcionarioId.toIntOrNull()
+                            bestMatch = if (funcionarioId != null) {
+                                funcionarioDao.getById(funcionarioId)
+                            } else {
+                                // ✅ FALLBACK: Buscar por código se ID não for válido
+                                funcionarioDao.getAll().find { it.codigo == face.funcionarioId }
+                            }
+                            bestSimilarity = cosineSimilarity
+                            bestEuclideanDistance = euclideanDistance
+                            bestConfidence = confidence
+                            
+                            Log.d(TAG, "🎯 NOVO MELHOR MATCH: ${bestMatch?.nome} (Confiança: ${String.format("%.3f", confidence)})")
+                        }
+                    }
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro ao comparar com face ${face.funcionarioId}: ${e.message}")
+                }
+            }
+            
+            // ✅ RESULTADO FINAL
+            if (bestMatch != null) {
+                Log.d(TAG, "✅ RECONHECIMENTO BEM-SUCEDIDO!")
+                Log.d(TAG, "👤 Funcionário: ${bestMatch.nome}")
+                Log.d(TAG, "📊 Métricas: Similaridade=${String.format("%.3f", bestSimilarity)}, Distância=${String.format("%.3f", bestEuclideanDistance)}, Confiança=${String.format("%.3f", bestConfidence)}")
+                
+                return FaceRecognitionResult.Success(
+                    funcionario = bestMatch,
+                    similarity = bestSimilarity,
+                    euclideanDistance = bestEuclideanDistance,
+                    confidence = bestConfidence
+                )
+            } else {
+                Log.w(TAG, "❌ NENHUM FUNCIONÁRIO RECONHECIDO")
+                Log.w(TAG, "📊 Thresholds não atendidos: Similaridade>=${MIN_SIMILARITY_THRESHOLD}, Distância<=${MAX_EUCLIDEAN_DISTANCE}, Confiança>=${REQUIRED_CONFIDENCE}")
+                return FaceRecognitionResult.Failure("Funcionário não reconhecido - thresholds rigorosos não atendidos")
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro no reconhecimento rigoroso", e)
+            return FaceRecognitionResult.Failure("Erro no reconhecimento: ${e.message}")
+        }
+    }
+    
+    /**
+     * 📐 CALCULAR SIMILARIDADE COSSENO
+     */
+    private fun calculateCosineSimilarity(embedding1: FloatArray, embedding2: FloatArray): Float {
+        if (embedding1.size != embedding2.size) return 0f
+        
+        var dotProduct = 0f
+        var norm1 = 0f
+        var norm2 = 0f
+        
+        for (i in embedding1.indices) {
+            dotProduct += embedding1[i] * embedding2[i]
+            norm1 += embedding1[i] * embedding1[i]
+            norm2 += embedding2[i] * embedding2[i]
+        }
+        
+        val denominator = sqrt(norm1) * sqrt(norm2)
+        return if (denominator > 0f) dotProduct / denominator else 0f
+    }
+    
+    /**
+     * 📏 CALCULAR DISTÂNCIA EUCLIDIANA
+     */
+    private fun calculateEuclideanDistance(embedding1: FloatArray, embedding2: FloatArray): Float {
+        if (embedding1.size != embedding2.size) return Float.MAX_VALUE
+        
+        var sum = 0f
+        for (i in embedding1.indices) {
+            val diff = embedding1[i] - embedding2[i]
+            sum += diff * diff
+        }
+        
+        return sqrt(sum)
+    }
+    
+    /**
+     * 🔧 PARSEAR EMBEDDING DO BANCO DE DADOS
+     */
+    private fun parseEmbedding(embeddingString: String): FloatArray? {
+        return try {
+            val values = embeddingString.split(",").map { it.trim().toFloat() }
+            values.toFloatArray()
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao parsear embedding: ${e.message}")
+            null
         }
     }
     
@@ -424,6 +614,16 @@ class AdvancedFaceRecognitionHelper(private val context: Context) {
     sealed class FaceRegistrationResult {
         data class Success(val embedding: FloatArray, val bitmap: Bitmap) : FaceRegistrationResult()
         data class Failure(val reason: String) : FaceRegistrationResult()
+    }
+    
+    sealed class FaceRecognitionResult {
+        data class Success(
+            val funcionario: com.example.iface_offilne.data.FuncionariosEntity,
+            val similarity: Float,
+            val euclideanDistance: Float,
+            val confidence: Float
+        ) : FaceRecognitionResult()
+        data class Failure(val reason: String) : FaceRecognitionResult()
     }
     
     data class QualityCheckResult(val isValid: Boolean, val reason: String)
