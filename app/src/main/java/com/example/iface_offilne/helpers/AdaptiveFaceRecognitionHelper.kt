@@ -74,10 +74,7 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
         loadTensorFlowModel()
     }
     
-    /**
-     * 🔍 RECONHECIMENTO FACIAL ADAPTATIVO
-     * Ajusta automaticamente a qualidade baseado no dispositivo
-     */
+   
     suspend fun recognizeFaceAdaptive(faceBitmap: Bitmap): FaceRecognitionResult {
         return try {
             Log.d(TAG, "🔍 === RECONHECIMENTO FACIAL ADAPTATIVO ===")

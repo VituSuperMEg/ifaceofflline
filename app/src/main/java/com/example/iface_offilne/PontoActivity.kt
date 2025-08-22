@@ -937,7 +937,7 @@ class PontoActivity : AppCompatActivity() {
             }
             
             // ✅ VERIFICAR SE ACHOU ALGUÉM COM THRESHOLD ULTRA RIGOROSO
-            val thresholdMinimo = 0.82f // 80% de similaridade mínima - MUITO RIGOROSO
+            val thresholdMinimo = 0.83f // 80% de similaridade mínima - MUITO RIGOROSO
             val thresholdIdeal = 0.90f // 90% para confiança alta - EXTREMAMENTE RIGOROSO
             
             if (funcionarioReconhecido != null && melhorSimilaridade >= thresholdMinimo) {
@@ -2199,7 +2199,7 @@ class PontoActivity : AppCompatActivity() {
                     if (fotoBitmap != null) {
                         // ✅ CORRIGIR ORIENTAÇÃO DA FOTO
                         val matrix = Matrix().apply {
-                            postRotate(180f) // Sem rotação adicional
+                            postRotate(90f) // Sem rotação adicional
                         }
                         val rotatedBitmap = Bitmap.createBitmap(fotoBitmap, 0, 0, fotoBitmap.width, fotoBitmap.height, matrix, true)
                         
