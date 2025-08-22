@@ -18,16 +18,6 @@ import kotlinx.coroutines.tasks.await
 import com.example.iface_offilne.helpers.PerformanceLevel
 
 
-/**
- * 🚀 HELPER ADAPTATIVO PARA RECONHECIMENTO FACIAL
- * 
- * Sistema inteligente que ajusta automaticamente os parâmetros
- * de reconhecimento facial baseado nas capacidades do dispositivo
- * 
- * ✅ Funciona em dispositivos de baixo desempenho
- * ✅ Mantém precisão em dispositivos potentes
- * ✅ Otimização automática de performance
- */
 class AdaptiveFaceRecognitionHelper(private val context: Context) {
     
     companion object {

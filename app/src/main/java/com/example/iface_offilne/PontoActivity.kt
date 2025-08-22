@@ -900,6 +900,7 @@ class PontoActivity : AppCompatActivity() {
             // ✅ COMPARAR COM CADA FACE CADASTRADA
             var melhorSimilaridade = 0f
             var funcionarioReconhecido: FuncionariosEntity? = null
+            var melhorFace: com.example.iface_offilne.data.FaceEntity? = null
             
             for (face in faces) {
                 try {
@@ -910,12 +911,19 @@ class PontoActivity : AppCompatActivity() {
                         continue
                     }
                     
+                    // ✅ VALIDAR QUALIDADE DO EMBEDDING CADASTRADO
+                    if (embeddingCadastrado.all { it == 0f } || embeddingCadastrado.any { it.isNaN() || it.isInfinite() }) {
+                        Log.w(TAG, "⚠️ Embedding cadastrado inválido para ${face.funcionarioId}")
+                        continue
+                    }
+                    
                     val similaridade = calculateSimilarity(embedding, embeddingCadastrado)
                     Log.d(TAG, "📊 Similaridade com ${face.funcionarioId}: ${String.format("%.3f", similaridade)}")
                     
                     if (similaridade > melhorSimilaridade) {
                         melhorSimilaridade = similaridade
                         funcionarioReconhecido = funcionarios.find { it.codigo == face.funcionarioId }
+                        melhorFace = face
                     }
                     
                 } catch (e: Exception) {
@@ -923,17 +931,27 @@ class PontoActivity : AppCompatActivity() {
                 }
             }
             
-            // ✅ VERIFICAR SE ACHOU ALGUÉM
-            if (funcionarioReconhecido != null && melhorSimilaridade > 0.1f) { // Threshold muito baixo para teste
-                Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO!")
+            // ✅ VERIFICAR SE ACHOU ALGUÉM COM THRESHOLD MAIS RIGOROSO
+            val thresholdMinimo = 0.65f // 65% de similaridade mínima
+            val thresholdIdeal = 0.75f // 75% para confiança alta
+            
+            if (funcionarioReconhecido != null && melhorSimilaridade >= thresholdMinimo) {
+                Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO COM ALTA PRECISÃO!")
                 Log.d(TAG, "👤 Nome: ${funcionarioReconhecido.nome}")
                 Log.d(TAG, "📊 Similaridade: ${String.format("%.3f", melhorSimilaridade)}")
+                Log.d(TAG, "🎯 Confiança: ${if (melhorSimilaridade >= thresholdIdeal) "ALTA" else "MÉDIA"}")
                 
                 return RecognitionResult.Success(funcionarioReconhecido, melhorSimilaridade)
             } else {
-                Log.w(TAG, "❌ Nenhum funcionário reconhecido")
+                Log.w(TAG, "❌ Nenhum funcionário reconhecido com precisão suficiente")
                 Log.w(TAG, "📊 Melhor similaridade: ${String.format("%.3f", melhorSimilaridade)}")
-                return RecognitionResult.Failure("Face não reconhecida (similaridade: ${String.format("%.3f", melhorSimilaridade)})")
+                Log.w(TAG, "🎯 Threshold mínimo: ${String.format("%.3f", thresholdMinimo)}")
+                
+                if (melhorSimilaridade > 0.3f) {
+                    return RecognitionResult.Failure("Similaridade insuficiente (${String.format("%.1f", melhorSimilaridade * 100)}% - mínimo 65%)")
+                } else {
+                    return RecognitionResult.Failure("Face não reconhecida no sistema")
+                }
             }
             
         } catch (e: Exception) {
@@ -978,7 +996,7 @@ class PontoActivity : AppCompatActivity() {
     }
     
     /**
-     * 📊 CALCULAR SIMILARIDADE ENTRE EMBEDDINGS
+     * 📊 CALCULAR SIMILARIDADE ENTRE EMBEDDINGS COM MÚLTIPLAS MÉTRICAS
      */
     private fun calculateSimilarity(embedding1: FloatArray, embedding2: FloatArray): Float {
         return try {
@@ -987,7 +1005,7 @@ class PontoActivity : AppCompatActivity() {
                 return 0f
             }
             
-            // ✅ CALCULAR COSSENO SIMILARITY
+            // ✅ 1. CALCULAR COSSENO SIMILARITY
             var dotProduct = 0f
             var norm1 = 0f
             var norm2 = 0f
@@ -998,13 +1016,37 @@ class PontoActivity : AppCompatActivity() {
                 norm2 += embedding2[i] * embedding2[i]
             }
             
-            val similarity = dotProduct / (kotlin.math.sqrt(norm1) * kotlin.math.sqrt(norm2))
+            val cosineSimilarity = dotProduct / (kotlin.math.sqrt(norm1) * kotlin.math.sqrt(norm2))
             
-            // ✅ NORMALIZAR PARA [0, 1]
-            val normalizedSimilarity = (similarity + 1) / 2
+            // ✅ 2. CALCULAR DISTÂNCIA EUCLIDIANA
+            var euclideanDistance = 0f
+            for (i in embedding1.indices) {
+                val diff = embedding1[i] - embedding2[i]
+                euclideanDistance += diff * diff
+            }
+            euclideanDistance = kotlin.math.sqrt(euclideanDistance)
             
-            Log.d(TAG, "📊 Similaridade calculada: ${String.format("%.3f", normalizedSimilarity)}")
-            normalizedSimilarity
+            // ✅ 3. CALCULAR DISTÂNCIA MANHATTAN
+            var manhattanDistance = 0f
+            for (i in embedding1.indices) {
+                manhattanDistance += kotlin.math.abs(embedding1[i] - embedding2[i])
+            }
+            
+            // ✅ 4. NORMALIZAR E COMBINAR MÉTRICAS
+            val normalizedCosine = (cosineSimilarity + 1) / 2 // [0, 1]
+            val normalizedEuclidean = 1f / (1f + euclideanDistance) // [0, 1] - quanto menor a distância, maior a similaridade
+            val normalizedManhattan = 1f / (1f + manhattanDistance / embedding1.size) // [0, 1] - normalizado pelo tamanho
+            
+            // ✅ 5. PESO DAS MÉTRICAS (Cosseno tem mais peso por ser mais confiável)
+            val finalSimilarity = (normalizedCosine * 0.6f + normalizedEuclidean * 0.3f + normalizedManhattan * 0.1f)
+            
+            Log.d(TAG, "📊 Métricas calculadas:")
+            Log.d(TAG, "   Cosseno: ${String.format("%.3f", normalizedCosine)}")
+            Log.d(TAG, "   Euclidiana: ${String.format("%.3f", normalizedEuclidean)}")
+            Log.d(TAG, "   Manhattan: ${String.format("%.3f", normalizedManhattan)}")
+            Log.d(TAG, "   Final: ${String.format("%.3f", finalSimilarity)}")
+            
+            finalSimilarity
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao calcular similaridade: ${e.message}")
@@ -1984,74 +2026,60 @@ class PontoActivity : AppCompatActivity() {
         try {
             Log.d(TAG, "🎉 Mostrando interface de confirmação para: ${funcionario.nome}")
             
-            // ✅ CRIAR LAYOUT DE CONFIRMAÇÃO
+            // ✅ CRIAR LAYOUT DE CONFIRMAÇÃO COMPACTO
             val confirmationLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundColor(android.graphics.Color.parseColor("#4CAF50")) // Verde
-                setPadding(40, 30, 40, 30)
+                setPadding(20, 15, 20, 15) // Padding menor
                 elevation = 20f
                 
-                // ✅ SETAS PARA CIMA (INDICADOR DE SUCESSO)
+                // ✅ SETAS PARA CIMA (INDICADOR DE SUCESSO) - MENORES
                 val arrowsLayout = LinearLayout(this@PontoActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = android.view.Gravity.CENTER
                 }
                 
-                // Seta 1
+                // Seta 1 - Menor
                 val arrow1 = TextView(this@PontoActivity).apply {
                     text = "▲"
-                    textSize = 16f
-                    setTextColor(android.graphics.Color.parseColor("#81C784")) // Verde claro
+                    textSize = 12f // Reduzido
+                    setTextColor(android.graphics.Color.WHITE)
                     gravity = android.view.Gravity.CENTER
                 }
                 
-                // Seta 2
+                // Seta 2 - Menor
                 val arrow2 = TextView(this@PontoActivity).apply {
                     text = "▲"
-                    textSize = 12f
-                    setTextColor(android.graphics.Color.parseColor("#81C784")) // Verde claro
+                    textSize = 10f // Reduzido
+                    setTextColor(android.graphics.Color.WHITE)
                     gravity = android.view.Gravity.CENTER
                 }
                 
                 arrowsLayout.addView(arrow1)
                 arrowsLayout.addView(arrow2)
                 
-                // ✅ NOME DO FUNCIONÁRIO
+                // ✅ NOME DO FUNCIONÁRIO - MENOR
                 val nomeFuncionario = TextView(this@PontoActivity).apply {
                     text = funcionario.nome
-                    textSize = 24f
+                    textSize = 16f // Reduzido
                     setTextColor(android.graphics.Color.WHITE)
                     gravity = android.view.Gravity.CENTER
                     setTypeface(null, android.graphics.Typeface.BOLD)
-                    setPadding(0, 20, 0, 0)
-                }
-                
-                // ✅ HORÁRIO DO PONTO
-                val horarioAtual = System.currentTimeMillis()
-                val formato = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-                val horarioFormatado = formato.format(Date(horarioAtual))
-                
-                val horarioText = TextView(this@PontoActivity).apply {
-                    text = horarioFormatado
-                    textSize = 18f
-                    setTextColor(android.graphics.Color.parseColor("#E8F5E8")) // Verde muito claro
-                    gravity = android.view.Gravity.CENTER
-                    setPadding(0, 10, 0, 0)
+                    setPadding(0, 5, 0, 0) // Padding menor
                 }
                 
                 // ✅ ADICIONAR ELEMENTOS AO LAYOUT
                 addView(arrowsLayout)
                 addView(nomeFuncionario)
-                addView(horarioText)
             }
             
-            // ✅ CRIAR PREVIEW DA FACE (CANTOS INFERIOR ESQUERDO)
+            // ✅ CRIAR PREVIEW DA FACE (CANTO INFERIOR ESQUERDO) - MESMO TAMANHO
             val facePreviewLayout = FrameLayout(this).apply {
                 layoutParams = FrameLayout.LayoutParams(120, 120).apply {
                     gravity = android.view.Gravity.BOTTOM or android.view.Gravity.START
-                    setMargins(20, 0, 0, 20)
+                    setMargins(20, 0, 0, 100) // Margem do fundo maior para não sobrepor
                 }
-                setBackgroundResource(android.R.drawable.dialog_holo_light_frame)
+                setBackgroundColor(android.graphics.Color.WHITE)
                 elevation = 15f
             }
             
@@ -2062,13 +2090,19 @@ class PontoActivity : AppCompatActivity() {
                     val fotoBitmap = android.graphics.BitmapFactory.decodeByteArray(fotoBytes, 0, fotoBytes.size)
                     
                     if (fotoBitmap != null) {
+                        // ✅ CORRIGIR ORIENTAÇÃO DA FOTO
+                        val matrix = Matrix().apply {
+                            postRotate(0f) // Sem rotação adicional
+                        }
+                        val rotatedBitmap = Bitmap.createBitmap(fotoBitmap, 0, 0, fotoBitmap.width, fotoBitmap.height, matrix, true)
+                        
                         val faceImageView = ImageView(this).apply {
                             layoutParams = FrameLayout.LayoutParams(
                                 FrameLayout.LayoutParams.MATCH_PARENT,
                                 FrameLayout.LayoutParams.MATCH_PARENT
                             )
                             scaleType = ImageView.ScaleType.CENTER_CROP
-                            setImageBitmap(fotoBitmap)
+                            setImageBitmap(rotatedBitmap)
                         }
                         facePreviewLayout.addView(faceImageView)
                     }
@@ -2077,65 +2111,70 @@ class PontoActivity : AppCompatActivity() {
                 }
             }
             
-            // ✅ CRIAR LAYOUT PRINCIPAL
-            val mainLayout = FrameLayout(this).apply {
+            // ✅ CRIAR OVERLAY SOBRE A TELA ATUAL (NÃO SUBSTITUIR)
+            val overlayLayout = FrameLayout(this).apply {
                 layoutParams = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.MATCH_PARENT
                 )
-                setBackgroundColor(android.graphics.Color.parseColor("#80000000")) // Fundo semi-transparente
+                setBackgroundColor(android.graphics.Color.parseColor("#30000000")) // Fundo levemente escuro
+                isClickable = true
+                isFocusable = true
             }
             
-            // ✅ ADICIONAR ELEMENTOS AO LAYOUT PRINCIPAL
-            mainLayout.addView(facePreviewLayout)
-            
-            // ✅ POSICIONAR CONFIRMAÇÃO NO CANTO INFERIOR DIREITO
+            // ✅ POSICIONAR CONFIRMAÇÃO NO CANTO INFERIOR DIREITO - TAMANHO SIMILAR À FOTO
             confirmationLayout.layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
+                120, // Mesmo tamanho da foto
                 FrameLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
-                setMargins(0, 0, 20, 20)
+                setMargins(0, 0, 20, 100) // Mesma altura da foto
             }
-            mainLayout.addView(confirmationLayout)
             
-            // ✅ SUBSTITUIR O CONTEÚDO DA ACTIVITY
+            // ✅ ADICIONAR ELEMENTOS AO OVERLAY
+            overlayLayout.addView(facePreviewLayout)
+            overlayLayout.addView(confirmationLayout)
+            
+            // ✅ ADICIONAR OVERLAY POR CIMA DO LAYOUT EXISTENTE (NÃO SUBSTITUIR)
             val rootView = findViewById<ViewGroup>(android.R.id.content)
-            rootView.removeAllViews()
-            rootView.addView(mainLayout)
+            rootView.addView(overlayLayout)
             
-            // ✅ RESET AUTOMÁTICO APÓS 5 SEGUNDOS
+            // ✅ RESET AUTOMÁTICO APÓS 3 SEGUNDOS (MAIS RÁPIDO)
             Handler(Looper.getMainLooper()).postDelayed({
                 try {
                     if (!isFinishing && !isDestroyed) {
-                        // ✅ RESTAURAR LAYOUT ORIGINAL
-                        recreate()
+                        // ✅ REMOVER APENAS O OVERLAY
+                        rootView.removeView(overlayLayout)
+                        processandoFace = false
+                        lastProcessingTime = 0L
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro no reset da UI: ${e.message}")
                 }
-            }, 5000)
+            }, 3000)
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao mostrar interface de confirmação: ${e.message}")
             e.printStackTrace()
             
             // ✅ FALLBACK: Mostrar mensagem simples
-            val status = statusText
-            status.text = "✅ Ponto registrado!\n${funcionario.nome}"
-            
-            status.postDelayed({
-                try {
-                    if (!isFinishing && !isDestroyed) {
-                        val statusInner = statusText
-                        statusInner.text = "📷 Posicione seu rosto na câmera"
-                        processandoFace = false
-                        lastProcessingTime = 0L
+            if (::statusText.isInitialized) {
+                val status = statusText
+                status.text = "✅ Ponto registrado!\n${funcionario.nome}"
+                
+                status.postDelayed({
+                    try {
+                        if (!isFinishing && !isDestroyed) {
+                            val statusInner = statusText
+                            statusInner.text = "📷 Posicione seu rosto na câmera"
+                            processandoFace = false
+                            lastProcessingTime = 0L
+                        }
+                    } catch (e2: Exception) {
+                        Log.e(TAG, "❌ Erro no reset: ${e2.message}")
                     }
-                } catch (e2: Exception) {
-                    Log.e(TAG, "❌ Erro no reset: ${e2.message}")
-                }
-            }, 3000)
+                }, 3000)
+            }
         }
     }
 } 
