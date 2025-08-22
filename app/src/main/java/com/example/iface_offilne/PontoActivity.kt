@@ -937,7 +937,7 @@ class PontoActivity : AppCompatActivity() {
             }
             
             // ✅ VERIFICAR SE ACHOU ALGUÉM COM THRESHOLD ULTRA RIGOROSO
-            val thresholdMinimo = 0.83f // 80% de similaridade mínima - MUITO RIGOROSO
+            val thresholdMinimo = 0.89f // 80% de similaridade mínima - MUITO RIGOROSO
             val thresholdIdeal = 0.90f // 90% para confiança alta - EXTREMAMENTE RIGOROSO
             
             if (funcionarioReconhecido != null && melhorSimilaridade >= thresholdMinimo) {
@@ -2141,43 +2141,21 @@ class PontoActivity : AppCompatActivity() {
             val confirmationLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundColor(android.graphics.Color.parseColor("#4CAF50")) // Verde
-                setPadding(20, 15, 20, 15) 
+                setPadding(30, 20, 30, 20) // Padding aumentado
                 elevation = 20f
                 
-                val arrowsLayout = LinearLayout(this@PontoActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = android.view.Gravity.CENTER
-                }
-                
-                val arrow1 = TextView(this@PontoActivity).apply {
-                    text = "▲"
-                    textSize = 12f 
-                    setTextColor(android.graphics.Color.WHITE)
-                    gravity = android.view.Gravity.CENTER
-                }
-                
-                // Seta 2 - Menor
-                val arrow2 = TextView(this@PontoActivity).apply {
-                    text = "▲"
-                    textSize = 10f
-                    setTextColor(android.graphics.Color.WHITE)
-                    gravity = android.view.Gravity.CENTER
-                }
-                
-                arrowsLayout.addView(arrow1)
-                arrowsLayout.addView(arrow2)
+               
                 
                 // ✅ NOME DO FUNCIONÁRIO - MENOR
                 val nomeFuncionario = TextView(this@PontoActivity).apply {
                     text = funcionario.nome
-                    textSize = 16f // Reduzido
+                    textSize = 16f // Tamanho aumentado
                     setTextColor(android.graphics.Color.WHITE)
                     gravity = android.view.Gravity.CENTER
                     setTypeface(null, android.graphics.Typeface.BOLD)
-                    setPadding(0, 5, 0, 0) // Padding menor
+                    setPadding(0, 10, 0, 10) // Padding aumentado
                 }
                 
-                addView(arrowsLayout)
                 addView(nomeFuncionario)
             }
             
@@ -2199,7 +2177,7 @@ class PontoActivity : AppCompatActivity() {
                     if (fotoBitmap != null) {
                         // ✅ CORRIGIR ORIENTAÇÃO DA FOTO
                         val matrix = Matrix().apply {
-                            postRotate(90f) // Sem rotação adicional
+                            postRotate(360.0f) // Sem rotação adicional
                         }
                         val rotatedBitmap = Bitmap.createBitmap(fotoBitmap, 0, 0, fotoBitmap.width, fotoBitmap.height, matrix, true)
                         
@@ -2229,9 +2207,9 @@ class PontoActivity : AppCompatActivity() {
                 isFocusable = true
             }
             
-            // ✅ POSICIONAR CONFIRMAÇÃO NO CANTO INFERIOR DIREITO - TAMANHO SIMILAR À FOTO
+            // ✅ POSICIONAR CONFIRMAÇÃO NO CANTO INFERIOR DIREITO - TAMANHO MAIOR
             confirmationLayout.layoutParams = FrameLayout.LayoutParams(
-                120, // Mesmo tamanho da foto
+                400, // Largura aumentada
                 FrameLayout.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
