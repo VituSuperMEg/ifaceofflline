@@ -83,7 +83,7 @@ class PontoActivity : AppCompatActivity() {
     
     // ✅ COOLDOWN: Sistema para evitar múltiplos registros
     private var lastPontoRegistrado = 0L
-    private var cooldownPonto = 5000L // 5 segundos de cooldown
+    private var cooldownPonto = 8000L // 8 segundos de cooldown
     
     // ✅ NOVO: Helpers adaptativos para reconhecimento facial
     private var deviceCapabilityHelper: DeviceCapabilityHelper? = null
@@ -181,8 +181,8 @@ class PontoActivity : AppCompatActivity() {
         ultimoPonto = findViewById(R.id.ultimoPonto)
         tipoPontoRadioGroup = findViewById(R.id.tipoPontoRadioGroup)
         
-        // ✅ NOVO: Mostrar que o sistema está ultra permissivo
-        statusText.text = "🎯 SISTEMA ADAPTATIVO ATIVO\n🔍 Detectando capacidades do dispositivo...\n📷 Posicione seu rosto na câmera"
+        // Mensagem da mensagem de sucesso
+        statusText.text = ""
         
         findViewById<Button>(R.id.btnVoltar).setOnClickListener {
             val intent = Intent(this, ConfiguracoesActivity::class.java)
@@ -219,16 +219,6 @@ class PontoActivity : AppCompatActivity() {
                 deviceCapabilityHelper = DeviceCapabilityHelper(this)
                 Log.d(TAG, "✅ DeviceCapabilityHelper inicializado")
                 
-                // ✅ Mostrar informações do dispositivo
-                val deviceInfo = deviceCapabilityHelper?.getDeviceInfo()
-                Log.d(TAG, "📊 === INFORMAÇÕES DO DISPOSITIVO ===")
-                Log.d(TAG, "🎯 Nível: ${deviceInfo?.performanceLevel ?: "DESCONHECIDO"}")
-                Log.d(TAG, "📊 Score: ${String.format("%.1f", deviceInfo?.deviceScore ?: 0f)}/100")
-                Log.d(TAG, "💾 Memória: ${String.format("%.1f", deviceInfo?.memoryInfo?.totalGB ?: 0f)}GB")
-                Log.d(TAG, "🖥️ CPU: ${deviceInfo?.cpuInfo?.cores ?: 0} cores")
-                Log.d(TAG, "🤖 Android: ${deviceInfo?.androidRelease ?: "DESCONHECIDO"} (API ${deviceInfo?.androidVersion ?: 0})")
-                
-                // ✅ Verificar se o dispositivo suporta reconhecimento facial
                 val isSupported = deviceCapabilityHelper?.isFaceRecognitionSupported() ?: false
                 Log.d(TAG, "🔍 Suporte ao reconhecimento facial: $isSupported")
                 
@@ -767,7 +757,6 @@ class PontoActivity : AppCompatActivity() {
                         Log.d(TAG, "👤 Funcionário: ${funcionario.nome}")
                         Log.d(TAG, "📊 Similaridade: ${String.format("%.3f", similarity)}")
 
-                        // ✅ COOLDOWN: Atualizar timestamp do último ponto registrado
                         lastPontoRegistrado = System.currentTimeMillis()
                         Log.d(TAG, "⏰ Cooldown iniciado - próximo ponto em ${cooldownPonto}ms")
 
@@ -796,13 +785,13 @@ class PontoActivity : AppCompatActivity() {
                             try {
                                 if (!isFinishing && !isDestroyed) {
                                     val status = statusText
-                                    status.text = "❌ Face não reconhecida\n${recognitionResult.reason}\nTente novamente"
+                                    status.text = ""
 
                                     status.postDelayed({
                                         try {
                                             if (!isFinishing && !isDestroyed) {
                                                 val statusInner = statusText
-                                                statusInner.text = "📷 Posicione seu rosto na câmera"
+                                                statusInner.text = ""
                                             }
                                         } catch (e: Exception) {
                                             Log.e(TAG, "❌ Erro no reset UI: ${e.message}")
@@ -832,7 +821,7 @@ class PontoActivity : AppCompatActivity() {
                                 try {
                                     if (!isFinishing && !isDestroyed) {
                                         val statusInner = statusText
-                                        statusInner.text = "📷 Posicione seu rosto na câmera"
+                                        statusInner.text = ""
                                     }
                                 } catch (e2: Exception) {
                                     Log.e(TAG, "❌ Erro no reset UI: ${e2.message}")
@@ -866,6 +855,15 @@ class PontoActivity : AppCompatActivity() {
                 Log.d(TAG, "✅ TensorFlow disponível para reconhecimento")
             }
             
+            // ✅ VALIDAR QUALIDADE DA FACE ANTES DO RECONHECIMENTO
+            val faceQuality = validateFaceQuality(faceBmp)
+            if (!faceQuality.isValid) {
+                Log.w(TAG, "❌ Face de baixa qualidade rejeitada: ${faceQuality.reason}")
+                return RecognitionResult.Failure("")
+            }
+            
+            Log.d(TAG, "✅ Face aprovada na validação de qualidade")
+            
             // ✅ GERAR EMBEDDING
             val embedding = try {
                 generateEmbeddingDirect(faceBmp)
@@ -879,7 +877,14 @@ class PontoActivity : AppCompatActivity() {
                 return RecognitionResult.Failure("Falha ao processar face")
             }
             
-            Log.d(TAG, "✅ Embedding gerado: ${embedding.size} dimensões")
+            // ✅ VALIDAR QUALIDADE DO EMBEDDING GERADO
+            val embeddingQuality = validateEmbeddingQuality(embedding)
+            if (!embeddingQuality.isValid) {
+                Log.w(TAG, "❌ Embedding de baixa qualidade: ${embeddingQuality.reason}")
+                return RecognitionResult.Failure("Processamento facial instável: ${embeddingQuality.reason}")
+            }
+            
+            Log.d(TAG, "✅ Embedding gerado e validado: ${embedding.size} dimensões")
             
             // ✅ COMPARAR COM BANCO DE DADOS
             val db = AppDatabase.getInstance(this@PontoActivity)
@@ -918,7 +923,7 @@ class PontoActivity : AppCompatActivity() {
                     }
                     
                     val similaridade = calculateSimilarity(embedding, embeddingCadastrado)
-                    Log.d(TAG, "📊 Similaridade com ${face.funcionarioId}: ${String.format("%.3f", similaridade)}")
+                    // Log.d(TAG, "📊 Similaridade com ${face.funcionarioId}: ${String.format("%.3f", similaridade)}")
                     
                     if (similaridade > melhorSimilaridade) {
                         melhorSimilaridade = similaridade
@@ -931,14 +936,14 @@ class PontoActivity : AppCompatActivity() {
                 }
             }
             
-            // ✅ VERIFICAR SE ACHOU ALGUÉM COM THRESHOLD MAIS RIGOROSO
-            val thresholdMinimo = 0.65f // 65% de similaridade mínima
-            val thresholdIdeal = 0.75f // 75% para confiança alta
+            // ✅ VERIFICAR SE ACHOU ALGUÉM COM THRESHOLD ULTRA RIGOROSO
+            val thresholdMinimo = 0.82f // 80% de similaridade mínima - MUITO RIGOROSO
+            val thresholdIdeal = 0.90f // 90% para confiança alta - EXTREMAMENTE RIGOROSO
             
             if (funcionarioReconhecido != null && melhorSimilaridade >= thresholdMinimo) {
                 Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO COM ALTA PRECISÃO!")
                 Log.d(TAG, "👤 Nome: ${funcionarioReconhecido.nome}")
-                Log.d(TAG, "📊 Similaridade: ${String.format("%.3f", melhorSimilaridade)}")
+                // Log.d(TAG, "📊 Similaridade: ${String.format("%.3f", melhorSimilaridade)}")
                 Log.d(TAG, "🎯 Confiança: ${if (melhorSimilaridade >= thresholdIdeal) "ALTA" else "MÉDIA"}")
                 
                 return RecognitionResult.Success(funcionarioReconhecido, melhorSimilaridade)
@@ -948,9 +953,10 @@ class PontoActivity : AppCompatActivity() {
                 Log.w(TAG, "🎯 Threshold mínimo: ${String.format("%.3f", thresholdMinimo)}")
                 
                 if (melhorSimilaridade > 0.3f) {
-                    return RecognitionResult.Failure("Similaridade insuficiente (${String.format("%.1f", melhorSimilaridade * 100)}% - mínimo 65%)")
+                    // Mensagem  de similaridade 
+                    return RecognitionResult.Failure("")
                 } else {
-                    return RecognitionResult.Failure("Face não reconhecida no sistema")
+                    return RecognitionResult.Failure("")
                 }
             }
             
@@ -1055,6 +1061,121 @@ class PontoActivity : AppCompatActivity() {
     }
     
     /**
+     * ✅ VALIDAR QUALIDADE DA FACE
+     */
+    private fun validateFaceQuality(bitmap: Bitmap): QualityResult {
+        return try {
+            // ✅ 1. VERIFICAR TAMANHO MÍNIMO
+            if (bitmap.width < 80 || bitmap.height < 80) {
+                return QualityResult(false, "Face muito pequena (${bitmap.width}x${bitmap.height})")
+            }
+            
+            // ✅ 2. VERIFICAR LUMINOSIDADE
+            val pixels = IntArray(bitmap.width * bitmap.height)
+            bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+            
+            var totalBrightness = 0f
+            
+            for (pixel in pixels) {
+                val r = (pixel shr 16) and 0xFF
+                val g = (pixel shr 8) and 0xFF
+                val b = pixel and 0xFF
+                
+                val brightness = (r + g + b) / 3f / 255f
+                totalBrightness += brightness
+            }
+            
+            val avgBrightness = totalBrightness / pixels.size
+            
+            // ✅ 3. VERIFICAR SE NÃO ESTÁ MUITO ESCURO OU MUITO CLARO
+            if (avgBrightness < 0.15f) {
+                return QualityResult(false, "Imagem muito escura (${String.format("%.1f", avgBrightness * 100)}%)")
+            }
+            
+            if (avgBrightness > 0.85f) {
+                return QualityResult(false, "Imagem muito clara (${String.format("%.1f", avgBrightness * 100)}%)")
+            }
+            
+            // ✅ 4. VERIFICAR VARIAÇÃO DE PIXELS (CONTRASTE)
+            var variance = 0f
+            for (pixel in pixels) {
+                val r = (pixel shr 16) and 0xFF
+                val g = (pixel shr 8) and 0xFF
+                val b = pixel and 0xFF
+                
+                val brightness = (r + g + b) / 3f / 255f
+                val diff = brightness - avgBrightness
+                variance += diff * diff
+            }
+            variance /= pixels.size
+            
+            if (variance < 0.01f) {
+                return QualityResult(false, "Imagem sem contraste suficiente")
+            }
+            
+            Log.d(TAG, "✅ Qualidade da face aprovada: luminosidade=${String.format("%.2f", avgBrightness)}, contraste=${String.format("%.3f", variance)}")
+            return QualityResult(true, "Qualidade aprovada")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao validar qualidade da face: ${e.message}")
+            return QualityResult(false, "Erro na validação: ${e.message}")
+        }
+    }
+    
+    /**
+     * ✅ VALIDAR QUALIDADE DO EMBEDDING
+     */
+    private fun validateEmbeddingQuality(embedding: FloatArray): QualityResult {
+        return try {
+            // ✅ 1. VERIFICAR SE NÃO É TUDO ZERO
+            if (embedding.all { it == 0f }) {
+                return QualityResult(false, "Embedding zerado")
+            }
+            
+            // ✅ 2. VERIFICAR SE HÁ VALORES INVÁLIDOS
+            if (embedding.any { it.isNaN() || it.isInfinite() }) {
+                return QualityResult(false, "Embedding com valores inválidos")
+            }
+            
+            // ✅ 3. VERIFICAR VARIÂNCIA DO EMBEDDING
+            val mean = embedding.average().toFloat()
+            var variance = 0f
+            for (value in embedding) {
+                val diff = value - mean
+                variance += diff * diff
+            }
+            variance /= embedding.size
+            
+            if (variance < 0.001f) {
+                return QualityResult(false, "Embedding sem variação suficiente (variância: ${String.format("%.6f", variance)})")
+            }
+            
+            // ✅ 4. VERIFICAR MAGNITUDE DO EMBEDDING
+            var magnitude = 0f
+            for (value in embedding) {
+                magnitude += value * value
+            }
+            magnitude = kotlin.math.sqrt(magnitude)
+            
+            if (magnitude < 0.1f) {
+                return QualityResult(false, "Embedding com magnitude muito baixa (${String.format("%.3f", magnitude)})")
+            }
+            
+            Log.d(TAG, "✅ Qualidade do embedding aprovada: variância=${String.format("%.6f", variance)}, magnitude=${String.format("%.3f", magnitude)}")
+            return QualityResult(true, "Embedding de qualidade")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao validar qualidade do embedding: ${e.message}")
+            return QualityResult(false, "Erro na validação: ${e.message}")
+        }
+    }
+    
+    /**
+     * 📊 RESULTADO DE QUALIDADE
+     */
+    data class QualityResult(val isValid: Boolean, val reason: String)
+    
+    /**
      * 📊 RESULTADO DO RECONHECIMENTO
      */
     sealed class RecognitionResult {
@@ -1066,7 +1187,6 @@ class PontoActivity : AppCompatActivity() {
         try {
             Log.d(TAG, "💾 Registrando ponto para: ${funcionario.nome}")
             
-            // ✅ PROTEÇÃO CRÍTICA: Verificar se a Activity ainda está válida
             if (isFinishing || isDestroyed) {
                 Log.w(TAG, "⚠️ Activity finalizada - cancelando registro de ponto")
                 return
@@ -1076,7 +1196,6 @@ class PontoActivity : AppCompatActivity() {
             val formato = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
             val dataFormatada = formato.format(Date(horarioAtual))
             
-            // ✅ PROTEÇÃO: Capturar localização com timeout
             var latitude: Double? = null
             var longitude: Double? = null
             
@@ -1092,7 +1211,6 @@ class PontoActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro na localização: ${e.message}")
-                // Não falhar o ponto por causa da localização
             }
             
             // ✅ PROTEÇÃO: Converter foto com validação
@@ -1101,7 +1219,6 @@ class PontoActivity : AppCompatActivity() {
                 bitmap?.let { bmp ->
                     if (!bmp.isRecycled && bmp.width > 0 && bmp.height > 0) {
                         val base64 = bitmapToBase64(bmp, 80)
-                        Log.d(TAG, "📸 Foto convertida: ${base64?.length ?: 0} caracteres")
                         base64
                     } else {
                         Log.w(TAG, "⚠️ Bitmap inválido para conversão")
@@ -1143,7 +1260,6 @@ class PontoActivity : AppCompatActivity() {
                 throw Exception("Erro ao criar ponto: ${e.message}")
             }
             
-            // ✅ PROTEÇÃO: Salvar no banco com retry
             var pontoSalvo = false
             var tentativas = 0
             val maxTentativas = 3
@@ -1162,12 +1278,10 @@ class PontoActivity : AppCompatActivity() {
                     if (tentativas >= maxTentativas) {
                         throw Exception("Falha ao salvar ponto após $maxTentativas tentativas: ${e.message}")
                     }
-                    // Aguardar um pouco antes da próxima tentativa
                     kotlinx.coroutines.delay(500)
                 }
             }
             
-            // ✅ PROTEÇÃO: Salvar para sincronização (não crítico)
             try {
                 val pontoService = PontoSincronizacaoService()
                 pontoService.salvarPontoParaSincronizacao(
@@ -1182,13 +1296,11 @@ class PontoActivity : AppCompatActivity() {
                 Log.d(TAG, "✅ Ponto salvo para sincronização")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro na sincronização (não crítico): ${e.message}")
-                // Não falhar o ponto por causa da sincronização
             }
             
             withContext(Dispatchers.Main) {
                 try {
                     if (!isFinishing && !isDestroyed) {
-                        // ✅ NOVA INTERFACE DE CONFIRMAÇÃO VISUAL
                         showConfirmationUI(funcionario, fotoBase64)
                     } else {
                         Log.w(TAG, "⚠️ Activity finalizada durante atualização da UI")
@@ -1213,7 +1325,7 @@ class PontoActivity : AppCompatActivity() {
                             try {
                                 if (!isFinishing && !isDestroyed) {
                                     val statusInner = statusText
-                                    statusInner.text = "📷 Posicione seu rosto na câmera"
+                                    statusInner.text = ""
                                 } else {
                                     Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
                                 }
@@ -2026,23 +2138,20 @@ class PontoActivity : AppCompatActivity() {
         try {
             Log.d(TAG, "🎉 Mostrando interface de confirmação para: ${funcionario.nome}")
             
-            // ✅ CRIAR LAYOUT DE CONFIRMAÇÃO COMPACTO
             val confirmationLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundColor(android.graphics.Color.parseColor("#4CAF50")) // Verde
-                setPadding(20, 15, 20, 15) // Padding menor
+                setPadding(20, 15, 20, 15) 
                 elevation = 20f
                 
-                // ✅ SETAS PARA CIMA (INDICADOR DE SUCESSO) - MENORES
                 val arrowsLayout = LinearLayout(this@PontoActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = android.view.Gravity.CENTER
                 }
                 
-                // Seta 1 - Menor
                 val arrow1 = TextView(this@PontoActivity).apply {
                     text = "▲"
-                    textSize = 12f // Reduzido
+                    textSize = 12f 
                     setTextColor(android.graphics.Color.WHITE)
                     gravity = android.view.Gravity.CENTER
                 }
@@ -2050,7 +2159,7 @@ class PontoActivity : AppCompatActivity() {
                 // Seta 2 - Menor
                 val arrow2 = TextView(this@PontoActivity).apply {
                     text = "▲"
-                    textSize = 10f // Reduzido
+                    textSize = 10f
                     setTextColor(android.graphics.Color.WHITE)
                     gravity = android.view.Gravity.CENTER
                 }
@@ -2068,12 +2177,10 @@ class PontoActivity : AppCompatActivity() {
                     setPadding(0, 5, 0, 0) // Padding menor
                 }
                 
-                // ✅ ADICIONAR ELEMENTOS AO LAYOUT
                 addView(arrowsLayout)
                 addView(nomeFuncionario)
             }
             
-            // ✅ CRIAR PREVIEW DA FACE (CANTO INFERIOR ESQUERDO) - MESMO TAMANHO
             val facePreviewLayout = FrameLayout(this).apply {
                 layoutParams = FrameLayout.LayoutParams(120, 120).apply {
                     gravity = android.view.Gravity.BOTTOM or android.view.Gravity.START
@@ -2092,7 +2199,7 @@ class PontoActivity : AppCompatActivity() {
                     if (fotoBitmap != null) {
                         // ✅ CORRIGIR ORIENTAÇÃO DA FOTO
                         val matrix = Matrix().apply {
-                            postRotate(0f) // Sem rotação adicional
+                            postRotate(180f) // Sem rotação adicional
                         }
                         val rotatedBitmap = Bitmap.createBitmap(fotoBitmap, 0, 0, fotoBitmap.width, fotoBitmap.height, matrix, true)
                         
@@ -2166,7 +2273,7 @@ class PontoActivity : AppCompatActivity() {
                     try {
                         if (!isFinishing && !isDestroyed) {
                             val statusInner = statusText
-                            statusInner.text = "📷 Posicione seu rosto na câmera"
+                            statusInner.text = ""
                             processandoFace = false
                             lastProcessingTime = 0L
                         }
