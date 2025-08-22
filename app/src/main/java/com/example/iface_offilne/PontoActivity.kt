@@ -937,8 +937,8 @@ class PontoActivity : AppCompatActivity() {
             }
             
             // ✅ VERIFICAR SE ACHOU ALGUÉM COM THRESHOLD ULTRA RIGOROSO
-            val thresholdMinimo = 0.89f // 80% de similaridade mínima - MUITO RIGOROSO
-            val thresholdIdeal = 0.90f // 90% para confiança alta - EXTREMAMENTE RIGOROSO
+            val thresholdMinimo = 0.90f // 80% de similaridade mínima - MUITO RIGOROSO
+            val thresholdIdeal = 0.95f // 90% para confiança alta - EXTREMAMENTE RIGOROSO
             
             if (funcionarioReconhecido != null && melhorSimilaridade >= thresholdMinimo) {
                 Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO COM ALTA PRECISÃO!")

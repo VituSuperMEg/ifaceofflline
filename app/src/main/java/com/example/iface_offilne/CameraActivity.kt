@@ -112,9 +112,9 @@ class CameraActivity : AppCompatActivity() {
     private var faceStableCount = 0 // Contador de frames estáveis
     private var lastFacePosition: Rect? = null // Última posição da face
     private var faceStableStartTime = 0L // Tempo de início da estabilização
-    private var minStableFrames = 30 // Mínimo de frames estáveis (1.5 segundos a 10fps)
+    private var minStableFrames = 40 // Mínimo de frames estáveis (1.5 segundos a 10fps)
     private var maxStableTime = 8000L // Máximo 5 segundos para estabilizar
-    private var positionTolerance = 80 // Tolerância em pixels para considerar estável
+    private var positionTolerance = 90 // Tolerância em pixels para considerar estável
     private var isProcessingFace = false // Evitar múltiplos processamentos
 
     override fun onCreate(savedInstanceState: Bundle?) {
