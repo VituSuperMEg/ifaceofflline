@@ -88,48 +88,64 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
      * 🔍 RECONHECIMENTO FACIAL ADAPTATIVO
      * Ajusta automaticamente a qualidade baseado no dispositivo
      */
-    suspend fun recognizeFaceAdaptive(bitmap: Bitmap): FaceRecognitionResult {
+    suspend fun recognizeFaceAdaptive(faceBitmap: Bitmap): FaceRecognitionResult {
         return try {
             Log.d(TAG, "🔍 === RECONHECIMENTO FACIAL ADAPTATIVO ===")
-            Log.d(TAG, "🎛️ Configuração: ${deviceInfo.performanceLevel}")
-            Log.d(TAG, "📊 Thresholds: Similaridade>=${adaptiveConfig.minSimilarityThreshold}, Distância<=${adaptiveConfig.maxEuclideanDistance}, Confiança>=${adaptiveConfig.requiredConfidence}")
             
-            // ✅ 1. VALIDAÇÃO DE QUALIDADE ADAPTATIVA
-            val qualityCheck = validateImageQualityAdaptive(bitmap)
-            if (!qualityCheck.isValid) {
-                Log.w(TAG, "❌ Qualidade insuficiente: ${qualityCheck.reason}")
-                return FaceRecognitionResult.Failure(qualityCheck.reason)
+            // ✅ OBTER CONFIGURAÇÃO ADAPTATIVA
+            val config = deviceCapabilityHelper.getAdaptiveFaceRecognitionConfig()
+            Log.d(TAG, "🎛️ Configuração: ${deviceCapabilityHelper.getDeviceInfo()?.performanceLevel}")
+            Log.d(TAG, "📊 Thresholds: Similaridade>=${config.minSimilarityThreshold}, Distância<=${config.maxEuclideanDistance}, Confiança>=${config.requiredConfidence}")
+            
+            // ✅ VALIDAR BITMAP DE ENTRADA
+            if (faceBitmap.isRecycled || faceBitmap.width <= 0 || faceBitmap.height <= 0) {
+                Log.e(TAG, "❌ Bitmap inválido: reciclado=${faceBitmap.isRecycled}, dimensões=${faceBitmap.width}x${faceBitmap.height}")
+                return FaceRecognitionResult.Failure("Bitmap inválido")
             }
             
-            // ✅ 2. DETECÇÃO DE FACE ADAPTATIVA
-            val faceValidation = validateFaceDetectionAdaptive(bitmap)
-            if (!faceValidation.isValid) {
-                Log.w(TAG, "❌ Face não válida: ${faceValidation.reason}")
-                return FaceRecognitionResult.Failure(faceValidation.reason)
+            Log.d(TAG, "📸 Processando face: ${faceBitmap.width}x${faceBitmap.height}")
+            
+            // ✅ CALCULAR QUALIDADE DA IMAGEM
+            val quality = calculateImageQuality(faceBitmap)
+            Log.d(TAG, "📊 Qualidade: Brilho=${String.format("%.3f", quality.brightness)}, Contraste=${String.format("%.3f", quality.contrast)}")
+            
+            // ✅ ACEITAR FACE JÁ DETECTADA - NÃO TENTAR DETECTAR NOVAMENTE
+            Log.d(TAG, "✅ Face já detectada e recortada - processando diretamente")
+            
+            // ✅ GERAR EMBEDDING
+            val embedding = try {
+                generateEmbedding(faceBitmap)
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao gerar embedding: ${e.message}")
+                return FaceRecognitionResult.Failure("Erro ao gerar embedding: ${e.message}")
             }
             
-            // ✅ 3. PROCESSAMENTO DE IMAGEM ADAPTATIVO
-            val processedBitmap = processImageAdaptive(bitmap)
-            if (processedBitmap == null) {
-                Log.e(TAG, "❌ Falha no processamento de imagem")
-                return FaceRecognitionResult.Failure("Falha no processamento de imagem")
+            if (embedding.isEmpty()) {
+                Log.e(TAG, "❌ Embedding vazio")
+                return FaceRecognitionResult.Failure("Embedding vazio")
             }
             
-            // ✅ 4. GERAÇÃO DO EMBEDDING
-            val embedding = generateFaceEmbedding(processedBitmap)
-            if (embedding == null) {
-                Log.e(TAG, "❌ Falha ao gerar embedding")
-                return FaceRecognitionResult.Failure("Falha ao processar face")
-            }
+            Log.d(TAG, "✅ Embedding gerado: ${embedding.size} dimensões")
             
-            // ✅ 5. RECONHECIMENTO ADAPTATIVO
+            // ✅ EXECUTAR RECONHECIMENTO
             val recognitionResult = performAdaptiveRecognition(embedding)
             
-            Log.d(TAG, "✅ Reconhecimento adaptativo concluído!")
+            when (recognitionResult) {
+                is FaceRecognitionResult.Success -> {
+                    Log.d(TAG, "✅ RECONHECIMENTO BEM-SUCEDIDO!")
+                    Log.d(TAG, "👤 Funcionário: ${recognitionResult.funcionario.nome}")
+                    Log.d(TAG, "📊 Métricas: Similaridade=${String.format("%.3f", recognitionResult.similarity)}, Distância=${String.format("%.3f", recognitionResult.euclideanDistance)}, Confiança=${String.format("%.3f", recognitionResult.confidence)}")
+                }
+                is FaceRecognitionResult.Failure -> {
+                    Log.w(TAG, "❌ RECONHECIMENTO FALHOU: ${recognitionResult.reason}")
+                }
+            }
+            
             recognitionResult
             
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro no reconhecimento adaptativo", e)
+            Log.e(TAG, "❌ Erro crítico no reconhecimento adaptativo: ${e.message}")
+            e.printStackTrace()
             FaceRecognitionResult.Failure("Erro interno: ${e.message}")
         }
     }
@@ -139,71 +155,114 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
      */
     private suspend fun performAdaptiveRecognition(embedding: FloatArray): FaceRecognitionResult {
         return try {
+            Log.d(TAG, "🔍 === INICIANDO RECONHECIMENTO ADAPTATIVO ===")
+            
             // ✅ Carregar dados do banco
             val db = com.example.iface_offilne.data.AppDatabase.getInstance(context)
             val faceDao = db.faceDao()
             val funcionarioDao = db.usuariosDao()
             
             val faces = faceDao.getAllFaces()
+            val funcionarios = funcionarioDao.getUsuario()
+            
+            Log.d(TAG, "📊 Faces cadastradas no banco: ${faces.size}")
+            Log.d(TAG, "👥 Funcionários cadastrados: ${funcionarios.size}")
+            
             if (faces.isEmpty()) {
-                return FaceRecognitionResult.Failure("Nenhuma face cadastrada")
+                Log.e(TAG, "❌ NENHUMA FACE CADASTRADA NO BANCO!")
+                return FaceRecognitionResult.Failure("Nenhuma face cadastrada no sistema")
             }
             
-            Log.d(TAG, "🔍 Comparando com ${faces.size} faces cadastradas")
+            if (funcionarios.isEmpty()) {
+                Log.e(TAG, "❌ NENHUM FUNCIONÁRIO CADASTRADO NO BANCO!")
+                return FaceRecognitionResult.Failure("Nenhum funcionário cadastrado no sistema")
+            }
+            
+            Log.d(TAG, "📐 Embedding de entrada: ${embedding.size} dimensões")
+            Log.d(TAG, "🎯 Thresholds: Similaridade≥${adaptiveConfig.minSimilarityThreshold}, Distância≤${adaptiveConfig.maxEuclideanDistance}, Confiança≥${adaptiveConfig.requiredConfidence}")
             
             // ✅ VARIÁVEIS PARA MELHOR MATCH
             var bestMatch: com.example.iface_offilne.data.FuncionariosEntity? = null
             var bestSimilarity = 0f
             var bestEuclideanDistance = Float.MAX_VALUE
             var bestConfidence = 0f
+            var allResults = mutableListOf<String>()
             
             // ✅ COMPARAÇÃO ADAPTATIVA
-            for (face in faces) {
+            for ((index, face) in faces.withIndex()) {
                 try {
+                    Log.d(TAG, "🔄 Processando face ${index + 1}/${faces.size}: ID=${face.funcionarioId}")
+                    
                     val storedEmbedding = parseEmbedding(face.embedding)
                     if (storedEmbedding == null) {
                         Log.w(TAG, "⚠️ Embedding inválido para funcionário ${face.funcionarioId}")
+                        allResults.add("Face ${face.funcionarioId}: EMBEDDING INVÁLIDO")
                         continue
                     }
+                    
+                    Log.d(TAG, "📐 Embedding armazenado: ${storedEmbedding.size} dimensões")
                     
                     // ✅ Calcular métricas
                     val cosineSimilarity = calculateCosineSimilarity(embedding, storedEmbedding)
                     val euclideanDistance = calculateEuclideanDistance(embedding, storedEmbedding)
-                    val confidence = (cosineSimilarity + (1f - euclideanDistance)) / 2f
+                    val confidence = (cosineSimilarity + (1f - (euclideanDistance / 2f))) / 2f // Normalizar distância
                     
-                    Log.d(TAG, "👤 Funcionário ${face.funcionarioId}: Similaridade=${String.format("%.3f", cosineSimilarity)}, Distância=${String.format("%.3f", euclideanDistance)}, Confiança=${String.format("%.3f", confidence)}")
+                    val resultado = "Face ${face.funcionarioId}: Sim=${String.format("%.3f", cosineSimilarity)}, Dist=${String.format("%.3f", euclideanDistance)}, Conf=${String.format("%.3f", confidence)}"
+                    allResults.add(resultado)
+                    Log.d(TAG, "📊 $resultado")
                     
                     // ✅ VALIDAÇÃO ADAPTATIVA: Usar thresholds baseados no dispositivo
-                    if (cosineSimilarity >= adaptiveConfig.minSimilarityThreshold && 
-                        euclideanDistance <= adaptiveConfig.maxEuclideanDistance && 
-                        confidence >= adaptiveConfig.requiredConfidence) {
+                    val similarityOk = cosineSimilarity >= adaptiveConfig.minSimilarityThreshold
+                    val distanceOk = euclideanDistance <= adaptiveConfig.maxEuclideanDistance
+                    val confidenceOk = confidence >= adaptiveConfig.requiredConfidence
+                    
+                    Log.d(TAG, "✅ Validações: Sim=${similarityOk}, Dist=${distanceOk}, Conf=${confidenceOk}")
+                    
+                    if (similarityOk && distanceOk && confidenceOk) {
+                        Log.d(TAG, "🎯 CANDIDATO VÁLIDO encontrado!")
                         
                         // ✅ Se encontrou uma correspondência válida, verificar se é melhor
                         if (confidence > bestConfidence) {
                             val funcionarioId = face.funcionarioId.toIntOrNull()
-                            bestMatch = if (funcionarioId != null) {
-                                funcionarioDao.getUsuario().find { it.id == funcionarioId }
+                            val funcionarioEncontrado = if (funcionarioId != null) {
+                                funcionarios.find { it.id == funcionarioId }
                             } else {
-                                funcionarioDao.getUsuario().find { it.codigo == face.funcionarioId }
+                                funcionarios.find { it.codigo == face.funcionarioId }
                             }
-                            bestSimilarity = cosineSimilarity
-                            bestEuclideanDistance = euclideanDistance
-                            bestConfidence = confidence
                             
-                            Log.d(TAG, "🎯 NOVO MELHOR MATCH: ${bestMatch?.nome} (Confiança: ${String.format("%.3f", confidence)})")
+                            if (funcionarioEncontrado != null) {
+                                bestMatch = funcionarioEncontrado
+                                bestSimilarity = cosineSimilarity
+                                bestEuclideanDistance = euclideanDistance
+                                bestConfidence = confidence
+                                
+                                Log.d(TAG, "🎯 NOVO MELHOR MATCH: ${bestMatch.nome} (Confiança: ${String.format("%.3f", confidence)})")
+                            } else {
+                                Log.w(TAG, "⚠️ Funcionário não encontrado para ID: ${face.funcionarioId}")
+                            }
                         }
+                    } else {
+                        Log.d(TAG, "❌ Candidato rejeitado pelos thresholds")
                     }
                     
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro ao comparar com face ${face.funcionarioId}: ${e.message}")
+                    allResults.add("Face ${face.funcionarioId}: ERRO - ${e.message}")
                 }
+            }
+            
+            // ✅ LOG DETALHADO DE TODOS OS RESULTADOS
+            Log.d(TAG, "📋 === RESUMO DE TODAS AS COMPARAÇÕES ===")
+            allResults.forEach { resultado ->
+                Log.d(TAG, "📊 $resultado")
             }
             
             // ✅ RESULTADO FINAL
             if (bestMatch != null) {
-                Log.d(TAG, "✅ RECONHECIMENTO BEM-SUCEDIDO!")
+                Log.d(TAG, "✅ === RECONHECIMENTO BEM-SUCEDIDO ===")
                 Log.d(TAG, "👤 Funcionário: ${bestMatch.nome}")
-                Log.d(TAG, "📊 Métricas: Similaridade=${String.format("%.3f", bestSimilarity)}, Distância=${String.format("%.3f", bestEuclideanDistance)}, Confiança=${String.format("%.3f", bestConfidence)}")
+                Log.d(TAG, "🆔 ID: ${bestMatch.id}, Código: ${bestMatch.codigo}")
+                Log.d(TAG, "📊 Métricas Finais: Similaridade=${String.format("%.3f", bestSimilarity)}, Distância=${String.format("%.3f", bestEuclideanDistance)}, Confiança=${String.format("%.3f", bestConfidence)}")
                 
                 return FaceRecognitionResult.Success(
                     funcionario = bestMatch,
@@ -212,14 +271,17 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
                     confidence = bestConfidence
                 )
             } else {
-                Log.w(TAG, "❌ NENHUM FUNCIONÁRIO RECONHECIDO")
-                Log.w(TAG, "📊 Thresholds não atendidos: Similaridade>=${adaptiveConfig.minSimilarityThreshold}, Distância<=${adaptiveConfig.maxEuclideanDistance}, Confiança>=${adaptiveConfig.requiredConfidence}")
-                return FaceRecognitionResult.Failure("Funcionário não reconhecido - thresholds adaptativos não atendidos")
+                Log.w(TAG, "❌ === NENHUM FUNCIONÁRIO RECONHECIDO ===")
+                Log.w(TAG, "📊 Thresholds: Similaridade≥${adaptiveConfig.minSimilarityThreshold}, Distância≤${adaptiveConfig.maxEuclideanDistance}, Confiança≥${adaptiveConfig.requiredConfidence}")
+                Log.w(TAG, "📋 Motivo: Nenhuma face atendeu aos critérios mínimos")
+                
+                return FaceRecognitionResult.Failure("Face não reconhecida - nenhuma correspondência encontrada nos ${faces.size} registros")
             }
             
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro no reconhecimento adaptativo", e)
-            return FaceRecognitionResult.Failure("Erro no reconhecimento: ${e.message}")
+            Log.e(TAG, "❌ Erro crítico no reconhecimento adaptativo", e)
+            e.printStackTrace()
+            return FaceRecognitionResult.Failure("Erro interno do sistema: ${e.message}")
         }
     }
     
@@ -413,23 +475,82 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
     }
     
     /**
-     * 🔄 CONVERTER BITMAP PARA TENSOR
+     * 📊 CALCULAR QUALIDADE DA IMAGEM
+     */
+    private fun calculateImageQuality(bitmap: Bitmap): ImageQuality {
+        return try {
+            val pixels = IntArray(bitmap.width * bitmap.height)
+            bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+            
+            var totalBrightness = 0f
+            var totalContrast = 0f
+            
+            for (pixel in pixels) {
+                val r = (pixel shr 16) and 0xFF
+                val g = (pixel shr 8) and 0xFF
+                val b = pixel and 0xFF
+                
+                val brightness = (r + g + b) / 3f / 255f
+                totalBrightness += brightness
+            }
+            
+            val avgBrightness = totalBrightness / pixels.size
+            
+            // Calcular contraste simples
+            val contrast = 0.5f // Valor padrão para simplicidade
+            
+            ImageQuality(avgBrightness, contrast)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao calcular qualidade: ${e.message}")
+            ImageQuality(0.5f, 0.5f) // Valores padrão
+        }
+    }
+    
+    /**
+     * 🤖 GERAR EMBEDDING DA FACE
+     */
+    private fun generateEmbedding(bitmap: Bitmap): FloatArray {
+        return try {
+            // ✅ REDIMENSIONAR PARA O TAMANHO DO MODELO
+            val resizedBitmap = if (bitmap.width != 160 || bitmap.height != 160) {
+                Bitmap.createScaledBitmap(bitmap, 160, 160, true)
+            } else {
+                bitmap
+            }
+            
+            // ✅ CONVERTER PARA TENSOR
+            val inputTensor = convertBitmapToTensorInput(resizedBitmap)
+            val output = Array(1) { FloatArray(512) }
+            
+            // ✅ EXECUTAR MODELO
+            interpreter?.run(inputTensor, output)
+            val embedding = output[0]
+            
+            // ✅ VALIDAR EMBEDDING
+            if (embedding.isEmpty() || embedding.all { it == 0f } || embedding.any { it.isNaN() || it.isInfinite() }) {
+                throw Exception("Embedding inválido gerado")
+            }
+            
+            Log.d(TAG, "✅ Embedding gerado com sucesso: ${embedding.size} dimensões")
+            embedding
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao gerar embedding: ${e.message}")
+            throw e
+        }
+    }
+    
+    /**
+     * 🔧 CONVERTER BITMAP PARA TENSOR
      */
     private fun convertBitmapToTensorInput(bitmap: Bitmap): ByteBuffer {
-        val inputSize = 160 // Tamanho padrão do modelo
-        val bufferSize = 4 * inputSize * inputSize * 3
-        
-        val byteBuffer = ByteBuffer.allocateDirect(bufferSize)
+        val inputSize = 160
+        val byteBuffer = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
         byteBuffer.order(ByteOrder.nativeOrder())
         
-        val resizedBitmap = if (bitmap.width != inputSize || bitmap.height != inputSize) {
-            Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-        } else {
-            bitmap
-        }
-        
         val intValues = IntArray(inputSize * inputSize)
-        resizedBitmap.getPixels(intValues, 0, inputSize, 0, 0, inputSize, inputSize)
+        bitmap.getPixels(intValues, 0, inputSize, 0, 0, inputSize, inputSize)
         
         for (pixel in intValues) {
             val r = ((pixel shr 16) and 0xFF) / 127.5f - 1.0f
@@ -439,10 +560,6 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
             byteBuffer.putFloat(r)
             byteBuffer.putFloat(g)
             byteBuffer.putFloat(b)
-        }
-        
-        if (resizedBitmap != bitmap) {
-            resizedBitmap.recycle()
         }
         
         return byteBuffer
@@ -560,4 +677,12 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
     data class QualityCheckResult(val isValid: Boolean, val reason: String)
     
     data class FaceValidationResult(val isValid: Boolean, val reason: String, val face: Face?)
+    
+    /**
+     * 📊 CLASSE PARA QUALIDADE DA IMAGEM
+     */
+    data class ImageQuality(
+        val brightness: Float,
+        val contrast: Float
+    )
 } 

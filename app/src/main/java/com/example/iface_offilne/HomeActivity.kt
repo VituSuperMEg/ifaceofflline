@@ -64,10 +64,9 @@ class HomeActivity : AppCompatActivity() {
 
         // Card Configurações
         binding.cardConfiguracoes.setOnClickListener {
-                permissaoHelper.verificarPermissaoConfiguracoes {
                     val screen = Intent(this@HomeActivity, ConfiguracoesActivity::class.java)
                     startActivity(screen)
-            }
+            
         }
     }
 
