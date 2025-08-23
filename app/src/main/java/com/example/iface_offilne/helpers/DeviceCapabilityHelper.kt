@@ -154,7 +154,7 @@ class DeviceCapabilityHelper(private val context: Context) {
                 Log.d(TAG, "🎛️ Configurando para dispositivo de BAIXO desempenho - ULTRA PERMISSIVO")
                 AdaptiveConfig(
                     // ✅ THRESHOLDS EXTREMAMENTE PERMISSIVOS para garantir reconhecimento
-                    minSimilarityThreshold = 0.1f,      // Reduzido para 10% - EXTREMAMENTE PERMISSIVO
+                    minSimilarityThreshold = 0.85f,      // Reduzido para 10% - EXTREMAMENTE PERMISSIVO
                     maxEuclideanDistance = 2.0f,          // Aumentado para 2.0f - MUITO PERMISSIVO
                     requiredConfidence = 0.15f,            // Reduzido para 15% - EXTREMAMENTE BAIXO
                     
@@ -182,7 +182,7 @@ class DeviceCapabilityHelper(private val context: Context) {
                 Log.d(TAG, "🎛️ Configurando para dispositivo de MÉDIO desempenho - ULTRA PERMISSIVO")
                 AdaptiveConfig(
                     // ✅ THRESHOLDS EXTREMAMENTE PERMISSIVOS para garantir reconhecimento
-                    minSimilarityThreshold = 0.15f,      // Reduzido para 15% - EXTREMAMENTE PERMISSIVO
+                    minSimilarityThreshold = 0.85f,      // Reduzido para 15% - EXTREMAMENTE PERMISSIVO
                     maxEuclideanDistance = 2.0f,          // Aumentado para 2.0f - MUITO PERMISSIVO
                     requiredConfidence = 0.2f,            // Reduzido para 20% - EXTREMAMENTE BAIXO
                     
@@ -210,7 +210,7 @@ class DeviceCapabilityHelper(private val context: Context) {
                 Log.d(TAG, "🎛️ Configurando para dispositivo de ALTO desempenho - ULTRA PERMISSIVO")
                 AdaptiveConfig(
                     // ✅ THRESHOLDS EXTREMAMENTE PERMISSIVOS para garantir reconhecimento
-                    minSimilarityThreshold = 0.2f,        // Reduzido para 20% - EXTREMAMENTE PERMISSIVO
+                    minSimilarityThreshold = 0.85f,        // Reduzido para 20% - EXTREMAMENTE PERMISSIVO
                     maxEuclideanDistance = 2.0f,          // Aumentado para 2.0f - MUITO PERMISSIVO
                     requiredConfidence = 0.25f,            // Reduzido para 25% - EXTREMAMENTE BAIXO
                     
