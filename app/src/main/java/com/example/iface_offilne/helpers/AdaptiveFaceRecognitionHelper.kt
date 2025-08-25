@@ -446,7 +446,7 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
             }
             
             val inputTensor = convertBitmapToTensorInput(bitmap)
-            val output = Array(1) { FloatArray(512) } // Tamanho padrão do embedding
+            val output = Array(1) { FloatArray(192) } // Tamanho padrão do embedding
             
             interpreter?.run(inputTensor, output)
             
@@ -508,7 +508,7 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
             
             // ✅ CONVERTER PARA TENSOR
             val inputTensor = convertBitmapToTensorInput(resizedBitmap)
-            val output = Array(1) { FloatArray(512) }
+            val output = Array(1) { FloatArray(192) }
             
             // ✅ EXECUTAR MODELO
             interpreter?.run(inputTensor, output)

@@ -88,7 +88,7 @@ class FaceRecognitionDebugHelper(private val context: Context) {
                 val helper = FaceRecognitionHelper(context)
                 
                 // Criar vetor dummy
-                val dummyEmbedding = FloatArray(512) { 0.1f }
+                val dummyEmbedding = FloatArray(192) { 0.1f }
                 
                 val relatorio = buildString {
                     appendLine("🧪 === TESTE DE RECONHECIMENTO COM DADOS DUMMY ===")

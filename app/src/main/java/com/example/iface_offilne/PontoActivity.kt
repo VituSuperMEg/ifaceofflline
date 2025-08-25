@@ -70,7 +70,7 @@ class PontoActivity : AppCompatActivity() {
     private var modelLoaded = false
     private var modelInputWidth = 160
     private var modelInputHeight = 160
-    private var modelOutputSize = 512
+    private var modelOutputSize = 192 // ✅ CORRIGIDO: Usar 192 como na CameraActivity
 
     private var faceRecognitionHelper: FaceRecognitionHelper? = null
     private var locationHelper: LocationHelper? = null
@@ -137,6 +137,14 @@ class PontoActivity : AppCompatActivity() {
         Log.d(TAG, "🚀 === INICIANDO PONTOACTIVITY ===")
         
         try {
+            // ✅ VERIFICAR SE VEM DA TELA DE SUCESSO
+            val fromSuccessScreen = intent.getBooleanExtra("FROM_SUCCESS_SCREEN", false)
+            if (fromSuccessScreen) {
+                Log.d(TAG, "🔄 Reinicialização completa após tela de sucesso")
+                // ✅ FORÇAR LIMPEZA COMPLETA DOS RECURSOS
+                forceCleanup()
+            }
+            
             setupUI()
             Log.d(TAG, "✅ UI configurada")
             
@@ -268,6 +276,13 @@ class PontoActivity : AppCompatActivity() {
 
     private fun loadTensorFlowModel() {
         Log.d(TAG, "🤖 Carregando modelo TensorFlow...")
+        
+        // ✅ PROTEÇÃO: Verificar se já está carregando
+        if (modelLoaded && interpreter != null) {
+            Log.d(TAG, "✅ Modelo já carregado - pulando carregamento")
+            return
+        }
+        
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 // ✅ PROTEÇÃO: Verificar se a Activity ainda está válida
@@ -354,30 +369,34 @@ class PontoActivity : AppCompatActivity() {
                 
                 // ✅ PROTEÇÃO: Verificar se o interpreter foi criado corretamente
                 if (interpreter != null) {
-                    // ✅ PROTEÇÃO: Testar o interpreter com dados dummy
-                    try {
-                        val currentInterpreter = interpreter
-                        if (currentInterpreter != null) {
-                            val testInput = ByteBuffer.allocateDirect(4 * modelInputWidth * modelInputHeight * 3)
-                            testInput.order(ByteOrder.nativeOrder())
-                            val testOutput = Array(1) { FloatArray(modelOutputSize) }
-                            
-                            currentInterpreter.run(testInput, testOutput)
-                            Log.d(TAG, "✅ Teste do interpreter bem-sucedido")
-                            
-                            modelLoaded = true
-                            Log.d(TAG, "✅ Modelo TensorFlow carregado com sucesso")
-                        } else {
-                            Log.e(TAG, "❌ Interpreter é nulo durante teste")
-                            modelLoaded = false
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro no teste do interpreter: ${e.message}")
-                        interpreter?.close()
-                        interpreter = null
+                                    // ✅ PROTEÇÃO: Testar o interpreter com dados dummy
+                try {
+                    val currentInterpreter = interpreter
+                    if (currentInterpreter != null) {
+                        // ✅ DETECTAR DIMENSÕES DO MODELO AUTOMATICAMENTE
+                        detectModelDimensions(currentInterpreter)
+                        
+                        val testInput = ByteBuffer.allocateDirect(4 * modelInputWidth * modelInputHeight * 3)
+                        testInput.order(ByteOrder.nativeOrder())
+                        val testOutput = Array(1) { FloatArray(modelOutputSize) }
+                        
+                        currentInterpreter.run(testInput, testOutput)
+                        Log.d(TAG, "✅ Teste do interpreter bem-sucedido")
+                        Log.d(TAG, "📊 Dimensões detectadas: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}")
+                        
+                        modelLoaded = true
+                        Log.d(TAG, "✅ Modelo TensorFlow carregado com sucesso")
+                    } else {
+                        Log.e(TAG, "❌ Interpreter é nulo durante teste")
                         modelLoaded = false
-                        throw e
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Erro no teste do interpreter: ${e.message}")
+                    interpreter?.close()
+                    interpreter = null
+                    modelLoaded = false
+                    throw e
+                }
                 } else {
                     Log.e(TAG, "❌ Interpreter criado mas é nulo")
                     modelLoaded = false
@@ -405,6 +424,12 @@ class PontoActivity : AppCompatActivity() {
         // ✅ PROTEÇÃO: Verificar se a Activity ainda está válida
         if (isFinishing || isDestroyed) {
             Log.w(TAG, "⚠️ Activity finalizada - cancelando inicialização da câmera")
+            return
+        }
+        
+        // ✅ PROTEÇÃO: Verificar se a câmera já está ativa
+        if (cameraProvider != null) {
+            Log.d(TAG, "✅ Câmera já está ativa - pulando inicialização")
             return
         }
         
@@ -1561,6 +1586,49 @@ class PontoActivity : AppCompatActivity() {
     }
     
     /**
+     * 🔍 DETECTAR DIMENSÕES DO MODELO AUTOMATICAMENTE
+     */
+    private fun detectModelDimensions(interpreter: Interpreter) {
+        try {
+            Log.d(TAG, "🔍 === DETECTANDO DIMENSÕES DO MODELO ===")
+            
+            val inputTensor = interpreter.getInputTensor(0)
+            val outputTensor = interpreter.getOutputTensor(0)
+            
+            val inputShape = inputTensor.shape()
+            val outputShape = outputTensor.shape()
+            
+            Log.d(TAG, "📊 Input shape: ${inputShape.contentToString()}")
+            Log.d(TAG, "📊 Output shape: ${outputShape.contentToString()}")
+            
+            // Extrair dimensões de entrada
+            if (inputShape.size >= 4) {
+                modelInputHeight = inputShape[1]
+                modelInputWidth = inputShape[2]
+                val channels = inputShape[3]
+                Log.d(TAG, "📐 Entrada detectada: ${modelInputWidth}x${modelInputHeight}x${channels}")
+            } else if (inputShape.size >= 3) {
+                modelInputHeight = inputShape[1]
+                modelInputWidth = inputShape[2]
+                Log.d(TAG, "📐 Entrada detectada: ${modelInputWidth}x${modelInputHeight}")
+            }
+            
+            // Extrair dimensão de saída
+            if (outputShape.size >= 2) {
+                modelOutputSize = outputShape[1]
+                Log.d(TAG, "📐 Saída detectada: ${modelOutputSize} dimensões")
+            }
+            
+            Log.d(TAG, "✅ Dimensões detectadas com sucesso!")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao detectar dimensões: ${e.message}")
+            // Manter valores padrão em caso de erro
+            Log.d(TAG, "🔄 Usando dimensões padrão: 160x160 → 192")
+        }
+    }
+    
+    /**
      * 🤖 GERAR EMBEDDING DE TESTE USANDO TENSORFLOW
      */
     private fun generateTestEmbedding(): FloatArray? {
@@ -1640,7 +1708,7 @@ class PontoActivity : AppCompatActivity() {
             
             // ✅ GERAR EMBEDDING ALEATÓRIO MAS REALISTA
             val random = java.util.Random()
-            val testEmbedding = FloatArray(512) { 
+            val testEmbedding = FloatArray(192) { 
                 (random.nextGaussian() * 0.1).toFloat() // Distribuição gaussiana centrada em 0
             }
             
@@ -1685,7 +1753,7 @@ class PontoActivity : AppCompatActivity() {
                         val funcionarioTeste = funcionarios.first()
                         
                         // ✅ CRIAR FACE DE TESTE: Gerar embedding de teste
-                        val testEmbedding = FloatArray(512) { 0.1f } // Embedding de teste simples
+                        val testEmbedding = FloatArray(192) { 0.1f } // Embedding de teste simples
                         val embeddingString = testEmbedding.joinToString(",")
                         
                         val faceTeste = com.example.iface_offilne.data.FaceEntity(
@@ -2027,11 +2095,35 @@ class PontoActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         try {
-            if (allPermissionsGranted()) {
-                startCamera()
+            Log.d(TAG, "🔄 === RESUMINDO PONTOACTIVITY ===")
+            
+            // ✅ REINICIALIZAR MODELO TENSORFLOW SE NECESSÁRIO
+            if (!modelLoaded || interpreter == null) {
+                Log.d(TAG, "🤖 Modelo TensorFlow não carregado - recarregando...")
+                loadTensorFlowModel()
+            } else {
+                Log.d(TAG, "✅ Modelo TensorFlow já carregado - verificando saúde...")
+                reinitializeTensorFlowIfNeeded()
             }
+            
+            // ✅ REINICIALIZAR CAMERA
+            if (allPermissionsGranted()) {
+                Log.d(TAG, "📷 Reiniciando câmera...")
+                startCamera()
+            } else {
+                Log.w(TAG, "⚠️ Permissões não concedidas - não iniciando câmera")
+            }
+            
+            // ✅ RESETAR FLAGS DE PROCESSAMENTO
+            processandoFace = false
+            lastProcessingTime = 0L
+            funcionarioReconhecido = null
+            
+            Log.d(TAG, "✅ PontoActivity resumida com sucesso")
+            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro no onResume: ${e.message}")
+            e.printStackTrace()
         }
     }
 
@@ -2130,119 +2222,235 @@ class PontoActivity : AppCompatActivity() {
             return false
         }
     }
+    
+    /**
+     * 🔄 REINICIALIZAR MODELO TENSORFLOW SE NECESSÁRIO
+     */
+    private fun reinitializeTensorFlowIfNeeded() {
+        try {
+            Log.d(TAG, "🔄 Verificando necessidade de reinicialização do TensorFlow...")
+            
+            // ✅ VERIFICAR SE O MODELO ESTÁ FUNCIONANDO
+            if (!testTensorFlowHealth()) {
+                Log.w(TAG, "⚠️ TensorFlow não está funcionando - reinicializando...")
+                
+                // ✅ LIMPAR RECURSOS ATUAIS
+                try {
+                    interpreter?.close()
+                    interpreter = null
+                    modelLoaded = false
+                    Log.d(TAG, "🧹 Recursos do TensorFlow limpos")
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ Erro ao limpar recursos: ${e.message}")
+                }
+                
+                // ✅ RECARREGAR MODELO
+                loadTensorFlowModel()
+                
+                // ✅ AGUARDAR UM POUCO E TESTAR NOVAMENTE
+                Handler(Looper.getMainLooper()).postDelayed({
+                    try {
+                        if (testTensorFlowHealth()) {
+                            Log.d(TAG, "✅ TensorFlow reinicializado com sucesso")
+                        } else {
+                            Log.e(TAG, "❌ Falha na reinicialização do TensorFlow")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao testar reinicialização: ${e.message}")
+                    }
+                }, 2000)
+                
+            } else {
+                Log.d(TAG, "✅ TensorFlow está funcionando corretamente")
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao verificar TensorFlow: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+    
+    /**
+     * 🧹 FORÇAR LIMPEZA COMPLETA DOS RECURSOS
+     */
+    private fun forceCleanup() {
+        try {
+            Log.d(TAG, "🧹 === FORÇANDO LIMPEZA COMPLETA ===")
+            
+            // ✅ PARAR CÂMERA
+            try {
+                stopCamera()
+                Log.d(TAG, "✅ Câmera parada")
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Erro ao parar câmera: ${e.message}")
+            }
+            
+            // ✅ LIMPAR TENSORFLOW
+            try {
+                interpreter?.close()
+                interpreter = null
+                modelLoaded = false
+                Log.d(TAG, "✅ TensorFlow limpo")
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Erro ao limpar TensorFlow: ${e.message}")
+            }
+            
+            // ✅ LIMPAR FACE DETECTOR
+            try {
+                faceDetector?.close()
+                faceDetector = null
+                Log.d(TAG, "✅ Face detector limpo")
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Erro ao limpar face detector: ${e.message}")
+            }
+            
+            // ✅ RESETAR FLAGS
+            processandoFace = false
+            lastProcessingTime = 0L
+            funcionarioReconhecido = null
+            lastPontoRegistrado = 0L
+            tensorFlowFallbackMode = false
+            tensorFlowErrorCount = 0
+            lastTensorFlowError = 0L
+            
+            // ✅ LIMPAR BITMAP
+            try {
+                currentFaceBitmap?.recycle()
+                currentFaceBitmap = null
+                Log.d(TAG, "✅ Bitmap limpo")
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Erro ao limpar bitmap: ${e.message}")
+            }
+            
+            // ✅ LIMPAR OVERLAY
+            try {
+                if (::overlay.isInitialized) {
+                    overlay.clear()
+                    Log.d(TAG, "✅ Overlay limpo")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Erro ao limpar overlay: ${e.message}")
+            }
+            
+            Log.d(TAG, "✅ Limpeza completa finalizada")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro na limpeza forçada: ${e.message}")
+            e.printStackTrace()
+        }
+    }
 
     /**
-     * 🎉 MOSTRAR INTERFACE DE CONFIRMAÇÃO VISUAL
+     * 🎉 NAVEGAR PARA ACTIVITY DE SUCESSO
      */
     private fun showConfirmationUI(funcionario: FuncionariosEntity, fotoBase64: String?) {
         try {
-            Log.d(TAG, "🎉 Mostrando interface de confirmação para: ${funcionario.nome}")
+            Log.d(TAG, "🎉 Navegando para Activity de sucesso para: ${funcionario.nome}")
             
-            val confirmationLayout = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setBackgroundColor(android.graphics.Color.parseColor("#4CAF50")) // Verde
-                setPadding(30, 20, 30, 20) // Padding aumentado
-                elevation = 20f
-                
-               
-                
-                // ✅ NOME DO FUNCIONÁRIO - MENOR
-                val nomeFuncionario = TextView(this@PontoActivity).apply {
-                    text = funcionario.nome
-                    textSize = 16f // Tamanho aumentado
-                    setTextColor(android.graphics.Color.WHITE)
-                    gravity = android.view.Gravity.CENTER
-                    setTypeface(null, android.graphics.Typeface.BOLD)
-                    setPadding(0, 10, 0, 10) // Padding aumentado
-                }
-                
-                addView(nomeFuncionario)
-            }
+            // ✅ OBTER DADOS ATUAIS
+            val horarioAtual = System.currentTimeMillis()
             
-            val facePreviewLayout = FrameLayout(this).apply {
-                layoutParams = FrameLayout.LayoutParams(120, 120).apply {
-                    gravity = android.view.Gravity.BOTTOM or android.view.Gravity.START
-                    setMargins(20, 0, 0, 100) // Margem do fundo maior para não sobrepor
-                }
-                setBackgroundColor(android.graphics.Color.WHITE)
-                elevation = 15f
-            }
-            
-            // ✅ CONVERTER FOTO BASE64 PARA IMAGEVIEW
-            if (fotoBase64 != null) {
+            // ✅ USAR COROUTINE PARA OBTER LOCALIZAÇÃO
+            CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val fotoBytes = android.util.Base64.decode(fotoBase64, android.util.Base64.DEFAULT)
-                    val fotoBitmap = android.graphics.BitmapFactory.decodeByteArray(fotoBytes, 0, fotoBytes.size)
+                    var latitude: Double? = null
+                    var longitude: Double? = null
                     
-                    if (fotoBitmap != null) {
-                        // ✅ CORRIGIR ORIENTAÇÃO DA FOTO
-                        val matrix = Matrix().apply {
-                            postRotate(360.0f) // Sem rotação adicional
+                    try {
+                        val helper = locationHelper
+                        val locationData = helper?.getCurrentLocationForPoint()
+                        if (locationData != null) {
+                            latitude = locationData.latitude
+                            longitude = locationData.longitude
+                            Log.d(TAG, "📍 Localização para sucesso: $latitude, $longitude")
                         }
-                        val rotatedBitmap = Bitmap.createBitmap(fotoBitmap, 0, 0, fotoBitmap.width, fotoBitmap.height, matrix, true)
-                        
-                        val faceImageView = ImageView(this).apply {
-                            layoutParams = FrameLayout.LayoutParams(
-                                FrameLayout.LayoutParams.MATCH_PARENT,
-                                FrameLayout.LayoutParams.MATCH_PARENT
-                            )
-                            scaleType = ImageView.ScaleType.CENTER_CROP
-                            setImageBitmap(rotatedBitmap)
-                        }
-                        facePreviewLayout.addView(faceImageView)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao obter localização para sucesso: ${e.message}")
                     }
+                    
+                    // ✅ NAVEGAR PARA ACTIVITY DE SUCESSO NA THREAD PRINCIPAL
+                    withContext(Dispatchers.Main) {
+                        try {
+                            if (!isFinishing && !isDestroyed) {
+                                // ✅ CRIAR INTENT PARA ACTIVITY DE SUCESSO
+                                val intent = Intent(this@PontoActivity, PontoSucessoActivity::class.java).apply {
+                                    putExtra(PontoSucessoActivity.EXTRA_FUNCIONARIO_NOME, funcionario.nome)
+                                    putExtra(PontoSucessoActivity.EXTRA_DATA_HORA, horarioAtual)
+                                    
+                                    if (latitude != null && longitude != null) {
+                                        putExtra(PontoSucessoActivity.EXTRA_LATITUDE, latitude)
+                                        putExtra(PontoSucessoActivity.EXTRA_LONGITUDE, longitude)
+                                    }
+                                }
+                                
+                                // ✅ NAVEGAR PARA ACTIVITY DE SUCESSO
+                                startActivity(intent)
+                                
+                                Log.d(TAG, "✅ Navegação para Activity de sucesso iniciada")
+                            } else {
+                                Log.w(TAG, "⚠️ Activity finalizada - cancelando navegação")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro ao navegar para Activity de sucesso: ${e.message}")
+                            e.printStackTrace()
+                            
+                            // ✅ FALLBACK: Mostrar mensagem simples
+                            if (::statusText.isInitialized) {
+                                val status = statusText
+                                status.text = "✅ Ponto registrado!\n${funcionario.nome}"
+                                
+                                status.postDelayed({
+                                    try {
+                                        if (!isFinishing && !isDestroyed) {
+                                            val statusInner = statusText
+                                            statusInner.text = ""
+                                            processandoFace = false
+                                            lastProcessingTime = 0L
+                                        }
+                                    } catch (e2: Exception) {
+                                        Log.e(TAG, "❌ Erro no reset: ${e2.message}")
+                                    }
+                                }, 3000)
+                            }
+                        }
+                    }
+                    
                 } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao converter foto: ${e.message}")
+                    Log.e(TAG, "❌ Erro crítico na coroutine de sucesso: ${e.message}")
+                    e.printStackTrace()
+                    
+                    // ✅ FALLBACK: Mostrar mensagem simples na thread principal
+                    withContext(Dispatchers.Main) {
+                        try {
+                            if (!isFinishing && !isDestroyed && ::statusText.isInitialized) {
+                                val status = statusText
+                                status.text = "✅ Ponto registrado!\n${funcionario.nome}"
+                                
+                                status.postDelayed({
+                                    try {
+                                        if (!isFinishing && !isDestroyed) {
+                                            val statusInner = statusText
+                                            statusInner.text = ""
+                                            processandoFace = false
+                                            lastProcessingTime = 0L
+                                        }
+                                    } catch (e2: Exception) {
+                                        Log.e(TAG, "❌ Erro no reset: ${e2.message}")
+                                    }
+                                }, 3000)
+                            }
+                        } catch (e2: Exception) {
+                            Log.e(TAG, "❌ Erro no fallback: ${e2.message}")
+                        }
+                    }
                 }
             }
-            
-            // ✅ CRIAR OVERLAY SOBRE A TELA ATUAL (NÃO SUBSTITUIR)
-            val overlayLayout = FrameLayout(this).apply {
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT
-                )
-                setBackgroundColor(android.graphics.Color.parseColor("#30000000")) // Fundo levemente escuro
-                isClickable = true
-                isFocusable = true
-            }
-            
-            // ✅ POSICIONAR CONFIRMAÇÃO NO CANTO INFERIOR DIREITO - TAMANHO MAIOR
-            confirmationLayout.layoutParams = FrameLayout.LayoutParams(
-                400, // Largura aumentada
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = android.view.Gravity.BOTTOM or android.view.Gravity.END
-                setMargins(0, 0, 20, 100) // Mesma altura da foto
-            }
-            
-            // ✅ ADICIONAR ELEMENTOS AO OVERLAY
-            overlayLayout.addView(facePreviewLayout)
-            overlayLayout.addView(confirmationLayout)
-            
-            // ✅ ADICIONAR OVERLAY POR CIMA DO LAYOUT EXISTENTE (NÃO SUBSTITUIR)
-            val rootView = findViewById<ViewGroup>(android.R.id.content)
-            rootView.addView(overlayLayout)
-            
-            // ✅ RESET AUTOMÁTICO APÓS 3 SEGUNDOS (MAIS RÁPIDO)
-            Handler(Looper.getMainLooper()).postDelayed({
-                try {
-                    if (!isFinishing && !isDestroyed) {
-                        // ✅ REMOVER APENAS O OVERLAY
-                        rootView.removeView(overlayLayout)
-                        processandoFace = false
-                        lastProcessingTime = 0L
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro no reset da UI: ${e.message}")
-                }
-            }, 3000)
             
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao mostrar interface de confirmação: ${e.message}")
+            Log.e(TAG, "❌ Erro crítico ao iniciar navegação: ${e.message}")
             e.printStackTrace()
             
-            // ✅ FALLBACK: Mostrar mensagem simples
+            // ✅ FALLBACK FINAL: Mostrar mensagem simples
             if (::statusText.isInitialized) {
                 val status = statusText
                 status.text = "✅ Ponto registrado!\n${funcionario.nome}"

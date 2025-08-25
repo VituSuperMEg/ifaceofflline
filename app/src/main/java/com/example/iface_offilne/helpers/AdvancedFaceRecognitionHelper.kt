@@ -404,8 +404,8 @@ class AdvancedFaceRecognitionHelper(private val context: Context) {
             }
             
             // Redimensionar para o tamanho do modelo
-            val resizedBitmap = Bitmap.createScaledBitmap(bitmap, 112, 112, true)
-            Log.d(TAG, "📐 Bitmap redimensionado para 112x112")
+            val resizedBitmap = Bitmap.createScaledBitmap(bitmap, 160, 160, true)
+            Log.d(TAG, "📐 Bitmap redimensionado para 160x160")
             
             // Converter para tensor
             val inputBuffer = convertBitmapToTensorInput(resizedBitmap)

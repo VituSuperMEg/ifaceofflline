@@ -55,8 +55,8 @@ class CameraActivity : AppCompatActivity() {
     private var interpreter: Interpreter? = null
     private var modelLoaded = false
 
-    private var modelInputWidth = 112
-    private var modelInputHeight = 112
+    private var modelInputWidth = 160
+    private var modelInputHeight = 160
     private var modelOutputSize = 192
     
     // 🚀 NOVO: Helper avançado para reconhecimento facial
@@ -128,6 +128,9 @@ class CameraActivity : AppCompatActivity() {
         
         // 🔍 TESTE: Verificar banco de dados
         testDatabaseConnection()
+        
+        // ✅ NOVO: Validar embeddings existentes (APENAS VERIFICAÇÃO, SEM REMOÇÃO)
+        validateExistingEmbeddings()
         
         // ✅ NOVO: Detectar qualidade da câmera e ajustar parâmetros
         detectCameraQuality()
@@ -220,7 +223,13 @@ class CameraActivity : AppCompatActivity() {
                 Log.d(TAG, "🤖 Interpreter: ${interpreter != null}")
                 showToast("✅ Modelo TensorFlow Lite carregado!")
             } else {
-                throw Exception("Dimensões do modelo inválidas")
+                Log.w(TAG, "⚠️ Dimensões do modelo não puderam ser extraídas - usando padrão")
+                // Usar dimensões padrão se não conseguir extrair
+                modelInputWidth = 160
+                modelInputHeight = 160
+                modelOutputSize = 192
+                modelLoaded = true
+                Log.d(TAG, "🔄 Usando dimensões padrão: 160x160 → 192")
             }
 
         } catch (e: Exception) {
@@ -734,7 +743,7 @@ class CameraActivity : AppCompatActivity() {
             Log.d(TAG, "✅ Modelo TensorFlow carregado e pronto")
             Log.d(TAG, "📊 Dimensões do modelo: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}")
             
-            val resizedBitmap = Bitmap.createScaledBitmap(faceBmp, modelInputWidth, modelInputHeight, true)
+            val resizedBitmap = Bitmap.createScaledBitmap(faceBmp, 160, 160, true)
             Log.d(TAG, "📐 Face redimensionada: ${faceBmp.width}x${faceBmp.height} → ${resizedBitmap.width}x${resizedBitmap.height}")
             
             // ✅ CONVERTER PARA TENSOR DE ENTRADA
@@ -903,14 +912,26 @@ class CameraActivity : AppCompatActivity() {
                 try {
                     val dao = AppDatabase.getInstance(applicationContext).faceDao()
                     
-                    // Verificar se já existe face para este funcionário
+                    // ✅ SEGURANÇA: Verificar se já existe face para este funcionário ESPECÍFICO
                     val existingFace = dao.getByFuncionarioId(usuario.codigo)
                     if (existingFace != null) {
-                        Log.d(TAG, "🔄 Face existente encontrada - atualizando...")
-                        dao.deleteByFuncionarioId(usuario.codigo)
-                        Log.d(TAG, "🗑️ Face antiga deletada para funcionário ${usuario.codigo}")
+                        Log.d(TAG, "🔄 Face existente encontrada para ${usuario.nome} (${usuario.codigo}) - atualizando...")
+                        
+                        // ✅ VALIDAR SE A FACE EXISTENTE É VÁLIDA ANTES DE REMOVER
+                        val validator = com.example.iface_offilne.helpers.EmbeddingValidator(this@CameraActivity)
+                        val faceValidation = validator.validateSingleEmbedding(existingFace)
+                        
+                        if (faceValidation.isValid) {
+                            Log.d(TAG, "✅ Face existente é válida - substituindo...")
+                            dao.deleteByFuncionarioId(usuario.codigo)
+                            Log.d(TAG, "🗑️ Face antiga deletada para funcionário ${usuario.codigo}")
+                        } else {
+                            Log.w(TAG, "⚠️ Face existente é inválida - removendo e recadastrando...")
+                            dao.deleteByFuncionarioId(usuario.codigo)
+                            Log.d(TAG, "🗑️ Face inválida removida para funcionário ${usuario.codigo}")
+                        }
                     } else {
-                        Log.d(TAG, "✨ Primeira face para o funcionário ${usuario.codigo}")
+                        Log.d(TAG, "✨ Primeira face para o funcionário ${usuario.nome} (${usuario.codigo})")
                     }
                     
                     // Converter embedding para string
@@ -970,7 +991,7 @@ class CameraActivity : AppCompatActivity() {
 
     private fun convertBitmapToTensorInput(bitmap: Bitmap): ByteBuffer {
         try {
-            val inputSize = modelInputWidth // 112
+            val inputSize = 160 // ✅ CORRIGIDO: Usar 160x160 como esperado pelo modelo
             Log.d(TAG, "🔧 Preparando tensor para entrada ${inputSize}x${inputSize}")
             
             if (bitmap.isRecycled) {
@@ -1141,6 +1162,45 @@ class CameraActivity : AppCompatActivity() {
             Log.e(TAG, "❌ Erro ao detectar qualidade da câmera", e)
             // Usar configuração padrão
             adjustParametersForQuality("MÉDIA")
+        }
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Validar embeddings existentes
+     */
+    private fun validateExistingEmbeddings() {
+        Log.d(TAG, "🔍 === VALIDANDO EMBEDDINGS EXISTENTES ===")
+        
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val validator = com.example.iface_offilne.helpers.EmbeddingValidator(this@CameraActivity)
+                val report = validator.validateAllEmbeddings()
+                
+                Log.d(TAG, "📊 === RELATÓRIO DE VALIDAÇÃO ===")
+                Log.d(TAG, "✅ Faces válidas: ${report.validFaces}")
+                Log.d(TAG, "❌ Faces inválidas: ${report.invalidFaces}")
+                
+                if (report.invalidFaces > 0) {
+                    Log.w(TAG, "⚠️ ENCONTRADAS FACES INVÁLIDAS!")
+                    Log.w(TAG, "🔧 Problemas encontrados:")
+                    report.problems.forEach { problem ->
+                        Log.w(TAG, "   - $problem")
+                    }
+                    
+                    // ✅ SEGURANÇA: NÃO REMOVER AUTOMATICAMENTE - APENAS LOGAR
+                    Log.w(TAG, "🛡️ SEGURANÇA: Faces inválidas detectadas mas NÃO removidas automaticamente")
+                    Log.w(TAG, "🛡️ Use a função de limpeza manual se necessário")
+                    
+                    withContext(Dispatchers.Main) {
+                        showToast("⚠️ ${report.invalidFaces} faces com problemas detectadas")
+                    }
+                } else {
+                    Log.d(TAG, "✅ Todos os embeddings estão válidos!")
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro na validação: ${e.message}", e)
+            }
         }
     }
     
