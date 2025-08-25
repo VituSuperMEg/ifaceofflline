@@ -88,13 +88,13 @@
                             android:textColor="#2E3A59"
                             android:layout_marginBottom="16dp" />
 
-                        <!-- Campo Código -->
+                        <!-- Campo CPF -->
                         <com.google.android.material.textfield.TextInputLayout
                             android:id="@+id/layoutCodigo"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginBottom="16dp"
-                            android:hint="Código"
+                            android:hint="CPF"
                             app:boxStrokeColor="#4A90E2"
                             app:hintTextColor="#4A90E2"
                             app:boxCornerRadiusTopStart="25dp"
@@ -135,6 +135,60 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:inputType="textPersonName"
+                                android:maxLines="1"
+                                android:enabled="false"
+                                android:focusable="false"
+                                android:clickable="false" />
+
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <!-- Campo Cargo -->
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/layoutCargo"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="16dp"
+                            android:hint="Cargo"
+                            app:boxStrokeColor="#4A90E2"
+                            app:hintTextColor="#4A90E2"
+                            app:boxCornerRadiusTopStart="25dp"
+                            app:boxCornerRadiusTopEnd="25dp"
+                            app:boxCornerRadiusBottomStart="25dp"
+                            app:boxCornerRadiusBottomEnd="25dp"
+                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/editTextCargo"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="text"
+                                android:maxLines="1"
+                                android:enabled="false"
+                                android:focusable="false"
+                                android:clickable="false" />
+
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <!-- Campo Secretaria -->
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/layoutSecretaria"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="16dp"
+                            android:hint="Secretaria"
+                            app:boxStrokeColor="#4A90E2"
+                            app:hintTextColor="#4A90E2"
+                            app:boxCornerRadiusTopStart="25dp"
+                            app:boxCornerRadiusTopEnd="25dp"
+                            app:boxCornerRadiusBottomStart="25dp"
+                            app:boxCornerRadiusBottomEnd="25dp"
+                            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/editTextSecretaria"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="text"
                                 android:maxLines="1"
                                 android:enabled="false"
                                 android:focusable="false"

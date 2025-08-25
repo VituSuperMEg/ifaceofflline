@@ -33,7 +33,25 @@
             android:id="@+id/codigoUsuario"
             android:layout_width="1189dp"
             android:layout_height="wrap_content"
-            android:text="Código: 123"
+            android:text="CPF: 999.****.999-**"
+            android:textColor="#666666"
+            android:textSize="13sp"
+            android:textStyle="italic" />
+
+        <TextView
+            android:id="@+id/cargoUsuario"
+            android:layout_width="1189dp"
+            android:layout_height="wrap_content"
+            android:text="Cargo: Não informado"
+            android:textColor="#666666"
+            android:textSize="13sp"
+            android:textStyle="italic" />
+
+        <TextView
+            android:id="@+id/secretariaUsuario"
+            android:layout_width="1189dp"
+            android:layout_height="wrap_content"
+            android:text="Secretaria: Não informado"
             android:textColor="#666666"
             android:textSize="13sp"
             android:textStyle="italic" />

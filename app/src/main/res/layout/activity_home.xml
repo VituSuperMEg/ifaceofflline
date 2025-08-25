@@ -97,15 +97,6 @@
                             android:textColor="#2E3A59"
                             android:gravity="center" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Configuração/Sincronização"
-                            android:textSize="12sp"
-                            android:textColor="#8B94A8"
-                            android:gravity="center"
-                            android:layout_marginTop="4dp" />
-
                     </LinearLayout>
 
                 </androidx.cardview.widget.CardView>
@@ -146,15 +137,6 @@
                             android:textStyle="bold"
                             android:textColor="#2E3A59"
                             android:gravity="center" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Importar do sistema"
-                            android:textSize="12sp"
-                            android:textColor="#8B94A8"
-                            android:gravity="center"
-                            android:layout_marginTop="4dp" />
 
                     </LinearLayout>
 
@@ -206,15 +188,6 @@
                             android:textColor="#2E3A59"
                             android:gravity="center" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Bater ponto facial"
-                            android:textSize="12sp"
-                            android:textColor="#8B94A8"
-                            android:gravity="center"
-                            android:layout_marginTop="4dp" />
-
                     </LinearLayout>
 
                 </androidx.cardview.widget.CardView>
@@ -250,20 +223,11 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Relatórios"
+                            android:text="Pontos Registrados"
                             android:textSize="16sp"
                             android:textStyle="bold"
                             android:textColor="#2E3A59"
                             android:gravity="center" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Ver pontos registrados"
-                            android:textSize="12sp"
-                            android:textColor="#8B94A8"
-                            android:gravity="center"
-                            android:layout_marginTop="4dp" />
 
                     </LinearLayout>
 
@@ -313,15 +277,6 @@
                              android:textStyle="bold"
                              android:textColor="#2E3A59"
                              android:gravity="center" />
-
-                         <TextView
-                             android:layout_width="wrap_content"
-                             android:layout_height="wrap_content"
-                             android:text="Ajustes do sistema"
-                             android:textSize="12sp"
-                             android:textColor="#8B94A8"
-                             android:gravity="center"
-                             android:layout_marginTop="4dp" />
 
                      </LinearLayout>
 

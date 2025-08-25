@@ -80,6 +80,8 @@ class UsuarioEdit : AppCompatActivity() {
         usuario?.let { user ->
             binding.editTextCodigo.setText(user.codigo)
             binding.editTextNome.setText(user.nome)
+            binding.editTextCargo.setText(user.cargo)
+            binding.editTextSecretaria.setText(user.secretaria)
             
             // Configurar status ativo/inativo
             if (user.ativo == 1) {
@@ -106,7 +108,7 @@ class UsuarioEdit : AppCompatActivity() {
         }
 
         usuario?.let { user ->
-            // Atualizar apenas o status ativo/inativo (código e nome são somente leitura)
+            // Atualizar apenas o status ativo/inativo (código, nome, cargo e secretaria são somente leitura)
             user.ativo = if (binding.chipAtivo.isChecked) 1 else 0
 
             // Salvar no banco de dados
@@ -116,12 +118,14 @@ class UsuarioEdit : AppCompatActivity() {
                     val funcionarioDao = database.funcionarioDao()
                     
                     // Converter FuncionariosLocalModel para FuncionariosEntity (funcionário importado)
-                    // Código e nome permanecem inalterados (somente leitura)
+                    // Código, nome, cargo e secretaria permanecem inalterados (somente leitura)
                     val funcionarioEntity = FuncionariosEntity(
                         id = user.id,
                         codigo = user.codigo,
                         nome = user.nome,
-                        ativo = user.ativo
+                        ativo = user.ativo,
+                        cargo = user.cargo,
+                        secretaria = user.secretaria
                     )
                     
                     funcionarioDao.update(funcionarioEntity)
@@ -253,7 +257,9 @@ class UsuarioEdit : AppCompatActivity() {
                         id = user.id,
                         codigo = user.codigo,
                         nome = user.nome,
-                        ativo = user.ativo
+                        ativo = user.ativo,
+                        cargo = user.cargo,
+                        secretaria = user.secretaria
                     )
                     
                     // Excluir foto facial se existir

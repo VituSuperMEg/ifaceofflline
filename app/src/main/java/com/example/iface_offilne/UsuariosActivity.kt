@@ -96,7 +96,9 @@ class UsuariosActivity : AppCompatActivity() {
                         codigo = entity.codigo,
                         id = entity.id,
                         nome = entity.nome,
-                        ativo = entity.ativo
+                        ativo = entity.ativo,
+                        cargo = entity.cargo,
+                        secretaria = entity.secretaria
                     )
                 }
 
