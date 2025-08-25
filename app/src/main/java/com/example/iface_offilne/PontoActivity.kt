@@ -961,24 +961,14 @@ class PontoActivity : AppCompatActivity() {
                 }
             }
             
-            // ✅ VERIFICAR SE ACHOU ALGUÉM COM THRESHOLD ULTRA RIGOROSO
-            val thresholdMinimo = 0.88f // 80% de similaridade mínima - MUITO RIGOROSO
+            // PROCESSOS DE SIMILIRADE MINIA
+            val thresholdMinimo = 0.87f // 80% de similaridade mínima - MUITO RIGOROSO
             val thresholdIdeal = 0.95f // 90% para confiança alta - EXTREMAMENTE RIGOROSO
             
             if (funcionarioReconhecido != null && melhorSimilaridade >= thresholdMinimo) {
-                Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO COM ALTA PRECISÃO!")
-                Log.d(TAG, "👤 Nome: ${funcionarioReconhecido.nome}")
-                // Log.d(TAG, "📊 Similaridade: ${String.format("%.3f", melhorSimilaridade)}")
-                Log.d(TAG, "🎯 Confiança: ${if (melhorSimilaridade >= thresholdIdeal) "ALTA" else "MÉDIA"}")
-                
                 return RecognitionResult.Success(funcionarioReconhecido, melhorSimilaridade)
             } else {
-                Log.w(TAG, "❌ Nenhum funcionário reconhecido com precisão suficiente")
-                Log.w(TAG, "📊 Melhor similaridade: ${String.format("%.3f", melhorSimilaridade)}")
-                Log.w(TAG, "🎯 Threshold mínimo: ${String.format("%.3f", thresholdMinimo)}")
-                
-                if (melhorSimilaridade > 0.3f) {
-                    // Mensagem  de similaridade 
+                if (melhorSimilaridade > 0.4f) {
                     return RecognitionResult.Failure("")
                 } else {
                     return RecognitionResult.Failure("")
