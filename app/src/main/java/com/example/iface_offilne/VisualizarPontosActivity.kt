@@ -25,6 +25,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.delay
+import com.example.iface_offilne.util.ErrorMessageHelper
 
 class VisualizarPontosActivity : AppCompatActivity() {
 
@@ -85,7 +86,7 @@ class VisualizarPontosActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Log.e("VisualizarPontos", "❌ Erro ao criar pontos de teste: ${e.message}")
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@VisualizarPontosActivity, "❌ Erro ao criar pontos de teste", Toast.LENGTH_SHORT).show()
+                        ErrorMessageHelper.showErrorMessage(this@VisualizarPontosActivity, e)
                     }
                 }
             }
@@ -349,7 +350,7 @@ class VisualizarPontosActivity : AppCompatActivity() {
                 Log.e(TAG, "Erro ao carregar pontos", e)
                 withContext(Dispatchers.Main) {
                     binding.statusText.text = "❌ Erro ao carregar pontos"
-                    Toast.makeText(this@VisualizarPontosActivity, "Erro: ${e.message}", Toast.LENGTH_LONG).show()
+                    ErrorMessageHelper.showErrorMessage(this@VisualizarPontosActivity, e)
                 }
             }
         }
@@ -422,11 +423,7 @@ class VisualizarPontosActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e("VisualizarPontos", "❌ Erro na sincronização: ${e.message}")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        this@VisualizarPontosActivity, 
-                        "❌ Erro na sincronização: ${e.message}", 
-                        Toast.LENGTH_LONG
-                    ).show()
+                    ErrorMessageHelper.showErrorMessage(this@VisualizarPontosActivity, e)
                 }
             }
         }

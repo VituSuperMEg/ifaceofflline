@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import com.example.iface_offilne.util.ErrorMessageHelper
 import androidx.lifecycle.lifecycleScope
 import com.example.iface_offilne.databinding.FragmentSobreTabBinding
 import kotlinx.coroutines.Dispatchers
@@ -112,7 +113,7 @@ class SobreTabFragment : Fragment() {
                         binding.tvUpdateStatus.text = "Erro"
                         binding.tvUpdateStatus.setTextColor(resources.getColor(android.R.color.holo_red_dark, null))
                         binding.tvUpdateMessage.text = "Erro ao verificar atualizações: ${result.message}"
-                        Toast.makeText(context, "Erro ao verificar atualizações", Toast.LENGTH_SHORT).show()
+                        ErrorMessageHelper.showErrorMessage(requireContext(), "Erro ao verificar atualizações")
                     }
                 }
 
@@ -123,7 +124,7 @@ class SobreTabFragment : Fragment() {
                 binding.tvUpdateStatus.text = "Erro"
                 binding.tvUpdateStatus.setTextColor(resources.getColor(android.R.color.holo_red_dark, null))
                 binding.tvUpdateMessage.text = "Erro ao verificar atualizações: ${e.message}"
-                Toast.makeText(context, "Erro ao verificar atualizações", Toast.LENGTH_SHORT).show()
+                ErrorMessageHelper.showErrorMessage(requireContext(), e)
             } finally {
                 // Restaurar botão
                 binding.btnCheckUpdate.isEnabled = true
@@ -174,7 +175,7 @@ class SobreTabFragment : Fragment() {
                 binding.tvUpdateStatus.text = "Erro"
                 binding.tvUpdateStatus.setTextColor(resources.getColor(android.R.color.holo_red_dark, null))
                 binding.tvUpdateMessage.text = "Erro durante a atualização: ${e.message}"
-                Toast.makeText(context, "Erro durante a atualização", Toast.LENGTH_SHORT).show()
+                ErrorMessageHelper.showErrorMessage(requireContext(), e)
             } finally {
                 // Restaurar botão
                 binding.btnUpdate.isEnabled = true

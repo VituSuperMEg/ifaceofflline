@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.iface_offilne.data.AppDatabase
 import com.example.iface_offilne.data.PontosGenericosEntity
 import com.example.iface_offilne.util.ConfiguracoesManager
+import com.example.iface_offilne.util.ErrorMessageHelper
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -208,7 +209,7 @@ class SyncService(private val context: Context) {
                         }
                     }
                     
-                    SyncResult.Error("Erro de comunicação com o servidor (${response.code()})")
+                    SyncResult.Error(ErrorMessageHelper.getErrorMessage(Exception("HTTP ${response.code()}")))
                 }
             }
         } catch (e: Exception) {
@@ -216,7 +217,7 @@ class SyncService(private val context: Context) {
             Log.e(TAG, "❌ Tipo do erro: ${e.javaClass.simpleName}")
             Log.e(TAG, "❌ Mensagem do erro: ${e.message}")
             e.printStackTrace()
-            SyncResult.Error("Erro: ${e.message}")
+            SyncResult.Error(ErrorMessageHelper.getErrorMessage(e))
         }
     }
 
@@ -255,7 +256,7 @@ class SyncService(private val context: Context) {
                     val errorBody = response.errorBody()?.string()
                     Log.e(TAG, "❌ Erro no teste: ${response.code()} - ${response.message()}")
                     Log.e(TAG, "❌ Corpo do erro: $errorBody")
-                    SyncResult.Error("Erro no teste: ${response.code()}")
+                    SyncResult.Error(ErrorMessageHelper.getErrorMessage(Exception("HTTP ${response.code()}")))
                 }
             }
         } catch (e: Exception) {
@@ -263,7 +264,7 @@ class SyncService(private val context: Context) {
             Log.e(TAG, "❌ Tipo do erro: ${e.javaClass.simpleName}")
             Log.e(TAG, "❌ Mensagem do erro: ${e.message}")
             e.printStackTrace()
-            SyncResult.Error("Erro no teste: ${e.message}")
+            SyncResult.Error(ErrorMessageHelper.getErrorMessage(e))
         }
     }
     

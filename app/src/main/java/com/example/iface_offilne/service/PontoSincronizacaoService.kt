@@ -8,6 +8,7 @@ import com.example.iface_offilne.data.PontoSincronizacaoEntity
 import com.example.iface_offilne.data.dao.PontosGenericosDao
 import com.example.iface_offilne.data.api.RetrofitClient
 import com.example.iface_offilne.util.ConfiguracoesManager
+import com.example.iface_offilne.util.ErrorMessageHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -472,6 +473,9 @@ class PontoSincronizacaoService {
                     Log.d(TAG, "📋 JSON que seria enviado:")
                     Log.d(TAG, jsonString)
                     
+                    // ✅ NOVO: Usar mensagem padronizada
+                    Log.e(TAG, "  💬 Mensagem padronizada: ${ErrorMessageHelper.getErrorMessage(networkException)}")
+                    
                     false
                 }
                 
@@ -481,6 +485,10 @@ class PontoSincronizacaoService {
                 Log.e(TAG, "  💬 Mensagem: ${e.message}")
                 Log.e(TAG, "  📍 Stack Trace:")
                 e.printStackTrace()
+                
+                // ✅ NOVO: Usar mensagem padronizada
+                Log.e(TAG, "  💬 Mensagem padronizada: ${ErrorMessageHelper.getErrorMessage(e)}")
+                
                 false
             }
         }

@@ -17,7 +17,8 @@ import kotlin.math.min
 enum class PerformanceLevel {
     LOW,      // Dispositivos antigos/fracos
     MEDIUM,   // Dispositivos intermediários
-    HIGH      // Dispositivos modernos/potentes
+    HIGH,     // Dispositivos modernos/potentes
+    EXCELLENT // Dispositivos de alta qualidade
 }
 
 class DeviceCapabilityHelper(private val context: Context) {
@@ -67,8 +68,9 @@ class DeviceCapabilityHelper(private val context: Context) {
             // ✅ 5. CLASSIFICAR NÍVEL DE PERFORMANCE
             performanceLevel = when {
                 deviceScore < 30f -> PerformanceLevel.LOW
-                deviceScore < 70f -> PerformanceLevel.MEDIUM
-                else -> PerformanceLevel.HIGH
+                deviceScore < 60f -> PerformanceLevel.MEDIUM
+                deviceScore < 85f -> PerformanceLevel.HIGH
+                else -> PerformanceLevel.EXCELLENT
             }
             
             Log.d(TAG, "🎯 Nível de performance: ${performanceLevel}")
@@ -151,86 +153,114 @@ class DeviceCapabilityHelper(private val context: Context) {
         
         return when (level) {
             PerformanceLevel.LOW -> {
-                Log.d(TAG, "🎛️ Configurando para dispositivo de BAIXO desempenho - ULTRA PERMISSIVO")
+                Log.d(TAG, "🎛️ Configurando para dispositivo de BAIXO desempenho - RIGOROSO")
                 AdaptiveConfig(
-                    // ✅ THRESHOLDS EXTREMAMENTE PERMISSIVOS para garantir reconhecimento
-                    minSimilarityThreshold = 0.85f,      // Reduzido para 10% - EXTREMAMENTE PERMISSIVO
-                    maxEuclideanDistance = 2.0f,          // Aumentado para 2.0f - MUITO PERMISSIVO
-                    requiredConfidence = 0.15f,            // Reduzido para 15% - EXTREMAMENTE BAIXO
+                    // ✅ THRESHOLDS RIGOROSOS para evitar falsos positivos
+                    minSimilarityThreshold = 0.70f,      // Aumentado para 70% - RIGOROSO
+                    maxEuclideanDistance = 0.6f,          // Reduzido para 0.6f - RIGOROSO
+                    requiredConfidence = 0.75f,            // Aumentado para 75% - RIGOROSO
                     
-                    // ✅ QUALIDADE DE IMAGEM REDUZIDA
-                    imageQuality = ImageQuality.LOW,
+                    // ✅ QUALIDADE DE IMAGEM ADEQUADA
+                    imageQuality = ImageQuality.MEDIUM,
                     maxImageSize = 160,                   
-                    compressionQuality = 60,              
+                    compressionQuality = 80,              
                     
                     // ✅ PROCESSAMENTO OTIMIZADO
                     useTensorFlowOptimizations = true,
                     enableFallbackMode = true,
                     maxProcessingTime = 5000L,            // 5 segundos - mais tempo
                     
-                    // ✅ VALIDAÇÕES EXTREMAMENTE PERMISSIVAS
-                    minFaceSizeRatio = 0.01f,              // Reduzido para 0.01f - MUITO PEQUENO
-                    maxFaceSizeRatio = 0.99f,              // Aumentado para 0.99f - QUASE TODA TELA
-                    minEyeDistance = 5f,                 // Reduzido para 5f - MUITO PRÓXIMO
-                    minBrightness = 0.01f,                // Reduzido para 0.01f - QUASE ESCURO
-                    maxBrightness = 0.99f,                // Aumentado para 0.99f - QUASE BRANCO
-                    minContrast = 0.01f                   // Reduzido para 0.01f - SEM CONTRASTE
+                    // ✅ VALIDAÇÕES RIGOROSAS
+                    minFaceSizeRatio = 0.10f,              // Aumentado para 0.10f - RIGOROSO
+                    maxFaceSizeRatio = 0.80f,              // Reduzido para 0.80f - RIGOROSO
+                    minEyeDistance = 20f,                 // Aumentado para 20f - RIGOROSO
+                    minBrightness = 0.20f,                // Aumentado para 0.20f - RIGOROSO
+                    maxBrightness = 0.80f,                // Reduzido para 0.80f - RIGOROSO
+                    minContrast = 0.15f                   // Aumentado para 0.15f - RIGOROSO
                 )
             }
             
             PerformanceLevel.MEDIUM -> {
-                Log.d(TAG, "🎛️ Configurando para dispositivo de MÉDIO desempenho - ULTRA PERMISSIVO")
+                Log.d(TAG, "🎛️ Configurando para dispositivo de MÉDIO desempenho - RIGOROSO")
                 AdaptiveConfig(
-                    // ✅ THRESHOLDS EXTREMAMENTE PERMISSIVOS para garantir reconhecimento
-                    minSimilarityThreshold = 0.85f,      // Reduzido para 15% - EXTREMAMENTE PERMISSIVO
-                    maxEuclideanDistance = 2.0f,          // Aumentado para 2.0f - MUITO PERMISSIVO
-                    requiredConfidence = 0.2f,            // Reduzido para 20% - EXTREMAMENTE BAIXO
+                    // ✅ THRESHOLDS RIGOROSOS
+                    minSimilarityThreshold = 0.75f,      // Aumentado para 75%
+                    maxEuclideanDistance = 0.5f,          // Reduzido para 0.5f
+                    requiredConfidence = 0.80f,            // Aumentado para 80%
                     
-                    // ✅ QUALIDADE DE IMAGEM MÉDIA
-                    imageQuality = ImageQuality.MEDIUM,
-                    maxImageSize = 240,                   
-                    compressionQuality = 70,              
+                    // ✅ QUALIDADE DE IMAGEM BOA
+                    imageQuality = ImageQuality.HIGH,
+                    maxImageSize = 200,                   
+                    compressionQuality = 85,              
                     
                     // ✅ PROCESSAMENTO OTIMIZADO
                     useTensorFlowOptimizations = true,
-                    enableFallbackMode = true,
-                    maxProcessingTime = 4000L,            // 4 segundos
+                    enableFallbackMode = false,
+                    maxProcessingTime = 3000L,            
                     
-                    // ✅ VALIDAÇÕES EXTREMAMENTE PERMISSIVAS
-                    minFaceSizeRatio = 0.02f,              // Reduzido para 0.02f
-                    maxFaceSizeRatio = 0.98f,              // Aumentado para 0.98f
-                    minEyeDistance = 6f,                 // Reduzido para 6f
-                    minBrightness = 0.02f,                // Reduzido para 0.02f
-                    maxBrightness = 0.98f,                // Aumentado para 0.98f
-                    minContrast = 0.02f                   // Reduzido para 0.02f
+                    // ✅ VALIDAÇÕES RIGOROSAS
+                    minFaceSizeRatio = 0.12f,              
+                    maxFaceSizeRatio = 0.75f,              
+                    minEyeDistance = 25f,                 
+                    minBrightness = 0.25f,                
+                    maxBrightness = 0.75f,                
+                    minContrast = 0.20f                   
                 )
             }
             
             PerformanceLevel.HIGH -> {
-                Log.d(TAG, "🎛️ Configurando para dispositivo de ALTO desempenho - ULTRA PERMISSIVO")
+                Log.d(TAG, "🎛️ Configurando para dispositivo de ALTO desempenho - RIGOROSO")
                 AdaptiveConfig(
-                    // ✅ THRESHOLDS EXTREMAMENTE PERMISSIVOS para garantir reconhecimento
-                    minSimilarityThreshold = 0.85f,        // Reduzido para 20% - EXTREMAMENTE PERMISSIVO
-                    maxEuclideanDistance = 2.0f,          // Aumentado para 2.0f - MUITO PERMISSIVO
-                    requiredConfidence = 0.25f,            // Reduzido para 25% - EXTREMAMENTE BAIXO
+                    // ✅ THRESHOLDS MUITO RIGOROSOS
+                    minSimilarityThreshold = 0.80f,      // Aumentado para 80%
+                    maxEuclideanDistance = 0.4f,          // Reduzido para 0.4f
+                    requiredConfidence = 0.85f,            // Aumentado para 85%
                     
-                    // ✅ QUALIDADE DE IMAGEM ALTA
-                    imageQuality = ImageQuality.HIGH,
-                    maxImageSize = 300,                   
-                    compressionQuality = 80,              
+                    // ✅ QUALIDADE DE IMAGEM EXCELENTE
+                    imageQuality = ImageQuality.EXCELLENT,
+                    maxImageSize = 240,                   
+                    compressionQuality = 90,              
                     
-                    // ✅ PROCESSAMENTO OTIMIZADO
+                    // ✅ PROCESSAMENTO RÁPIDO
                     useTensorFlowOptimizations = true,
-                    enableFallbackMode = true,           // Habilitado mesmo para dispositivos potentes
-                    maxProcessingTime = 3000L,            // 3 segundos
+                    enableFallbackMode = false,
+                    maxProcessingTime = 2000L,            
                     
-                    // ✅ VALIDAÇÕES EXTREMAMENTE PERMISSIVAS
-                    minFaceSizeRatio = 0.03f,             // Reduzido para 0.03f
-                    maxFaceSizeRatio = 0.97f,             // Aumentado para 0.97f
-                    minEyeDistance = 8f,                 // Reduzido para 8f
-                    minBrightness = 0.03f,                // Reduzido para 0.03f
-                    maxBrightness = 0.97f,                // Aumentado para 0.97f
-                    minContrast = 0.03f                   // Reduzido para 0.03f
+                    // ✅ VALIDAÇÕES MUITO RIGOROSAS
+                    minFaceSizeRatio = 0.15f,              
+                    maxFaceSizeRatio = 0.70f,              
+                    minEyeDistance = 30f,                 
+                    minBrightness = 0.30f,                
+                    maxBrightness = 0.70f,                
+                    minContrast = 0.25f                   
+                )
+            }
+            
+            PerformanceLevel.EXCELLENT -> {
+                Log.d(TAG, "🎛️ Configurando para dispositivo de EXCELENTE desempenho - RIGOROSO")
+                AdaptiveConfig(
+                    // ✅ THRESHOLDS EXTREMAMENTE RIGOROSOS
+                    minSimilarityThreshold = 0.85f,      // Aumentado para 85%
+                    maxEuclideanDistance = 0.3f,          // Reduzido para 0.3f
+                    requiredConfidence = 0.90f,            // Aumentado para 90%
+                    
+                    // ✅ QUALIDADE DE IMAGEM MÁXIMA
+                    imageQuality = ImageQuality.EXCELLENT,
+                    maxImageSize = 300,                   
+                    compressionQuality = 95,              
+                    
+                    // ✅ PROCESSAMENTO ULTRA RÁPIDO
+                    useTensorFlowOptimizations = true,
+                    enableFallbackMode = false,
+                    maxProcessingTime = 1500L,            
+                    
+                    // ✅ VALIDAÇÕES EXTREMAMENTE RIGOROSAS
+                    minFaceSizeRatio = 0.18f,              
+                    maxFaceSizeRatio = 0.65f,              
+                    minEyeDistance = 35f,                 
+                    minBrightness = 0.35f,                
+                    maxBrightness = 0.65f,                
+                    minContrast = 0.30f                   
                 )
             }
         }
@@ -316,6 +346,7 @@ class DeviceCapabilityHelper(private val context: Context) {
     enum class ImageQuality {
         LOW,    // Para dispositivos fracos
         MEDIUM, // Para dispositivos intermediários
-        HIGH    // Para dispositivos potentes
+        HIGH,   // Para dispositivos potentes
+        EXCELLENT // Para dispositivos de alta qualidade
     }
 } 

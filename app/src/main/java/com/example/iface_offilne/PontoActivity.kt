@@ -962,13 +962,13 @@ class PontoActivity : AppCompatActivity() {
             }
             
             // PROCESSOS DE SIMILIRADE MINIA
-            val thresholdMinimo = 0.87f // 80% de similaridade mínima - MUITO RIGOROSO
+            val thresholdMinimo = 0.90f // 80% de similaridade mínima - MUITO RIGOROSO
             val thresholdIdeal = 0.95f // 90% para confiança alta - EXTREMAMENTE RIGOROSO
             
             if (funcionarioReconhecido != null && melhorSimilaridade >= thresholdMinimo) {
                 return RecognitionResult.Success(funcionarioReconhecido, melhorSimilaridade)
             } else {
-                if (melhorSimilaridade > 0.4f) {
+                if (melhorSimilaridade > 0.5f) {
                     return RecognitionResult.Failure("")
                 } else {
                     return RecognitionResult.Failure("")

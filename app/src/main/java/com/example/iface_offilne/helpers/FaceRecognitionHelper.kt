@@ -46,34 +46,34 @@ class FaceRecognitionHelper(private val context: Context) {
     companion object {
         private const val TAG = "FaceRecognitionHelper"
         
-        // ✅ THRESHOLDS ULTRA PERMISSIVOS: Para reconhecimento imediato
-        private const val BASE_THRESHOLD = 0.2f // Reduzido para 20% - ultra permissivo
-        private const val GOOD_MATCH_THRESHOLD = 0.3f // Reduzido para 30%
-        private const val EXCELLENT_MATCH_THRESHOLD = 0.4f // Reduzido para 40%
-        private const val PERFECT_MATCH_THRESHOLD = 0.5f // Reduzido para 50%
+        // ✅ THRESHOLDS RIGOROSOS PARA RECONHECIMENTO PRECISO
+        private const val BASE_THRESHOLD = 0.75f // Aumentado para 75% - RIGOROSO
+        private const val GOOD_MATCH_THRESHOLD = 0.80f // Aumentado para 80%
+        private const val EXCELLENT_MATCH_THRESHOLD = 0.85f // Aumentado para 85%
+        private const val PERFECT_MATCH_THRESHOLD = 0.90f // Aumentado para 90%
         
-        // ✅ THRESHOLDS DE TESTE ULTRA PERMISSIVOS
-        private const val TEST_BASE_THRESHOLD = 0.1f // Reduzido para 10%
-        private const val TEST_GOOD_MATCH_THRESHOLD = 0.2f // Reduzido para 20%
-        private const val TEST_MIN_SIMILARITY = 0.1f // Reduzido para 10%
-        private const val TEST_MAX_EUCLIDEAN_DISTANCE = 1.0f // Aumentado para 1.0
+        // ✅ THRESHOLDS DE TESTE MAIS RIGOROSOS
+        private const val TEST_BASE_THRESHOLD = 0.70f // Aumentado para 70%
+        private const val TEST_GOOD_MATCH_THRESHOLD = 0.75f // Aumentado para 75%
+        private const val TEST_MIN_SIMILARITY = 0.65f // Aumentado para 65%
+        private const val TEST_MAX_EUCLIDEAN_DISTANCE = 0.5f // Reduzido para 0.5f
         
-        // ✅ VALIDAÇÕES ULTRA PERMISSIVAS
-        private const val MIN_DIFFERENCE_BETWEEN_PEOPLE = 0.01f // Reduzido para 0.01f
-        private const val MAX_EUCLIDEAN_DISTANCE = 1.0f // Aumentado para 1.0f
-        private const val CONFIDENCE_RATIO_THRESHOLD = 1.0f // Reduzido para 1.0f
+        // ✅ VALIDAÇÕES RIGOROSAS
+        private const val MIN_DIFFERENCE_BETWEEN_PEOPLE = 0.15f // Aumentado para 0.15f
+        private const val MAX_EUCLIDEAN_DISTANCE = 0.5f // Reduzido para 0.5f
+        private const val CONFIDENCE_RATIO_THRESHOLD = 0.8f // Aumentado para 0.8f
         
-        // ✅ THRESHOLDS DE QUALIDADE ULTRA PERMISSIVOS
-        private const val HIGH_QUALITY_THRESHOLD = 0.2f // Reduzido para 20%
-        private const val LOW_QUALITY_THRESHOLD = 0.1f // Reduzido para 10%
-        private const val MIN_SIMILARITY_FOR_ANY_APPROVAL = 0.1f // Reduzido para 10%
+        // ✅ THRESHOLDS DE QUALIDADE RIGOROSOS
+        private const val HIGH_QUALITY_THRESHOLD = 0.80f // Aumentado para 80%
+        private const val LOW_QUALITY_THRESHOLD = 0.70f // Aumentado para 70%
+        private const val MIN_SIMILARITY_FOR_ANY_APPROVAL = 0.65f // Aumentado para 65%
         
-        // ✅ CONFIGURAÇÕES ULTRA PERMISSIVAS
-        private const val MAX_CANDIDATES_ALLOWED = 5 // Aumentado para 5 candidatos
-        private const val REQUIRED_CONFIDENCE_MULTIPLIER = 1.0f // Reduzido para 1.0f
+        // ✅ CONFIGURAÇÕES RIGOROSAS
+        private const val MAX_CANDIDATES_ALLOWED = 2 // Reduzido para 2 candidatos
+        private const val REQUIRED_CONFIDENCE_MULTIPLIER = 0.8f // Aumentado para 0.8f
         
         // FLAG DE MODO TESTE
-        private var MODO_TESTE_ATIVO = true // ✅ SEMPRE ATIVO - MODO ULTRA PERMISSIVO
+        private var MODO_TESTE_ATIVO = false // ✅ DESATIVADO - MODO RIGOROSO
         
         private const val DEBUG_MODE = true // Debug para análise
     }
@@ -700,14 +700,14 @@ class FaceRecognitionHelper(private val context: Context) {
                 
                 val relatorio = buildString {
                     appendLine("🛡️ CRITÉRIOS ULTRA RIGOROSOS ATIVOS:")
-                    appendLine("   - Threshold Cosseno: $BASE_THRESHOLD (40%)")
-                    appendLine("   - Alta Confiança: $GOOD_MATCH_THRESHOLD (50%)")
-                    appendLine("   - Match Perfeito: $EXCELLENT_MATCH_THRESHOLD (60%)")
+                    appendLine("   - Threshold Cosseno: $BASE_THRESHOLD (75%)")
+                    appendLine("   - Alta Confiança: $GOOD_MATCH_THRESHOLD (80%)")
+                    appendLine("   - Match Perfeito: $EXCELLENT_MATCH_THRESHOLD (85%)")
                     appendLine("   - Distância Máx: $MAX_EUCLIDEAN_DISTANCE")
                     appendLine("   - Diferença Mín: $MIN_DIFFERENCE_BETWEEN_PEOPLE")
                     appendLine("   - Ratio Mín: $CONFIDENCE_RATIO_THRESHOLD")
-                    appendLine("   - Alta Qualidade: $HIGH_QUALITY_THRESHOLD (50%)")
-                    appendLine("   - Baixa Qualidade: $LOW_QUALITY_THRESHOLD (30%)")
+                    appendLine("   - Alta Qualidade: $HIGH_QUALITY_THRESHOLD (80%)")
+                    appendLine("   - Baixa Qualidade: $LOW_QUALITY_THRESHOLD (70%)")
                     appendLine("   - Mínimo Absoluto: $MIN_SIMILARITY_FOR_ANY_APPROVAL")
                     appendLine("   - Máximo de Candidatos: $MAX_CANDIDATES_ALLOWED")
                     appendLine("   - Multiplicador de Confiança: $REQUIRED_CONFIDENCE_MULTIPLIER")
@@ -722,7 +722,7 @@ class FaceRecognitionHelper(private val context: Context) {
                     appendLine("")
                     appendLine("📝 COMO TESTAR:")
                     appendLine("1. Teste com pessoas NÃO cadastradas - devem ser rejeitadas")
-                    appendLine("2. Teste com pessoas cadastradas - devem passar se similaridade > 40%")
+                    appendLine("2. Teste com pessoas cadastradas - devem passar se similaridade > 75%")
                     appendLine("3. Verifique os logs para ver os valores exatos")
                 }
                 

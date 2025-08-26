@@ -19,6 +19,7 @@ import com.example.iface_offilne.helpers.PermissaoHelper
 import com.example.iface_offilne.models.FuncionariosLocalModel
 import com.example.iface_offilne.models.FuncionariosModel
 import com.example.iface_offilne.util.ConfiguracoesManager
+import com.example.iface_offilne.util.ErrorMessageHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -304,11 +305,9 @@ class FuncionariosActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     binding.listaFuncionarios.visibility = android.view.View.VISIBLE
                     
-                    // ✅ FEEDBACK: Mostrar erro para o usuário
+                    // ✅ FEEDBACK: Mostrar erro padronizado para o usuário
                     if (currentPage == 1) { // Só mostrar erro na primeira página
-                        Toast.makeText(this@FuncionariosActivity, 
-                            "❌ Erro ao carregar funcionários: ${e.message}", 
-                            Toast.LENGTH_LONG).show()
+                        ErrorMessageHelper.showErrorMessage(this@FuncionariosActivity, e)
                     }
                 }
             } finally {
@@ -381,7 +380,7 @@ class FuncionariosActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e("PESQUISA_ERROR", "Erro ao buscar funcionários no backend: ${e.message}")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@FuncionariosActivity, "Erro na busca: ${e.message}", Toast.LENGTH_SHORT).show()
+                    ErrorMessageHelper.showErrorMessage(this@FuncionariosActivity, e)
                     binding.listaFuncionarios.visibility = android.view.View.VISIBLE
                 }
             } finally {
@@ -420,7 +419,7 @@ class FuncionariosActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e("PESQUISA_LOCAL_ERROR", "Erro na busca local: ${e.message}")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@FuncionariosActivity, "Erro na busca local: ${e.message}", Toast.LENGTH_SHORT).show()
+                    ErrorMessageHelper.showErrorMessage(this@FuncionariosActivity, e)
                 }
             }
         }
@@ -534,9 +533,7 @@ class FuncionariosActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e("UPDATE_ERROR", "Erro ao atualizar funcionários: ${e.message}")
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@FuncionariosActivity, 
-                        "❌ Erro ao atualizar funcionários: ${e.message}", 
-                        Toast.LENGTH_LONG).show()
+                    ErrorMessageHelper.showErrorMessage(this@FuncionariosActivity, e)
                 }
             }
         }

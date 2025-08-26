@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import com.example.iface_offilne.util.ErrorMessageHelper
 import com.example.iface_offilne.EntidadeActivity
 import com.example.iface_offilne.databinding.FragmentConfiguracoesTabBinding
 import com.example.iface_offilne.util.ConfiguracoesManager
@@ -68,7 +69,7 @@ class ConfiguracoesTabFragment : Fragment() {
                 (requireActivity() as? com.example.iface_offilne.ConfiguracoesActivity)?.testarAlarmeSincronizacao()
             } catch (e: Exception) {
                 android.util.Log.e("ConfigTab", "❌ Erro ao testar alarme: ${e.message}")
-                Toast.makeText(context, "❌ Erro ao testar alarme", Toast.LENGTH_SHORT).show()
+                ErrorMessageHelper.showErrorMessage(requireContext(), e)
             }
             true
         }
@@ -142,7 +143,7 @@ class ConfiguracoesTabFragment : Fragment() {
             Toast.makeText(context, "🔧 Abrindo configuração de entidade...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Log.e("ConfigTab", "❌ Erro ao abrir configuração de entidade: ${e.message}")
-            Toast.makeText(context, "❌ Erro ao abrir configuração: ${e.message}", Toast.LENGTH_SHORT).show()
+            ErrorMessageHelper.showErrorMessage(requireContext(), e)
         }
     }
 
@@ -159,7 +160,7 @@ class ConfiguracoesTabFragment : Fragment() {
             Toast.makeText(context, "🔄 Abrindo alteração de entidade...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Log.e("ConfigTab", "❌ Erro ao abrir alteração de entidade: ${e.message}")
-            Toast.makeText(context, "❌ Erro ao abrir alteração: ${e.message}", Toast.LENGTH_SHORT).show()
+            ErrorMessageHelper.showErrorMessage(requireContext(), e)
         }
     }
     
@@ -177,7 +178,7 @@ class ConfiguracoesTabFragment : Fragment() {
             
         } catch (e: Exception) {
             android.util.Log.e("ConfigTab", "❌ Erro ao testar alarme de 1 minuto: ${e.message}")
-            Toast.makeText(context, "❌ Erro ao testar alarme: ${e.message}", Toast.LENGTH_SHORT).show()
+            ErrorMessageHelper.showErrorMessage(requireContext(), e)
         }
     }
 
@@ -284,7 +285,7 @@ class ConfiguracoesTabFragment : Fragment() {
                 binding.btnDiagnostico.isEnabled = true
                 binding.btnDiagnostico.text = "🔍 Executar Diagnóstico"
                 
-                Toast.makeText(context, "❌ Erro no diagnóstico: ${e.message}", Toast.LENGTH_LONG).show()
+                ErrorMessageHelper.showErrorMessage(requireContext(), e)
             }
         }
     }
@@ -341,7 +342,7 @@ class ConfiguracoesTabFragment : Fragment() {
                         binding.btnLimparDados.isEnabled = true
                         binding.btnLimparDados.text = "🧹 Limpar Dados"
                         
-                        Toast.makeText(context, "❌ Erro na limpeza: ${e.message}", Toast.LENGTH_LONG).show()
+                        ErrorMessageHelper.showErrorMessage(requireContext(), e)
                     }
                 }
             }

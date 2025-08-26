@@ -6,11 +6,11 @@ import com.example.iface_offilne.data.FuncionariosEntity
 class FaceMatchTracker {
     companion object {
         private const val TAG = "FaceMatchTracker"
-        // ✅ CONFIGURAÇÕES MAIS RIGOROSAS PARA EVITAR CONFUSÕES
-        private const val REQUIRED_MATCHES = 3 // Era 2 - mais rigoroso para evitar confusões
-        private const val MATCH_TIMEOUT_MS = 4000L // Era 3000L - mais tempo para captura
-        private const val HIGH_CONFIDENCE_THRESHOLD = 0.75f // Era 0.65f - mais rigoroso
-        private const val MIN_SIMILARITY_FOR_CONFIRMATION = 0.60f // Novo: similaridade mínima para confirmação
+        // ✅ CONFIGURAÇÕES RIGOROSAS PARA EVITAR CONFUSÕES
+        private const val REQUIRED_MATCHES = 3 // Mantido em 3 - rigoroso para evitar confusões
+        private const val MATCH_TIMEOUT_MS = 4000L // Mantido em 4000L - mais tempo para captura
+        private const val HIGH_CONFIDENCE_THRESHOLD = 0.85f // Aumentado para 85% - mais rigoroso
+        private const val MIN_SIMILARITY_FOR_CONFIRMATION = 0.75f // Aumentado para 75% - mais rigoroso
         private const val DEBUG_MODE = true // Ativado para debug do problema
     }
 

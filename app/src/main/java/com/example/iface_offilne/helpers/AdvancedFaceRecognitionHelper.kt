@@ -44,10 +44,10 @@ class AdvancedFaceRecognitionHelper(private val context: Context) {
         private val MAX_BRIGHTNESS = if (RIGOROUS_RECOGNITION_MODE) 0.8f else 0.95f // Brilho máximo (mais rigoroso)
         private val MIN_CONTRAST = if (RIGOROUS_RECOGNITION_MODE) 0.2f else 0.1f // Contraste mínimo (mais rigoroso)
         
-        // ✅ THRESHOLDS DE RECONHECIMENTO FACIAL (ULTRA PERMISSIVOS)
-        private const val MIN_SIMILARITY_THRESHOLD = 0.3f // Reduzido para 30%
-        private const val MAX_EUCLIDEAN_DISTANCE = 1.0f // Aumentado para 1.0f
-        private const val REQUIRED_CONFIDENCE = 0.4f // Reduzido para 40%
+        // ✅ THRESHOLDS DE RECONHECIMENTO FACIAL RIGOROSOS
+        private const val MIN_SIMILARITY_THRESHOLD = 0.75f // Aumentado para 75%
+        private const val MAX_EUCLIDEAN_DISTANCE = 0.5f // Reduzido para 0.5f
+        private const val REQUIRED_CONFIDENCE = 0.80f // Aumentado para 80%
     }
     
     private val faceDetector = FaceDetection.getClient(

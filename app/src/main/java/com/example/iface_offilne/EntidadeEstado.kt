@@ -20,6 +20,7 @@ import com.example.iface_offilne.databinding.ActivityEntidadeEstadoBinding
 import com.example.iface_offilne.util.SessionManager
 import kotlinx.coroutines.launch
 import android.widget.Toast
+import com.example.iface_offilne.util.ErrorMessageHelper
 
 class EntidadeEstado : AppCompatActivity() {
 
@@ -71,6 +72,7 @@ class EntidadeEstado : AppCompatActivity() {
 
             } catch (e: Exception) {
                 Log.e("API_ERROR", "Erro: ${e.message}")
+                ErrorMessageHelper.showErrorMessage(this@EntidadeEstado, e)
             }
         }
 
@@ -111,7 +113,7 @@ class EntidadeEstado : AppCompatActivity() {
                 
             } catch (e: Exception) {
                 Log.e("EntidadeEstado", "❌ Erro ao salvar entidade: ${e.message}")
-                Toast.makeText(this, "❌ Erro ao salvar entidade: ${e.message}", Toast.LENGTH_LONG).show()
+                ErrorMessageHelper.showErrorMessage(this, e)
             }
         }
     }

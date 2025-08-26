@@ -35,6 +35,7 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
                     DeviceCapabilityHelper.ImageQuality.LOW -> FaceDetectorOptions.PERFORMANCE_MODE_FAST
                     DeviceCapabilityHelper.ImageQuality.MEDIUM -> FaceDetectorOptions.PERFORMANCE_MODE_FAST
                     DeviceCapabilityHelper.ImageQuality.HIGH -> FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE
+                    DeviceCapabilityHelper.ImageQuality.EXCELLENT -> FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE
                 }
             )
             .setLandmarkMode(
@@ -42,6 +43,7 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
                     DeviceCapabilityHelper.ImageQuality.LOW -> FaceDetectorOptions.LANDMARK_MODE_NONE
                     DeviceCapabilityHelper.ImageQuality.MEDIUM -> FaceDetectorOptions.LANDMARK_MODE_ALL
                     DeviceCapabilityHelper.ImageQuality.HIGH -> FaceDetectorOptions.LANDMARK_MODE_ALL
+                    DeviceCapabilityHelper.ImageQuality.EXCELLENT -> FaceDetectorOptions.LANDMARK_MODE_ALL
                 }
             )
             .setClassificationMode(
@@ -49,6 +51,7 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
                     DeviceCapabilityHelper.ImageQuality.LOW -> FaceDetectorOptions.CLASSIFICATION_MODE_NONE
                     DeviceCapabilityHelper.ImageQuality.MEDIUM -> FaceDetectorOptions.CLASSIFICATION_MODE_ALL
                     DeviceCapabilityHelper.ImageQuality.HIGH -> FaceDetectorOptions.CLASSIFICATION_MODE_ALL
+                    DeviceCapabilityHelper.ImageQuality.EXCELLENT -> FaceDetectorOptions.CLASSIFICATION_MODE_ALL
                 }
             )
             .setMinFaceSize(
@@ -56,6 +59,7 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
                     DeviceCapabilityHelper.ImageQuality.LOW -> 0.05f
                     DeviceCapabilityHelper.ImageQuality.MEDIUM -> 0.1f
                     DeviceCapabilityHelper.ImageQuality.HIGH -> 0.15f
+                    DeviceCapabilityHelper.ImageQuality.EXCELLENT -> 0.2f
                 }
             )
             .build()
@@ -399,7 +403,7 @@ class AdaptiveFaceRecognitionHelper(private val context: Context) {
                         PerformanceLevel.LOW -> 1
                         PerformanceLevel.MEDIUM -> 2
                         PerformanceLevel.HIGH -> 4
-                        else -> 2 // Fallback para casos inesperados
+                        PerformanceLevel.EXCELLENT -> 6
                     }
                 )
                 setUseNNAPI(adaptiveConfig.useTensorFlowOptimizations)
