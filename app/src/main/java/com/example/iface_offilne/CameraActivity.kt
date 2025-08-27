@@ -481,9 +481,9 @@ class CameraActivity : AppCompatActivity() {
                         val screenArea = mediaImage.width * mediaImage.height
                         val faceRatio = faceArea.toFloat() / screenArea.toFloat()
                         
-                        val isFaceBigEnough = faceRatio >= 0.005f // Face deve ocupar 0.5% da tela (MUITO PERMISSIVO)
+                        val isFaceBigEnough = faceRatio >= 0.008f // Face deve ocupar 0.8% da tela (EQUILIBRADO)
                         val isFaceInOval = overlay.isFaceInOval(face.boundingBox)
-                        val isFaceNotTooBig = faceRatio <= 0.50f // Face não deve ocupar mais de 50% da tela (EXTREMAMENTE FLEXÍVEL)
+                        val isFaceNotTooBig = faceRatio <= 0.35f // Face não deve ocupar mais de 35% da tela (EQUILIBRADO)
                         
                         Log.d(TAG, "📏 Face ratio: $faceRatio, Estável: $isFaceStable, Frames estáveis: $faceStableCount")
                         Log.d(TAG, "🔍 DEBUG: BigEnough=$isFaceBigEnough, InOval=$isFaceInOval, Stable=$isFaceStable")
@@ -523,7 +523,7 @@ class CameraActivity : AppCompatActivity() {
                                 }
                             } else {
                                 when {
-                                    !isFaceBigEnough -> "📷 Aproxime mais o rosto (0.5% da tela)"
+                                    !isFaceBigEnough -> "📷 Aproxime mais o rosto (0.8% da tela)"
                                     isFaceNotTooBig -> "📷 Afaste um pouco o rosto"
                                     !isFaceInOval -> "📷 Centre o rosto no oval"
                                     !isFaceStable -> "📷 Fique parado (${faceStableCount}/${minStableFrames})"
