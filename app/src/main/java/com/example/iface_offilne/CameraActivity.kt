@@ -19,7 +19,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.iface_offilne.data.AppDatabase
 import com.example.iface_offilne.data.FaceEntity
-import com.example.iface_offilne.helpers.AdvancedFaceRecognitionHelper
+import com.example.iface_offilne.helpers.PreciseFaceRecognitionHelper
 import com.example.iface_offilne.helpers.Helpers
 import com.example.iface_offilne.helpers.bitmapToFloatArray
 import com.example.iface_offilne.helpers.cropFace
@@ -55,12 +55,12 @@ class CameraActivity : AppCompatActivity() {
     private var interpreter: Interpreter? = null
     private var modelLoaded = false
 
-    private var modelInputWidth = 160
-    private var modelInputHeight = 160
-    private var modelOutputSize = 192
+    private var modelInputWidth = 112 // ✅ MOBILE_FACE_NET: Dimensões padrão
+    private var modelInputHeight = 112 // ✅ MOBILE_FACE_NET: Dimensões padrão
+    private var modelOutputSize = 192 // ✅ MOBILE_FACE_NET: Embedding size
     
-    // 🚀 NOVO: Helper avançado para reconhecimento facial
-    private lateinit var advancedFaceHelper: AdvancedFaceRecognitionHelper
+    // 🚀 NOVO: Helper preciso para reconhecimento facial
+    private lateinit var preciseFaceHelper: PreciseFaceRecognitionHelper
 
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 10
@@ -108,14 +108,23 @@ class CameraActivity : AppCompatActivity() {
     private var faceDetectionCount = 0
     private var currentFaceBitmap: Bitmap? = null
     
+    // 🚀 NOVO: Sistema de múltiplas capturas
+    private val capturedFaces = mutableListOf<Bitmap>()
+    private var captureCount = 0
+    private val requiredCaptures = com.example.iface_offilne.util.FaceRecognitionConfig.REQUIRED_FACE_CAPTURES
+    private var isCapturing = false
+    
     // ✅ SISTEMA DE ESTABILIZAÇÃO: Aguardar usuário se posicionar adequadamente
     private var faceStableCount = 0 // Contador de frames estáveis
     private var lastFacePosition: Rect? = null // Última posição da face
     private var faceStableStartTime = 0L // Tempo de início da estabilização
-    private var minStableFrames = 40 // Mínimo de frames estáveis (1.5 segundos a 10fps)
-    private var maxStableTime = 8000L // Máximo 5 segundos para estabilizar
-    private var positionTolerance = 90 // Tolerância em pixels para considerar estável
+    private var minStableFrames = com.example.iface_offilne.util.FaceRecognitionConfig.MIN_STABLE_FRAMES
+    private var maxStableTime = com.example.iface_offilne.util.FaceRecognitionConfig.MAX_STABLE_TIME_MS
+    private var positionTolerance = com.example.iface_offilne.util.FaceRecognitionConfig.POSITION_TOLERANCE
     private var isProcessingFace = false // Evitar múltiplos processamentos
+    
+    // 🚀 MODO DE TESTE: Para facilitar debug
+    private val TEST_MODE = true // Ativar modo de teste mais permissivo
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -123,8 +132,8 @@ class CameraActivity : AppCompatActivity() {
         setupUI()
         Log.d(TAG, "🚀 === INICIANDO APLICAÇÃO ===")
 
-        // 🚀 NOVO: Inicializar helper avançado
-        advancedFaceHelper = AdvancedFaceRecognitionHelper(this)
+        // 🚀 NOVO: Inicializar helper preciso
+        preciseFaceHelper = PreciseFaceRecognitionHelper(this)
         
         // 🔍 TESTE: Verificar banco de dados
         testDatabaseConnection()
@@ -149,12 +158,12 @@ class CameraActivity : AppCompatActivity() {
             
             // ✅ INSTRUÇÕES DETALHADAS PARA POSICIONAMENTO
             Handler(Looper.getMainLooper()).postDelayed({
-                showToast("📷 Posicione seu rosto no oval\nFique parado por 2 segundos")
+                showToast("📷 Posicione seu rosto no oval\nSistema capturará 3 imagens")
             }, 2000)
             
             // ✅ INSTRUÇÕES ADICIONAIS
             Handler(Looper.getMainLooper()).postDelayed({
-                showToast("📷 Sistema aguardando estabilização...\nMantenha o rosto no centro")
+                showToast("📷 Aguardando estabilização...\nMantenha o rosto no centro por 5 segundos")
             }, 5000)
         } else {
             Log.d(TAG, "❌ Permissões pendentes - solicitando...")
@@ -184,22 +193,30 @@ class CameraActivity : AppCompatActivity() {
             Log.d(TAG, "📂 === CARREGANDO MODELO TENSORFLOW LITE ===")
             listAssetsFiles()
 
-            // ✅ VERIFICAR SE O ARQUIVO EXISTE
-            if (!checkModelExists()) {
-                Log.w(TAG, "⚠️ Arquivo model.tflite não encontrado")
-                showToast("⚠️ Modelo não encontrado - usando modo de detecção apenas")
+            // ✅ VERIFICAR SE O ARQUIVO EXISTE (priorizar model.tflite - mobile_face_net)
+            val modelFileName = if (checkModelExists("model.tflite")) {
+                "model.tflite" // ✅ PRIORIDADE: mobile_face_net
+            } else if (checkModelExists("facenet_model.tflite")) {
+                "facenet_model.tflite" // Fallback
+            } else {
+                Log.e(TAG, "❌ MODELO NÃO ENCONTRADO!")
+                Log.e(TAG, "📁 Arquivos disponíveis em assets:")
+                listAssetsFiles()
+                showToast("❌ Modelo model.tflite não encontrado!")
                 return
             }
+            
+            Log.d(TAG, "📂 Usando modelo: $modelFileName")
 
             // ✅ VALIDAR O ARQUIVO
-            if (!validateModelFile()) {
-                Log.e(TAG, "❌ Arquivo model.tflite é inválido!")
+            if (!validateModelFile(modelFileName)) {
+                Log.e(TAG, "❌ Arquivo $modelFileName é inválido!")
                 showToast("❌ Modelo corrompido - usando modo de detecção apenas")
                 return
             }
 
             // ✅ CARREGAR O ARQUIVO
-            val buffer = loadModelFile("model.tflite")
+            val buffer = loadModelFile(modelFileName)
             Log.d(TAG, "✅ Buffer carregado! Tamanho: ${buffer.capacity()} bytes")
 
             // ✅ CRIAR INTERPRETER COM CONFIGURAÇÕES OTIMIZADAS
@@ -260,22 +277,22 @@ class CameraActivity : AppCompatActivity() {
         }
     }
 
-    private fun checkModelExists(): Boolean {
+    private fun checkModelExists(fileName: String): Boolean {
         return try {
             val files = assets.list("") ?: emptyArray()
-            files.contains("model.tflite")
+            files.contains(fileName)
         } catch (e: Exception) {
             false
         }
     }
 
-    private fun validateModelFile(): Boolean {
+    private fun validateModelFile(fileName: String): Boolean {
         return try {
-            assets.open("model.tflite").use { inputStream ->
+            assets.open(fileName).use { inputStream ->
                 val header = ByteArray(8)
                 val bytesRead = inputStream.read(header)
 
-                Log.d(TAG, "🔍 Validando arquivo...")
+                Log.d(TAG, "🔍 Validando arquivo $fileName...")
                 Log.d(TAG, "   Bytes lidos: $bytesRead")
                 Log.d(TAG, "   Header: ${header.joinToString(" ") { "%02X".format(it) }}")
 
@@ -299,7 +316,7 @@ class CameraActivity : AppCompatActivity() {
                 isValidTFLite
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao validar arquivo", e)
+            Log.e(TAG, "❌ Erro ao validar arquivo $fileName", e)
             false
         }
     }
@@ -329,9 +346,11 @@ class CameraActivity : AppCompatActivity() {
                 }
             }
 
-            Log.d(TAG, "🔍 Procurando especificamente por model.tflite...")
+            Log.d(TAG, "🔍 Procurando especificamente por modelos...")
             val hasModel = files.contains("model.tflite")
+            val hasFaceNetModel = files.contains("facenet_model.tflite")
             Log.d(TAG, "   model.tflite presente: ${if (hasModel) "✅ SIM" else "❌ NÃO"}")
+            Log.d(TAG, "   facenet_model.tflite presente: ${if (hasFaceNetModel) "✅ SIM" else "❌ NÃO"}")
 
         } catch (e: Exception) {
             Log.e(TAG, "Erro ao listar assets", e)
@@ -461,25 +480,52 @@ class CameraActivity : AppCompatActivity() {
                         val screenArea = mediaImage.width * mediaImage.height
                         val faceRatio = faceArea.toFloat() / screenArea.toFloat()
                         
-                        val isFaceBigEnough = faceRatio >= 0.03f // Face deve ocupar 3% da tela (mais rigoroso)
+                        val isFaceBigEnough = faceRatio >= 0.02f // Face deve ocupar 2% da tela (mais permissivo)
                         val isFaceInOval = overlay.isFaceInOval(face.boundingBox)
                         
                         Log.d(TAG, "📏 Face ratio: $faceRatio, Estável: $isFaceStable, Frames estáveis: $faceStableCount")
+                        Log.d(TAG, "🔍 DEBUG: BigEnough=$isFaceBigEnough, InOval=$isFaceInOval, Stable=$isFaceStable")
+                        Log.d(TAG, "🔍 DEBUG: alreadySaved=$alreadySaved, isProcessingFace=$isProcessingFace")
                         
                         // ✅ PROCESSAR APENAS QUANDO ESTÁVEL E BEM POSICIONADA
-                        if (!alreadySaved && !isProcessingFace && isFaceBigEnough && isFaceInOval && isFaceStable) {
-                            Log.d(TAG, "✅ FACE ESTÁVEL E BEM POSICIONADA - PROCESSANDO!")
-                            isProcessingFace = true
-                            processDetectedFace(mediaImage, face.boundingBox)
-                            alreadySaved = true
-                            showToast("✅ Rosto detectado! Processando...")
+                        val shouldCapture = if (TEST_MODE) {
+                            // 🚀 MODO DE TESTE: Mais permissivo
+                            !alreadySaved && !isProcessingFace && isFaceBigEnough && faceStableCount >= 5
+                        } else {
+                            // 🎯 MODO NORMAL: Rigoroso
+                            !alreadySaved && !isProcessingFace && isFaceBigEnough && isFaceInOval && isFaceStable
+                        }
+                        
+                        if (shouldCapture) {
+                            Log.d(TAG, "✅ FACE ESTÁVEL E BEM POSICIONADA - INICIANDO CAPTURAS!")
+                            
+                            if (!isCapturing) {
+                                isCapturing = true
+                                capturedFaces.clear()
+                                captureCount = 0
+                                showToast("📸 Captura 1 de $requiredCaptures - Mantenha a posição!")
+                            }
+                            
+                            // Capturar face quando estável
+                            if (captureCount < requiredCaptures) {
+                                captureFace(mediaImage, face.boundingBox)
+                            }
+                            
                         } else if (!alreadySaved && !isProcessingFace) {
                             // ✅ FEEDBACK DETALHADO PARA O USUÁRIO SE POSICIONAR
-                            val feedbackMessage = when {
-                                !isFaceBigEnough -> "📷 Aproxime mais o rosto"
-                                !isFaceInOval -> "📷 Centre o rosto no oval"
-                                !isFaceStable -> "📷 Fique parado (${faceStableCount}/${minStableFrames})"
-                                else -> "📷 Posicione seu rosto no oval"
+                            val feedbackMessage = if (TEST_MODE) {
+                                when {
+                                    !isFaceBigEnough -> "📷 Aproxime mais o rosto"
+                                    faceStableCount < 5 -> "📷 Fique parado (${faceStableCount}/5)"
+                                    else -> "📷 Posicione seu rosto no oval"
+                                }
+                            } else {
+                                when {
+                                    !isFaceBigEnough -> "📷 Aproxime mais o rosto"
+                                    !isFaceInOval -> "📷 Centre o rosto no oval"
+                                    !isFaceStable -> "📷 Fique parado (${faceStableCount}/${minStableFrames})"
+                                    else -> "📷 Posicione seu rosto no oval"
+                                }
                             }
                             
                             // Mostrar feedback a cada 3 frames para ser mais responsivo
@@ -507,6 +553,116 @@ class CameraActivity : AppCompatActivity() {
     }
 
 
+    /**
+     * 📸 CAPTURAR FACE PARA MÚLTIPLAS CAPTURAS
+     */
+    private fun captureFace(mediaImage: android.media.Image, boundingBox: Rect) {
+        try {
+            Log.d(TAG, "📸 === CAPTURANDO FACE ${captureCount + 1}/$requiredCaptures ===")
+            Log.d(TAG, "📊 MediaImage: ${mediaImage.width}x${mediaImage.height}")
+            Log.d(TAG, "📐 BoundingBox: ${boundingBox.left},${boundingBox.top} ${boundingBox.width()}x${boundingBox.height()}")
+            
+            // ✅ VERIFICAR SE O BOUNDINGBOX É VÁLIDO
+            if (boundingBox.width() <= 0 || boundingBox.height() <= 0) {
+                Log.e(TAG, "❌ BoundingBox inválido: ${boundingBox.width()}x${boundingBox.height()}")
+                return
+            }
+            
+            if (boundingBox.left < 0 || boundingBox.top < 0 || 
+                boundingBox.right > mediaImage.width || boundingBox.bottom > mediaImage.height) {
+                Log.e(TAG, "❌ BoundingBox fora dos limites da imagem")
+                return
+            }
+
+            val bitmap = toBitmap(mediaImage)
+            if (bitmap == null) {
+                Log.e(TAG, "❌ Bitmap é nulo após conversão!")
+                return
+            }
+            Log.d(TAG, "🖼️ Bitmap original: ${bitmap.width}x${bitmap.height}")
+            
+            val faceBmp = cropFace(bitmap, boundingBox)
+            if (faceBmp == null) {
+                Log.e(TAG, "❌ Face cropada é nula!")
+                return
+            }
+            Log.d(TAG, "👤 Face cropada: ${faceBmp.width}x${faceBmp.height}")
+            
+            // ✅ VALIDAR QUALIDADE DA FACE CAPTURADA
+            val quality = checkFaceQuality(faceBmp)
+            Log.d(TAG, "📊 Qualidade da face: ${String.format("%.3f", quality)}")
+            
+            if (quality < 0.5f) { // ✅ MAIS PERMISSIVO
+                Log.w(TAG, "⚠️ Qualidade da face baixa (${String.format("%.2f", quality)}) - aguardando melhor posição")
+                return
+            }
+            
+            // ✅ ADICIONAR À LISTA DE CAPTURAS
+            capturedFaces.add(faceBmp)
+            captureCount++
+            
+            Log.d(TAG, "✅ Face ${captureCount}/$requiredCaptures capturada com qualidade ${String.format("%.2f", quality)}")
+            Log.d(TAG, "📊 Total de faces capturadas: ${capturedFaces.size}")
+            
+            // ✅ MOSTRAR PROGRESSO PARA O USUÁRIO
+            if (captureCount < requiredCaptures) {
+                showToast("📸 Captura ${captureCount + 1} de $requiredCaptures - Continue na posição!")
+            } else {
+                showToast("✅ Todas as capturas realizadas! Processando...")
+                processMultipleCaptures()
+            }
+            
+            // ✅ SALVAR IMAGEM PARA DEBUG (OPCIONAL)
+            if (captureCount == requiredCaptures) {
+                Log.d(TAG, "💾 Salvando imagem final para debug...")
+                saveImage(faceBmp, "face_final")
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro na captura da face", e)
+            e.printStackTrace()
+            showToast("Erro na captura: ${e.message}")
+        }
+    }
+    
+    /**
+     * 🔄 PROCESSAR MÚLTIPLAS CAPTURAS
+     */
+    private fun processMultipleCaptures() {
+        try {
+            Log.d(TAG, "🔄 === PROCESSANDO MÚLTIPLAS CAPTURAS ===")
+            Log.d(TAG, "📊 Total de capturas: ${capturedFaces.size}")
+            
+            if (capturedFaces.size < requiredCaptures) {
+                Log.w(TAG, "⚠️ Capturas insuficientes: ${capturedFaces.size}/$requiredCaptures")
+                showToast("Capturas insuficientes. Tente novamente.")
+                resetCaptures()
+                return
+            }
+            
+            // ✅ PROCESSAR COM HELPER PRECISO
+            isProcessingFace = true
+            processFacesWithPreciseHelper(capturedFaces)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro no processamento de múltiplas capturas", e)
+            showToast("Erro no processamento: ${e.message}")
+            resetCaptures()
+        }
+    }
+    
+    /**
+     * 🔄 RESETAR CAPTURAS
+     */
+    private fun resetCaptures() {
+        isCapturing = false
+        captureCount = 0
+        capturedFaces.clear()
+        isProcessingFace = false
+        alreadySaved = false
+        Log.d(TAG, "🔄 Capturas resetadas")
+    }
+    
     private fun processDetectedFace(mediaImage: android.media.Image, boundingBox: Rect) {
         try {
             Log.d(TAG, "🔄 === PROCESSANDO FACE SIMPLIFICADO ===")
@@ -525,6 +681,80 @@ class CameraActivity : AppCompatActivity() {
             Log.e(TAG, "❌ Erro no processamento", e)
             showToast("Erro: ${e.message}")
             alreadySaved = false // Reset para permitir nova tentativa
+        }
+    }
+    
+    /**
+     * 🎯 PROCESSAR MÚLTIPLAS FACES COM MODELO TENSORFLOW
+     */
+    private fun processFacesWithPreciseHelper(faceBitmaps: List<Bitmap>) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                Log.d(TAG, "🎯 === PROCESSANDO FACES COM MODELO TENSORFLOW ===")
+                Log.d(TAG, "📊 Total de faces: ${faceBitmaps.size}")
+                
+                // ✅ VERIFICAR SE O MODELO ESTÁ CARREGADO
+                if (!modelLoaded || interpreter == null) {
+                    Log.e(TAG, "❌ Modelo TensorFlow não está carregado!")
+                    withContext(Dispatchers.Main) {
+                        showToast("❌ Modelo não carregado. Reinicie o app.")
+                        resetCaptures()
+                    }
+                    return@launch
+                }
+                
+                // ✅ GERAR EMBEDDING COM A MELHOR FACE
+                val bestFace = selectBestFace(faceBitmaps)
+                if (bestFace == null) {
+                    Log.e(TAG, "❌ Nenhuma face válida encontrada!")
+                    withContext(Dispatchers.Main) {
+                        showToast("❌ Nenhuma face válida. Tente novamente.")
+                        resetCaptures()
+                    }
+                    return@launch
+                }
+                
+                Log.d(TAG, "✅ Melhor face selecionada: ${bestFace.width}x${bestFace.height}")
+                
+                // ✅ GERAR EMBEDDING COM TENSORFLOW
+                val embedding = generateEmbeddingDirectly(bestFace)
+                if (embedding == null || embedding.isEmpty()) {
+                    Log.e(TAG, "❌ Falha ao gerar embedding!")
+                    withContext(Dispatchers.Main) {
+                        showToast("❌ Erro ao processar face. Tente novamente.")
+                        resetCaptures()
+                    }
+                    return@launch
+                }
+                
+                Log.d(TAG, "✅ Embedding gerado com sucesso!")
+                Log.d(TAG, "📊 Tamanho do embedding: ${embedding.size}")
+                Log.d(TAG, "📊 Primeiros 5 valores: ${embedding.take(5).joinToString(", ") { "%.6f".format(it) }}")
+                
+                // ✅ VALIDAR EMBEDDING
+                if (!validateEmbedding(embedding)) {
+                    Log.e(TAG, "❌ Embedding inválido gerado!")
+                    withContext(Dispatchers.Main) {
+                        showToast("❌ Face inválida. Tente novamente.")
+                        resetCaptures()
+                    }
+                    return@launch
+                }
+                
+                // ✅ SALVAR FOTO PARA EXIBIÇÃO
+                val faceForDisplay = Bitmap.createScaledBitmap(bestFace, 300, 300, true)
+                currentFaceBitmap = fixImageOrientationDefinitive(faceForDisplay)
+                
+                // ✅ SALVAR EMBEDDING NO BANCO
+                saveFaceToDatabase(embedding)
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro crítico no processamento", e)
+                withContext(Dispatchers.Main) {
+                    showToast("Erro no processamento: ${e.message}")
+                    resetCaptures()
+                }
+            }
         }
     }
     
@@ -743,7 +973,7 @@ class CameraActivity : AppCompatActivity() {
             Log.d(TAG, "✅ Modelo TensorFlow carregado e pronto")
             Log.d(TAG, "📊 Dimensões do modelo: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}")
             
-            val resizedBitmap = Bitmap.createScaledBitmap(faceBmp, 160, 160, true)
+            val resizedBitmap = Bitmap.createScaledBitmap(faceBmp, modelInputWidth, modelInputHeight, true)
             Log.d(TAG, "📐 Face redimensionada: ${faceBmp.width}x${faceBmp.height} → ${resizedBitmap.width}x${resizedBitmap.height}")
             
             // ✅ CONVERTER PARA TENSOR DE ENTRADA
@@ -812,6 +1042,48 @@ class CameraActivity : AppCompatActivity() {
             Log.e(TAG, "❌ Erro crítico ao gerar embedding: ${e.message}", e)
             e.printStackTrace()
             null
+        }
+    }
+    
+    /**
+     * 🎯 SELECIONAR A MELHOR FACE DAS CAPTURAS
+     */
+    private fun selectBestFace(faceBitmaps: List<Bitmap>): Bitmap? {
+        try {
+            Log.d(TAG, "🎯 === SELECIONANDO MELHOR FACE ===")
+            Log.d(TAG, "📊 Total de faces para seleção: ${faceBitmaps.size}")
+            
+            if (faceBitmaps.isEmpty()) {
+                Log.e(TAG, "❌ Lista de faces vazia")
+                return null
+            }
+            
+            var bestFace: Bitmap? = null
+            var bestQuality = 0f
+            
+            for ((index, face) in faceBitmaps.withIndex()) {
+                val quality = checkFaceQuality(face)
+                Log.d(TAG, "📊 Face $index: qualidade ${String.format("%.3f", quality)}")
+                
+                if (quality > bestQuality) {
+                    bestQuality = quality
+                    bestFace = face
+                }
+            }
+            
+            if (bestFace != null) {
+                Log.d(TAG, "✅ Melhor face selecionada com qualidade: ${String.format("%.3f", bestQuality)}")
+                Log.d(TAG, "📐 Dimensões: ${bestFace.width}x${bestFace.height}")
+            } else {
+                Log.e(TAG, "❌ Nenhuma face válida encontrada")
+            }
+            
+            return bestFace
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao selecionar melhor face: ${e.message}", e)
+            // Retornar a primeira face como fallback
+            return faceBitmaps.firstOrNull()
         }
     }
     
@@ -899,7 +1171,7 @@ class CameraActivity : AppCompatActivity() {
             
             Log.d(TAG, "👤 Usuário: ${usuario.nome} (${usuario.codigo})")
             Log.d(TAG, "📊 Embedding tamanho: ${embedding.size}")
-            Log.d(TAG, "📊 Primeiros 3 valores: ${embedding.take(3).joinToString(", ")}")
+            Log.d(TAG, "📊 Primeiros 3 valores: ${embedding.take(3).joinToString(", ") { "%.6f".format(it) }}")
             
             // Validar embedding antes de salvar
             if (embedding.isEmpty()) {
@@ -912,38 +1184,25 @@ class CameraActivity : AppCompatActivity() {
                 try {
                     val dao = AppDatabase.getInstance(applicationContext).faceDao()
                     
-                    // ✅ SEGURANÇA: Verificar se já existe face para este funcionário ESPECÍFICO
+                    // ✅ VERIFICAR SE JÁ EXISTE FACE PARA ESTE FUNCIONÁRIO
                     val existingFace = dao.getByFuncionarioId(usuario.codigo)
                     if (existingFace != null) {
-                        Log.d(TAG, "🔄 Face existente encontrada para ${usuario.nome} (${usuario.codigo}) - atualizando...")
-                        
-                        // ✅ VALIDAR SE A FACE EXISTENTE É VÁLIDA ANTES DE REMOVER
-                        val validator = com.example.iface_offilne.helpers.EmbeddingValidator(this@CameraActivity)
-                        val faceValidation = validator.validateSingleEmbedding(existingFace)
-                        
-                        if (faceValidation.isValid) {
-                            Log.d(TAG, "✅ Face existente é válida - substituindo...")
-                            dao.deleteByFuncionarioId(usuario.codigo)
-                            Log.d(TAG, "🗑️ Face antiga deletada para funcionário ${usuario.codigo}")
-                        } else {
-                            Log.w(TAG, "⚠️ Face existente é inválida - removendo e recadastrando...")
-                            dao.deleteByFuncionarioId(usuario.codigo)
-                            Log.d(TAG, "🗑️ Face inválida removida para funcionário ${usuario.codigo}")
-                        }
+                        Log.d(TAG, "🔄 Face existente encontrada para ${usuario.nome} (${usuario.codigo}) - substituindo...")
+                        dao.deleteByFuncionarioId(usuario.codigo)
+                        Log.d(TAG, "🗑️ Face antiga removida")
                     } else {
                         Log.d(TAG, "✨ Primeira face para o funcionário ${usuario.nome} (${usuario.codigo})")
                     }
                     
-                    // Converter embedding para string
+                    // ✅ CONVERTER EMBEDDING PARA STRING
                     val embeddingString = embedding.joinToString(",")
                     Log.d(TAG, "📝 === SALVANDO EMBEDDING NO BANCO ===")
                     Log.d(TAG, "📝 Embedding string tamanho: ${embeddingString.length} caracteres")
-                    Log.d(TAG, "📝 Embedding valores (primeiros 50 chars): ${embeddingString.take(50)}...")
                     Log.d(TAG, "📝 Embedding array tamanho: ${embedding.size}")
                     Log.d(TAG, "📝 Embedding primeiros 3: ${embedding.take(3).joinToString(", ") { "%.6f".format(it) }}")
                     Log.d(TAG, "📝 Embedding últimos 3: ${embedding.takeLast(3).joinToString(", ") { "%.6f".format(it) }}")
                     
-                    // Criar nova face
+                    // ✅ CRIAR NOVA FACE
                     val faceEntity = FaceEntity(
                         id = 0, // Deixar o Room gerar o ID
                         funcionarioId = usuario.codigo,
@@ -951,10 +1210,10 @@ class CameraActivity : AppCompatActivity() {
                         synced = true
                     )
                     
-                    // Inserir nova face
+                    // ✅ INSERIR NOVA FACE
                     dao.insert(faceEntity)
                     
-                    // Verificar se foi salvo corretamente
+                    // ✅ VERIFICAR SE FOI SALVO CORRETAMENTE
                     val savedFace = dao.getByFuncionarioId(usuario.codigo)
                     if (savedFace != null) {
                         Log.d(TAG, "✅ Face salva com sucesso!")
@@ -963,35 +1222,38 @@ class CameraActivity : AppCompatActivity() {
                         Log.d(TAG, "   Embedding tamanho: ${savedFace.embedding.split(",").size}")
                         Log.d(TAG, "   Sincronizado: ${savedFace.synced}")
                         
-                        // Mostrar tela de confirmação na thread principal
+                        // ✅ MOSTRAR TELA DE CONFIRMAÇÃO
                         withContext(Dispatchers.Main) {
                             showSuccessScreen()
                         }
                     } else {
                         Log.e(TAG, "❌ Face não foi encontrada após salvar!")
                         withContext(Dispatchers.Main) {
-                            showToast("Erro: face não foi salva corretamente")
+                            showToast("❌ Erro: face não foi salva corretamente")
+                            resetCaptures()
                         }
                     }
                     
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro ao salvar face: ${e.message}", e)
                     withContext(Dispatchers.Main) {
-                        showToast("Erro ao salvar face: ${e.message}")
+                        showToast("❌ Erro ao salvar face: ${e.message}")
+                        resetCaptures()
                     }
                 }
             }
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro geral ao salvar face", e)
-            showToast("Erro ao salvar face: ${e.message}")
+            showToast("❌ Erro ao salvar face: ${e.message}")
+            resetCaptures()
         }
     }
 
 
     private fun convertBitmapToTensorInput(bitmap: Bitmap): ByteBuffer {
         try {
-            val inputSize = 160 // ✅ CORRIGIDO: Usar 160x160 como esperado pelo modelo
+            val inputSize = modelInputWidth // ✅ MOBILE_FACE_NET: Usar dimensões do modelo
             Log.d(TAG, "🔧 Preparando tensor para entrada ${inputSize}x${inputSize}")
             
             if (bitmap.isRecycled) {
@@ -1015,7 +1277,7 @@ class CameraActivity : AppCompatActivity() {
 
             var pixelCount = 0
             for (pixel in intValues) {
-                // Normalizar para [-1, 1] como esperado pelo modelo MobileFaceNet
+                // ✅ MOBILE_FACE_NET: Normalização [-1, 1]
                 val r = ((pixel shr 16) and 0xFF) / 127.5f - 1.0f
                 val g = ((pixel shr 8) and 0xFF) / 127.5f - 1.0f
                 val b = (pixel and 0xFF) / 127.5f - 1.0f
@@ -1041,24 +1303,93 @@ class CameraActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * 💾 SALVAR IMAGEM COM SUPORTE A DIFERENTES VERSÕES DO ANDROID
+     */
     private fun saveImage(bitmap: Bitmap, prefix: String) {
         try {
+            Log.d(TAG, "💾 === TENTANDO SALVAR IMAGEM ===")
+            Log.d(TAG, "📊 Bitmap: ${bitmap.width}x${bitmap.height}, Config: ${bitmap.config}")
+            
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val filename = "${prefix}_${timestamp}.jpg"
-
-            val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-            val appDir = File(picturesDir, "FaceApp")
-            appDir.mkdirs()
-            val file = File(appDir, filename)
-
-            FileOutputStream(file).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+            
+            Log.d(TAG, "📝 Nome do arquivo: $filename")
+            
+            // ✅ TENTAR DIFERENTES LOCAIS DE ARMAZENAMENTO
+            val savedPaths = mutableListOf<String>()
+            
+            // 1. TENTAR ARMAZENAMENTO EXTERNO PÚBLICO (Android < 13)
+            try {
+                if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+                    val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                    val appDir = File(picturesDir, "FaceApp")
+                    if (appDir.mkdirs() || appDir.exists()) {
+                        val file = File(appDir, filename)
+                        
+                        FileOutputStream(file).use { out ->
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                        }
+                        
+                        savedPaths.add(file.absolutePath)
+                        Log.d(TAG, "✅ Salvo em armazenamento externo: ${file.absolutePath}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Falha ao salvar em armazenamento externo: ${e.message}")
             }
-
-            Log.d(TAG, "💾 Salvo: ${file.name}")
-
+            
+            try {
+                val internalDir = File(filesDir, "face_captures")
+                if (internalDir.mkdirs() || internalDir.exists()) {
+                    val file = File(internalDir, filename)
+                    
+                    FileOutputStream(file).use { out ->
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                    }
+                    
+                    savedPaths.add(file.absolutePath)
+                    Log.d(TAG, "✅ Salvo em armazenamento interno: ${file.absolutePath}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Falha ao salvar em armazenamento interno: ${e.message}")
+            }
+            
+            // 3. TENTAR CACHE DO APP
+            try {
+                val cacheDir = File(cacheDir, "face_captures")
+                if (cacheDir.mkdirs() || cacheDir.exists()) {
+                    val file = File(cacheDir, filename)
+                    
+                    FileOutputStream(file).use { out ->
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                    }
+                    
+                    savedPaths.add(file.absolutePath)
+                    Log.d(TAG, "✅ Salvo em cache: ${file.absolutePath}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ Falha ao salvar em cache: ${e.message}")
+            }
+            
+            // ✅ RESULTADO FINAL
+            if (savedPaths.isNotEmpty()) {
+                Log.d(TAG, "🎉 Imagem salva com sucesso em ${savedPaths.size} local(is):")
+                savedPaths.forEach { path ->
+                    Log.d(TAG, "   📁 $path")
+                }
+                
+                // Mostrar toast de sucesso
+                showToast("📸 Imagem salva: $filename")
+            } else {
+                Log.e(TAG, "❌ Falha ao salvar imagem em qualquer local")
+                showToast("⚠️ Erro ao salvar imagem")
+            }
+            
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao salvar", e)
+            Log.e(TAG, "❌ Erro crítico ao salvar imagem", e)
+            e.printStackTrace()
+            showToast("❌ Erro ao salvar: ${e.message}")
         }
     }
 

@@ -68,9 +68,9 @@ class PontoActivity : AppCompatActivity() {
 
     private var interpreter: Interpreter? = null
     private var modelLoaded = false
-    private var modelInputWidth = 160
-    private var modelInputHeight = 160
-    private var modelOutputSize = 192 // ✅ CORRIGIDO: Usar 192 como na CameraActivity
+    private var modelInputWidth = 112 // ✅ MOBILE_FACE_NET: Dimensões padrão
+    private var modelInputHeight = 112 // ✅ MOBILE_FACE_NET: Dimensões padrão
+    private var modelOutputSize = 192 // ✅ MOBILE_FACE_NET: Embedding size
 
     private var faceRecognitionHelper: FaceRecognitionHelper? = null
     private var locationHelper: LocationHelper? = null
@@ -303,14 +303,19 @@ class PontoActivity : AppCompatActivity() {
                 
                 val modelFile = try {
                     Log.d(TAG, "📁 Tentando abrir modelo do assets...")
-                    assets.open("facenet_model.tflite")
+                    assets.open("model.tflite") // ✅ PRIORIDADE: mobile_face_net
                 } catch (e: Exception) {
-                    Log.w(TAG, "⚠️ Modelo não encontrado em assets, tentando raw resources...")
+                    Log.w(TAG, "⚠️ Modelo model.tflite não encontrado, tentando facenet_model.tflite...")
                     try {
-                        resources.openRawResource(R.raw.mobilefacenet)
+                        assets.open("facenet_model.tflite")
                     } catch (e2: Exception) {
-                        Log.e(TAG, "❌ Erro ao abrir modelo: ${e2.message}")
-                        throw e2
+                        Log.w(TAG, "⚠️ Modelo não encontrado em assets, tentando raw resources...")
+                        try {
+                            resources.openRawResource(R.raw.mobilefacenet)
+                        } catch (e3: Exception) {
+                            Log.e(TAG, "❌ Erro ao abrir modelo: ${e3.message}")
+                            throw e3
+                        }
                     }
                 }
                 
@@ -961,17 +966,25 @@ class PontoActivity : AppCompatActivity() {
                 }
             }
             
-            // PROCESSOS DE SIMILIRADE MINIA
-            val thresholdMinimo = 0.90f // 80% de similaridade mínima - MUITO RIGOROSO
-            val thresholdIdeal = 0.95f // 90% para confiança alta - EXTREMAMENTE RIGOROSO
+            // ✅ THRESHOLDS MAIS PERMISSIVOS PARA TESTE
+            val thresholdMinimo = 0.70f // 70% de similaridade mínima - MAIS PERMISSIVO
+            val thresholdIdeal = 0.85f // 85% para confiança alta - PERMISSIVO
+            
+            Log.d(TAG, "📊 Melhor similaridade encontrada: ${String.format("%.3f", melhorSimilaridade)}")
+            Log.d(TAG, "📊 Threshold mínimo: ${String.format("%.3f", thresholdMinimo)}")
             
             if (funcionarioReconhecido != null && melhorSimilaridade >= thresholdMinimo) {
+                Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO COM SUCESSO!")
+                Log.d(TAG, "👤 Funcionário: ${funcionarioReconhecido.nome}")
+                Log.d(TAG, "📊 Similaridade: ${String.format("%.3f", melhorSimilaridade)}")
                 return RecognitionResult.Success(funcionarioReconhecido, melhorSimilaridade)
             } else {
-                if (melhorSimilaridade > 0.5f) {
-                    return RecognitionResult.Failure("")
+                if (melhorSimilaridade > 0.3f) {
+                    Log.w(TAG, "⚠️ Similaridade baixa: ${String.format("%.3f", melhorSimilaridade)} (mínimo: ${String.format("%.3f", thresholdMinimo)})")
+                    return RecognitionResult.Failure("Similaridade insuficiente: ${String.format("%.1f", melhorSimilaridade * 100)}%")
                 } else {
-                    return RecognitionResult.Failure("")
+                    Log.w(TAG, "❌ Nenhuma face reconhecida (melhor: ${String.format("%.3f", melhorSimilaridade)})")
+                    return RecognitionResult.Failure("Nenhuma face cadastrada reconhecida")
                 }
             }
             
@@ -987,9 +1000,9 @@ class PontoActivity : AppCompatActivity() {
      */
     private fun generateEmbeddingDirect(bitmap: Bitmap): FloatArray {
         return try {
-            // ✅ REDIMENSIONAR PARA O TAMANHO DO MODELO
-            val resizedBitmap = if (bitmap.width != 160 || bitmap.height != 160) {
-                Bitmap.createScaledBitmap(bitmap, 160, 160, true)
+            // ✅ REDIMENSIONAR PARA O TAMANHO DO MODELO MOBILE_FACE_NET
+            val resizedBitmap = if (bitmap.width != modelInputWidth || bitmap.height != modelInputHeight) {
+                Bitmap.createScaledBitmap(bitmap, modelInputWidth, modelInputHeight, true)
             } else {
                 bitmap
             }
@@ -1435,7 +1448,7 @@ class PontoActivity : AppCompatActivity() {
                 throw e
             }
 
-            // ✅ PROTEÇÃO: Processar pixels com validação
+            // ✅ PROTEÇÃO: Processar pixels com validação (MOBILE_FACE_NET: [-1, 1])
             try {
                 for (pixel in intValues) {
                     val r = ((pixel shr 16) and 0xFF) / 127.5f - 1.0f
@@ -2401,6 +2414,8 @@ class PontoActivity : AppCompatActivity() {
                                         Log.e(TAG, "❌ Erro no reset: ${e2.message}")
                                     }
                                 }, 3000)
+                            } else {
+                                Log.w(TAG, "⚠️ StatusText não inicializado")
                             }
                         }
                     }
@@ -2428,6 +2443,8 @@ class PontoActivity : AppCompatActivity() {
                                         Log.e(TAG, "❌ Erro no reset: ${e2.message}")
                                     }
                                 }, 3000)
+                            } else {
+                                Log.w(TAG, "⚠️ StatusText não inicializado ou Activity finalizada")
                             }
                         } catch (e2: Exception) {
                             Log.e(TAG, "❌ Erro no fallback: ${e2.message}")
