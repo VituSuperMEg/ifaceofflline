@@ -60,6 +60,11 @@
             android:exported="false"
             android:screenOrientation="portrait" />
         <activity
+            android:name=".FaceRegistrationActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+        <activity
             android:name=".FaceRegistrationSuccessActivity"
             android:exported="false"
             android:screenOrientation="portrait"

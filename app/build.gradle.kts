@@ -59,19 +59,15 @@ dependencies {
 
     implementation("androidx.appcompat:appcompat:1.6.1")
 
-    // TensorFlow
+    // ✅ TENSORFLOW LITE COMPLETO PARA MOBILEFACENET (SEM GPU DELEGATE)
     implementation("org.tensorflow:tensorflow-lite:2.13.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.13.0")
+    implementation("org.tensorflow:tensorflow-lite-metadata:0.4.4")
+    // implementation("org.tensorflow:tensorflow-lite-gpu:2.13.0") // ❌ REMOVIDO PARA EVITAR CRASH
+    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-task-text:0.4.4")
 
     // Face Detection
-    implementation("com.google.mlkit:face-detection:16.1.5")
-    
-    // 🚀 NOVAS BIBLIOTECAS PARA RECONHECIMENTO FACIAL AVANÇADO
-    // MediaPipe para detecção mais precisa
-    implementation("com.google.mediapipe:tasks-vision:0.10.0")
-    
-    // ML Kit Face Detection (já incluído acima, mas com configurações avançadas)
     implementation("com.google.mlkit:face-detection:16.1.5")
     
     // Biometric Support

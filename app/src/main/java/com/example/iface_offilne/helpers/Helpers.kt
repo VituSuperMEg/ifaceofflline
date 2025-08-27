@@ -60,6 +60,93 @@ fun cropFace(bitmap: Bitmap, rect: Rect): Bitmap {
     return Bitmap.createBitmap(bitmap, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
 }
 
+/**
+ * ✅ NOVA FUNÇÃO: Recorte de face usando landmarks para maior precisão
+ */
+fun cropFaceWithLandmarks(bitmap: Bitmap, face: com.google.mlkit.vision.face.Face): Bitmap {
+    try {
+        // ✅ OBTER LANDMARKS ESSENCIAIS
+        val leftEye = face.getLandmark(com.google.mlkit.vision.face.FaceLandmark.LEFT_EYE)
+        val rightEye = face.getLandmark(com.google.mlkit.vision.face.FaceLandmark.RIGHT_EYE)
+        val nose = face.getLandmark(com.google.mlkit.vision.face.FaceLandmark.NOSE_BASE)
+        val leftMouth = face.getLandmark(com.google.mlkit.vision.face.FaceLandmark.MOUTH_LEFT)
+        val rightMouth = face.getLandmark(com.google.mlkit.vision.face.FaceLandmark.MOUTH_RIGHT)
+        
+        // ✅ CALCULAR CENTRO DOS OLHOS
+        val eyeCenterX = if (leftEye != null && rightEye != null) {
+            (leftEye.position.x + rightEye.position.x) / 2f
+        } else {
+            face.boundingBox.centerX().toFloat()
+        }
+        
+        val eyeCenterY = if (leftEye != null && rightEye != null) {
+            (leftEye.position.y + rightEye.position.y) / 2f
+        } else {
+            face.boundingBox.centerY().toFloat()
+        }
+        
+        // ✅ CALCULAR DISTÂNCIA ENTRE OS OLHOS (para escala)
+        val eyeDistance = if (leftEye != null && rightEye != null) {
+            kotlin.math.sqrt(
+                (rightEye.position.x - leftEye.position.x) * (rightEye.position.x - leftEye.position.x) + 
+                (rightEye.position.y - leftEye.position.y) * (rightEye.position.y - leftEye.position.y)
+            )
+        } else {
+            face.boundingBox.width().toFloat() * 0.3f // Estimativa
+        }
+        
+        // ✅ CALCULAR ALTURA DA FACE BASEADA NO NARIZ
+        val faceHeight = if (nose != null) {
+            val noseToEyeDistance = kotlin.math.abs(nose.position.y - eyeCenterY)
+            noseToEyeDistance * 3.5f // Fator para incluir testa e queixo
+        } else {
+            face.boundingBox.height().toFloat() * 1.2f
+        }
+        
+        // ✅ CALCULAR LARGURA DA FACE
+        val faceWidth = eyeDistance * 2.5f // Fator para incluir orelhas
+        
+        // ✅ CALCULAR COORDENADAS DO RECORTE
+        val cropLeft = (eyeCenterX - faceWidth / 2).toInt()
+        val cropTop = (eyeCenterY - faceHeight * 0.4f).toInt() // 40% acima dos olhos
+        val cropRight = (eyeCenterX + faceWidth / 2).toInt()
+        val cropBottom = (eyeCenterY + faceHeight * 0.6f).toInt() // 60% abaixo dos olhos
+        
+        // ✅ GARANTIR QUE ESTÁ DENTRO DOS LIMITES
+        val safeRect = Rect(
+            cropLeft.coerceAtLeast(0),
+            cropTop.coerceAtLeast(0),
+            cropRight.coerceAtMost(bitmap.width),
+            cropBottom.coerceAtMost(bitmap.height)
+        )
+        
+        // ✅ VERIFICAR SE O RECORTE É VÁLIDO
+        if (safeRect.width() <= 0 || safeRect.height() <= 0) {
+            // ✅ FALLBACK: Usar recorte simples se landmarks falharem
+            return cropFace(bitmap, face.boundingBox)
+        }
+        
+        // ✅ VERIFICAR SE O RECORTE É MUITO PEQUENO
+        if (safeRect.width() < 100 || safeRect.height() < 100) {
+            // ✅ FALLBACK: Usar recorte simples se for muito pequeno
+            return cropFace(bitmap, face.boundingBox)
+        }
+        
+        return Bitmap.createBitmap(bitmap, safeRect.left, safeRect.top, safeRect.width(), safeRect.height())
+        
+    } catch (e: Exception) {
+        // ✅ FALLBACK: Em caso de erro, usar recorte simples
+        return cropFace(bitmap, face.boundingBox)
+    }
+}
+
+/**
+ * ✅ FUNÇÃO AUXILIAR: Calcular distância entre dois pontos
+ */
+private fun calculateDistance(point1: android.graphics.PointF, point2: android.graphics.PointF): Float {
+    return kotlin.math.sqrt((point2.x - point1.x) * (point2.x - point1.x) + (point2.y - point1.y) * (point2.y - point1.y))
+}
+
 
 fun bitmapToFloatArray(bitmap: Bitmap): Array<Array<Array<FloatArray>>> {
     val input = Array(1) { Array(160) { Array(160) { FloatArray(3) } } }

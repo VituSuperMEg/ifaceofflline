@@ -4,6 +4,14 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.Rect
+import android.graphics.RectF
 import android.os.Bundle
 import android.util.Log
 import android.widget.ImageView
@@ -21,6 +29,8 @@ import com.example.iface_offilne.models.FuncionariosLocalModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import android.view.View
 
 class UsuarioEdit : AppCompatActivity() {
 
@@ -31,6 +41,7 @@ class UsuarioEdit : AppCompatActivity() {
     companion object {
         const val RESULT_USER_UPDATED = 100
         const val EXTRA_USER_UPDATED = "user_updated"
+        const val REQUEST_FACE_REGISTRATION = 200
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,11 +56,23 @@ class UsuarioEdit : AppCompatActivity() {
 
         // Carregar foto facial se existir
         loadFacialPhoto(usuario)
+        
+        // ✅ CONFIGURAR IMAGEVIEW PARA MELHOR QUALIDADE
+        binding.imageViewFacial.apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setLayerType(View.LAYER_TYPE_HARDWARE, null) // Aceleração por hardware
+        }
 
         binding.btnCadastrarFacial.setOnClickListener {
-            val screen = Intent(this@UsuarioEdit, CameraActivity::class.java)
-            screen.putExtra("usuario", usuario)
-            startActivity(screen)
+            try {
+                // ✅ Usar a nova FaceRegistrationActivity em vez da CameraActivity
+                val screen = Intent(this@UsuarioEdit, FaceRegistrationActivity::class.java)
+                screen.putExtra("usuario", usuario)
+                startActivityForResult(screen, REQUEST_FACE_REGISTRATION)
+            } catch (e: Exception) {
+                Log.e("UsuarioEdit", "Erro ao abrir cadastro facial", e)
+                Toast.makeText(this@UsuarioEdit, "Erro ao abrir cadastro facial: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
 
         binding.btnSalvar.setOnClickListener {
@@ -157,6 +180,20 @@ class UsuarioEdit : AppCompatActivity() {
         // Recarregar foto quando voltar da tela de cadastro
         loadFacialPhoto(usuario)
     }
+    
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        
+        if (requestCode == REQUEST_FACE_REGISTRATION) {
+            if (resultCode == RESULT_OK) {
+                Toast.makeText(this, "Cadastro facial realizado com sucesso!", Toast.LENGTH_SHORT).show()
+                // Recarregar foto facial
+                loadFacialPhoto(usuario)
+            } else {
+                Toast.makeText(this, "Cadastro facial cancelado", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     private fun loadFacialPhoto(usuario: FuncionariosLocalModel?) {
         if (usuario == null) return
@@ -174,9 +211,9 @@ class UsuarioEdit : AppCompatActivity() {
                         binding.textViewStatusFacial.setTextColor(getColor(android.R.color.holo_green_dark))
                         binding.btnCadastrarFacial.text = "Atualizar Facial"
                         
-                        // Tentar carregar uma foto salva (se houver)
-                        // Por enquanto, exibir ícone de sucesso
-                        binding.imageViewFacial.setImageResource(android.R.drawable.ic_menu_camera)
+                        // ✅ CARREGAR FOTO SALVA DO FUNCIONÁRIO
+                        loadSavedFacePhoto(usuario.codigo)
+                        
                     } else {
                         // Usuário não tem foto facial
                         binding.textViewStatusFacial.text = "❌ Nenhuma foto facial cadastrada"
@@ -192,6 +229,285 @@ class UsuarioEdit : AppCompatActivity() {
                     binding.textViewStatusFacial.setTextColor(getColor(android.R.color.holo_red_dark))
                 }
             }
+        }
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Carregar foto salva do funcionário - MELHORADA
+     */
+    private fun loadSavedFacePhoto(funcionarioId: String) {
+        try {
+            // ✅ TENTAR CARREGAR FOTO SALVA NO ARMAZENAMENTO INTERNO
+            val photoFile = getFacePhotoFile(funcionarioId)
+            
+            if (photoFile.exists()) {
+                Log.d("UsuarioEdit", "📸 Carregando foto salva: ${photoFile.absolutePath}")
+                
+                // ✅ CARREGAR E EXIBIR A FOTO COM MELHOR QUALIDADE
+                val options = BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+                BitmapFactory.decodeFile(photoFile.absolutePath, options)
+                
+                // ✅ CALCULAR TAMANHO IDEAL PARA EXIBIÇÃO
+                val targetSize = 300 // Tamanho ideal para exibição
+                val sampleSize = calculateInSampleSize(options, targetSize, targetSize)
+                
+                // ✅ CARREGAR BITMAP COM TAMANHO OTIMIZADO
+                val loadOptions = BitmapFactory.Options().apply {
+                    inSampleSize = sampleSize
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                
+                val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath, loadOptions)
+                if (bitmap != null) {
+                    // ✅ CRIAR VERSÃO OTIMIZADA DA FOTO
+                    val optimizedBitmap = createOptimizedCircularBitmap(bitmap)
+                    binding.imageViewFacial.setImageBitmap(optimizedBitmap)
+                    
+                    Log.d("UsuarioEdit", "✅ Foto facial carregada e otimizada: ${bitmap.width}x${bitmap.height}")
+                    
+                    // ✅ LIMPAR BITMAP ORIGINAL
+                    bitmap.recycle()
+                } else {
+                    Log.w("UsuarioEdit", "⚠️ Erro ao decodificar foto salva")
+                    binding.imageViewFacial.setImageResource(android.R.drawable.ic_menu_camera)
+                }
+            } else {
+                Log.d("UsuarioEdit", "📸 Nenhuma foto salva encontrada para $funcionarioId")
+                binding.imageViewFacial.setImageResource(android.R.drawable.ic_menu_camera)
+            }
+            
+        } catch (e: Exception) {
+            Log.e("UsuarioEdit", "❌ Erro ao carregar foto salva", e)
+            binding.imageViewFacial.setImageResource(android.R.drawable.ic_menu_camera)
+        }
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Calcular tamanho de amostra ideal
+     */
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+        val height = options.outHeight
+        val width = options.outWidth
+        var inSampleSize = 1
+        
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight = height / 2
+            val halfWidth = width / 2
+            
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        
+        return inSampleSize
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Criar bitmap circular otimizado com melhor qualidade
+     */
+    private fun createOptimizedCircularBitmap(bitmap: Bitmap): Bitmap {
+        try {
+            // ✅ TAMANHO IDEAL PARA EXIBIÇÃO
+            val targetSize = 300
+            
+            // ✅ REDIMENSIONAR PARA TAMANHO IDEAL
+            val resizedBitmap = if (bitmap.width != targetSize || bitmap.height != targetSize) {
+                Bitmap.createScaledBitmap(bitmap, targetSize, targetSize, true)
+            } else {
+                bitmap
+            }
+            
+            // ✅ MELHORAR QUALIDADE DA IMAGEM
+            val enhancedBitmap = enhanceImageQuality(resizedBitmap)
+            
+            // ✅ CORREÇÃO: Rotacionar a foto em -90 graus para ficar correta
+            val rotatedBitmap = rotateBitmap(enhancedBitmap, -90f)
+            
+            // ✅ CRIAR BITMAP CIRCULAR COM QUALIDADE SUPERIOR
+            val circularBitmap = createHighQualityCircularBitmap(rotatedBitmap)
+            
+            // ✅ LIMPAR BITMAPS TEMPORÁRIOS
+            if (resizedBitmap != bitmap) {
+                resizedBitmap.recycle()
+            }
+            if (enhancedBitmap != resizedBitmap) {
+                enhancedBitmap.recycle()
+            }
+            if (rotatedBitmap != enhancedBitmap) {
+                rotatedBitmap.recycle()
+            }
+            
+            return circularBitmap
+            
+        } catch (e: Exception) {
+            Log.e("UsuarioEdit", "❌ Erro ao criar bitmap circular otimizado", e)
+            return bitmap
+        }
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Criar bitmap circular de alta qualidade
+     */
+    private fun createHighQualityCircularBitmap(bitmap: Bitmap): Bitmap {
+        try {
+            val size = bitmap.width
+            val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            
+            val canvas = Canvas(output)
+            
+            // ✅ PAINT PARA O CÍRCULO DE FUNDO (BORDA)
+            val borderPaint = Paint().apply {
+                isAntiAlias = true
+                color = Color.parseColor("#E0E0E0") // Cinza claro para borda
+                style = Paint.Style.FILL
+            }
+            
+            // ✅ PAINT PARA A IMAGEM
+            val imagePaint = Paint().apply {
+                isAntiAlias = true
+                isFilterBitmap = true
+                isDither = true // Melhorar qualidade em dispositivos de baixa resolução
+            }
+            
+            // ✅ DESENHAR CÍRCULO DE FUNDO (BORDA)
+            val centerX = size / 2f
+            val centerY = size / 2f
+            val radius = (size / 2f) - 4f // Deixar 4px de borda
+            
+            canvas.drawCircle(centerX, centerY, radius, borderPaint)
+            
+            // ✅ CRIAR MÁSCARA CIRCULAR PARA A IMAGEM
+            val maskPaint = Paint().apply {
+                isAntiAlias = true
+                color = Color.WHITE
+                style = Paint.Style.FILL
+            }
+            
+            // ✅ APLICAR MÁSCARA CIRCULAR
+            val maskBitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val maskCanvas = Canvas(maskBitmap)
+            maskCanvas.drawCircle(centerX, centerY, radius - 2f, maskPaint) // 2px menor que a borda
+            
+            // ✅ APLICAR A IMAGEM COM MÁSCARA
+            imagePaint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+            canvas.drawBitmap(bitmap, 0f, 0f, imagePaint)
+            
+            // ✅ APLICAR MÁSCARA
+            val finalPaint = Paint().apply {
+                isAntiAlias = true
+                xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
+            }
+            canvas.drawBitmap(maskBitmap, 0f, 0f, finalPaint)
+            
+            // ✅ LIMPAR BITMAP DA MÁSCARA
+            maskBitmap.recycle()
+            
+            return output
+            
+        } catch (e: Exception) {
+            Log.e("UsuarioEdit", "❌ Erro ao criar bitmap circular de alta qualidade", e)
+            return bitmap
+        }
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Obter arquivo da foto do funcionário
+     */
+    private fun getFacePhotoFile(funcionarioId: String): File {
+        val photosDir = File(filesDir, "face_photos")
+        if (!photosDir.exists()) {
+            photosDir.mkdirs()
+        }
+        return File(photosDir, "face_${funcionarioId}.jpg")
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Rotacionar bitmap
+     */
+    private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
+        try {
+            val matrix = Matrix()
+            matrix.postRotate(degrees)
+            
+            val rotatedBitmap = Bitmap.createBitmap(
+                bitmap, 
+                0, 
+                0, 
+                bitmap.width, 
+                bitmap.height, 
+                matrix, 
+                true
+            )
+            
+            Log.d("UsuarioEdit", "✅ Bitmap rotacionado: ${bitmap.width}x${bitmap.height} -> ${rotatedBitmap.width}x${rotatedBitmap.height}")
+            return rotatedBitmap
+            
+        } catch (e: Exception) {
+            Log.e("UsuarioEdit", "❌ Erro ao rotacionar bitmap", e)
+            return bitmap
+        }
+    }
+
+    /**
+     * ✅ NOVA FUNÇÃO: Melhorar qualidade da imagem automaticamente
+     */
+    private fun enhanceImageQuality(bitmap: Bitmap): Bitmap {
+        try {
+            val width = bitmap.width
+            val height = bitmap.height
+            val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            
+            val pixels = IntArray(width * height)
+            bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+            
+            // ✅ CALCULAR BRILHO MÉDIO
+            var totalBrightness = 0f
+            for (pixel in pixels) {
+                val r = (pixel shr 16) and 0xFF
+                val g = (pixel shr 8) and 0xFF
+                val b = pixel and 0xFF
+                totalBrightness += (r + g + b) / 3f
+            }
+            val avgBrightness = totalBrightness / pixels.size
+            
+            // ✅ AJUSTAR BRILHO E CONTRASTE AUTOMATICAMENTE
+            val brightnessAdjustment = when {
+                avgBrightness < 80f -> 1.3f  // Escurecer
+                avgBrightness > 180f -> 0.8f // Clarear
+                else -> 1.0f // Manter
+            }
+            
+            val contrastAdjustment = 1.1f // Aumentar contraste levemente
+            
+            // ✅ APLICAR AJUSTES
+            for (i in pixels.indices) {
+                val pixel = pixels[i]
+                var r = (pixel shr 16) and 0xFF
+                var g = (pixel shr 8) and 0xFF
+                var b = pixel and 0xFF
+                
+                // Ajustar brilho
+                r = ((r * brightnessAdjustment).toInt()).coerceIn(0, 255)
+                g = ((g * brightnessAdjustment).toInt()).coerceIn(0, 255)
+                b = ((b * brightnessAdjustment).toInt()).coerceIn(0, 255)
+                
+                // Ajustar contraste
+                val factor = (259 * (contrastAdjustment * 255 + 255)) / (255 * (259 - contrastAdjustment * 255))
+                r = ((factor * (r - 128) + 128).toInt()).coerceIn(0, 255)
+                g = ((factor * (g - 128) + 128).toInt()).coerceIn(0, 255)
+                b = ((factor * (b - 128) + 128).toInt()).coerceIn(0, 255)
+                
+                pixels[i] = (pixel and 0xFF000000.toInt()) or (r shl 16) or (g shl 8) or b
+            }
+            
+            output.setPixels(pixels, 0, width, 0, 0, width, height)
+            return output
+            
+        } catch (e: Exception) {
+            Log.e("UsuarioEdit", "❌ Erro ao melhorar qualidade da imagem", e)
+            return bitmap
         }
     }
 
