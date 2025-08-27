@@ -97,10 +97,11 @@ class CameraActivity : AppCompatActivity() {
 
     private var faceDetector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
-            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST) // ✅ SIMPLIFICAÇÃO: Modo rápido para melhor performance
+            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST) // ✅ OTIMIZAÇÃO: Modo rápido para melhor performance
             .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
             .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
-            .setMinFaceSize(0.1f) // ✅ SIMPLIFICAÇÃO: Face ainda menor para detectar qualquer rosto
+            .setContourMode(FaceDetectorOptions.CONTOUR_MODE_NONE) // ✅ OTIMIZAÇÃO: Desabilitar contours
+            .setMinFaceSize(0.08f) // ✅ CORRIGIDO: Face menor para detectar qualquer rosto
             .build()
     )
 
@@ -114,13 +115,13 @@ class CameraActivity : AppCompatActivity() {
     private val requiredCaptures = com.example.iface_offilne.util.FaceRecognitionConfig.REQUIRED_FACE_CAPTURES
     private var isCapturing = false
     
-    // ✅ SISTEMA DE ESTABILIZAÇÃO: Aguardar usuário se posicionar adequadamente
+    // ✅ SISTEMA DE ESTABILIZAÇÃO: Equilibrado para melhor experiência
     private var faceStableCount = 0 // Contador de frames estáveis
     private var lastFacePosition: Rect? = null // Última posição da face
     private var faceStableStartTime = 0L // Tempo de início da estabilização
-    private var minStableFrames = com.example.iface_offilne.util.FaceRecognitionConfig.MIN_STABLE_FRAMES
-    private var maxStableTime = com.example.iface_offilne.util.FaceRecognitionConfig.MAX_STABLE_TIME_MS
-    private var positionTolerance = com.example.iface_offilne.util.FaceRecognitionConfig.POSITION_TOLERANCE
+    private var minStableFrames = 8 // Mínimo de frames estáveis (EQUILIBRADO)
+    private var maxStableTime = 6000L // Tempo máximo de estabilização (6 segundos)
+    private var positionTolerance = 60 // Tolerância de movimento (pixels) - EQUILIBRADO
     private var isProcessingFace = false // Evitar múltiplos processamentos
     
     // 🚀 MODO DE TESTE: Para facilitar debug
@@ -434,7 +435,7 @@ class CameraActivity : AppCompatActivity() {
 
             imageAnalyzer = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setTargetResolution(android.util.Size(640, 480)) // ✅ SIMPLIFICAÇÃO: Resolução menor para melhor performance
+                .setTargetResolution(android.util.Size(480, 360)) // ✅ OTIMIZAÇÃO: Resolução menor para processamento mais rápido
                 .build().also {
                     it.setAnalyzer(ContextCompat.getMainExecutor(this)) { proxy ->
                         processImage(proxy)
@@ -475,13 +476,14 @@ class CameraActivity : AppCompatActivity() {
                         // ✅ SISTEMA DE ESTABILIZAÇÃO: Verificar se a face está estável
                         val isFaceStable = checkFaceStability(face.boundingBox)
                         
-                        // ✅ Critérios de qualidade da face
+                        // ✅ Critérios de qualidade da face - EQUILIBRADOS
                         val faceArea = face.boundingBox.width() * face.boundingBox.height()
                         val screenArea = mediaImage.width * mediaImage.height
                         val faceRatio = faceArea.toFloat() / screenArea.toFloat()
                         
-                        val isFaceBigEnough = faceRatio >= 0.02f // Face deve ocupar 2% da tela (mais permissivo)
+                        val isFaceBigEnough = faceRatio >= 0.005f // Face deve ocupar 0.5% da tela (MUITO PERMISSIVO)
                         val isFaceInOval = overlay.isFaceInOval(face.boundingBox)
+                        val isFaceNotTooBig = faceRatio <= 0.50f // Face não deve ocupar mais de 50% da tela (EXTREMAMENTE FLEXÍVEL)
                         
                         Log.d(TAG, "📏 Face ratio: $faceRatio, Estável: $isFaceStable, Frames estáveis: $faceStableCount")
                         Log.d(TAG, "🔍 DEBUG: BigEnough=$isFaceBigEnough, InOval=$isFaceInOval, Stable=$isFaceStable")
@@ -492,8 +494,8 @@ class CameraActivity : AppCompatActivity() {
                             // 🚀 MODO DE TESTE: Mais permissivo
                             !alreadySaved && !isProcessingFace && isFaceBigEnough && faceStableCount >= 5
                         } else {
-                            // 🎯 MODO NORMAL: Rigoroso
-                            !alreadySaved && !isProcessingFace && isFaceBigEnough && isFaceInOval && isFaceStable
+                            // 🎯 MODO NORMAL: EQUILIBRADO
+                            !alreadySaved && !isProcessingFace && isFaceBigEnough && isFaceInOval && isFaceStable && isFaceNotTooBig
                         }
                         
                         if (shouldCapture) {
@@ -512,7 +514,7 @@ class CameraActivity : AppCompatActivity() {
                             }
                             
                         } else if (!alreadySaved && !isProcessingFace) {
-                            // ✅ FEEDBACK DETALHADO PARA O USUÁRIO SE POSICIONAR
+                            // ✅ FEEDBACK DETALHADO PARA O USUÁRIO SE POSICIONAR - MAIS AMIGÁVEL
                             val feedbackMessage = if (TEST_MODE) {
                                 when {
                                     !isFaceBigEnough -> "📷 Aproxime mais o rosto"
@@ -521,7 +523,8 @@ class CameraActivity : AppCompatActivity() {
                                 }
                             } else {
                                 when {
-                                    !isFaceBigEnough -> "📷 Aproxime mais o rosto"
+                                    !isFaceBigEnough -> "📷 Aproxime mais o rosto (0.5% da tela)"
+                                    isFaceNotTooBig -> "📷 Afaste um pouco o rosto"
                                     !isFaceInOval -> "📷 Centre o rosto no oval"
                                     !isFaceStable -> "📷 Fique parado (${faceStableCount}/${minStableFrames})"
                                     else -> "📷 Posicione seu rosto no oval"

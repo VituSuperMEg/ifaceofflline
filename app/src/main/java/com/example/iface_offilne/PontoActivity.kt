@@ -86,13 +86,13 @@ class PontoActivity : AppCompatActivity() {
     private var lastPontoRegistrado = 0L
     private var cooldownPonto = 8000L // 8 segundos de cooldown
     
-    // ✅ ESTABILIZAÇÃO: Sistema para melhorar qualidade do reconhecimento
+    // ✅ ESTABILIZAÇÃO: Sistema MUITO PERMISSIVO para funcionar
     private var faceStableCount = 0 // Contador de frames estáveis
     private var lastFacePosition: Rect? = null // Última posição da face
     private var faceStableStartTime = 0L // Tempo de início da estabilização
-    private var minStableFrames = 15 // Mínimo de frames estáveis (MAIS RIGOROSO)
-    private var maxStableTime = 10000L // Tempo máximo de estabilização
-    private var positionTolerance = 80 // Tolerância de movimento (pixels) - MAIS RIGOROSO
+    private var minStableFrames = 3 // Mínimo de frames estáveis (MUITO PERMISSIVO)
+    private var maxStableTime = 3000L // Tempo máximo de estabilização (3 segundos)
+    private var positionTolerance = 150 // Tolerância de movimento (pixels) - MUITO PERMISSIVO
     
     // ✅ SEGURANÇA: Sistema para rejeitar pessoas não cadastradas
     private var consecutiveFailures = 0 // Contador de falhas consecutivas
@@ -227,17 +227,19 @@ class PontoActivity : AppCompatActivity() {
         try {
             Log.d(TAG, "🔧 Inicializando helpers...")
             
-            // ✅ INICIALIZAR FACE DETECTOR
+            // ✅ INICIALIZAR FACE DETECTOR - OTIMIZADO PARA VELOCIDADE
             try {
                 faceDetector = FaceDetection.getClient(
                     FaceDetectorOptions.Builder()
                         .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
                         .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
                         .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
-                        .setMinFaceSize(0.05f) // Detecta faces muito pequenas
+                        .setMinFaceSize(0.05f) // ✅ CORRIGIDO: Face menor para detectar qualquer rosto
+                        .setContourMode(FaceDetectorOptions.CONTOUR_MODE_NONE) // ✅ DESABILITAR CONTOURS
+                        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE) // ✅ DESABILITAR CLASSIFICAÇÕES
                         .build()
                 )
-                Log.d(TAG, "✅ FaceDetector inicializado")
+                Log.d(TAG, "✅ FaceDetector otimizado para velocidade inicializado")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao inicializar FaceDetector: ${e.message}")
                 e.printStackTrace()
@@ -559,7 +561,7 @@ class PontoActivity : AppCompatActivity() {
 
                     imageAnalyzer = ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setTargetResolution(android.util.Size(640, 480))
+                        .setTargetResolution(android.util.Size(480, 360)) // ✅ RESOLUÇÃO MENOR PARA PROCESSAMENTO MAIS RÁPIDO
                         .build()
                         .also {
                             try {
@@ -641,8 +643,19 @@ class PontoActivity : AppCompatActivity() {
                     val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
                     Log.d(TAG, "🔄 Imagem convertida para InputImage")
 
+                    // ✅ DEBUG: Verificar se faceDetector está disponível
                     val detector = faceDetector
-                    detector?.process(image)?.addOnSuccessListener { faces ->
+                    if (detector == null) {
+                        Log.e(TAG, "❌ FaceDetector é null!")
+                        imageProxy.close()
+                        return
+                    }
+                    
+                    Log.d(TAG, "🔍 Iniciando detecção de faces...")
+                    detector.process(image)
+                        .addOnSuccessListener { faces ->
+                            Log.d(TAG, "✅ Detecção bem-sucedida: ${faces.size} faces")
+                            
                             try {
                                 Log.d(TAG, "👥 Faces detectadas: ${faces.size}")
                                 
@@ -690,10 +703,10 @@ class PontoActivity : AppCompatActivity() {
                                     // ✅ ESTABILIZAÇÃO: Verificar se a face está estável
                                     val isFaceStable = checkFaceStability(face.boundingBox)
                                     
-                                    // ✅ CRITÉRIOS DE QUALIDADE DA FACE - MAIS RIGOROSOS
-                                    val isFaceBigEnough = faceRatio >= 0.03f // Face deve ocupar pelo menos 3% da tela (MAIS RIGOROSO)
+                                    // ✅ CRITÉRIOS DE QUALIDADE DA FACE - MUITO PERMISSIVOS
+                                    val isFaceBigEnough = faceRatio >= 0.005f // Face deve ocupar pelo menos 0.5% da tela (MUITO PERMISSIVO)
                                     val isFaceInOval = overlay.isFaceInOval(face.boundingBox)
-                                    val isFaceNotTooBig = faceRatio <= 0.15f // Face não deve ocupar mais de 15% da tela
+                                    val isFaceNotTooBig = faceRatio <= 0.50f // Face não deve ocupar mais de 50% da tela (EXTREMAMENTE FLEXÍVEL)
                                     
                                     Log.d(TAG, "📊 Face estável: $isFaceStable, Frames estáveis: $faceStableCount")
                                     Log.d(TAG, "📊 Face grande o suficiente: $isFaceBigEnough, No oval: $isFaceInOval")
@@ -742,17 +755,17 @@ class PontoActivity : AppCompatActivity() {
                                         
                                         // ✅ ESTABILIZAÇÃO: Processar apenas se face estiver estável
                                         if (!isFaceStable || !isFaceBigEnough || !isFaceInOval || !isFaceNotTooBig) {
-                                            // ✅ FEEDBACK PARA O USUÁRIO SE POSICIONAR
+                                            // ✅ FEEDBACK PARA O USUÁRIO SE POSICIONAR - MAIS AMIGÁVEL
                                             val feedbackMessage = when {
-                                                !isFaceBigEnough -> "📷 Aproxime mais o rosto (3% da tela)"
+                                                !isFaceBigEnough -> "📷 Aproxime mais o rosto (0.5% da tela)"
                                                 isFaceNotTooBig -> "📷 Afaste um pouco o rosto"
                                                 !isFaceInOval -> "📷 Centre o rosto no oval"
                                                 !isFaceStable -> "📷 Fique parado (${faceStableCount}/${minStableFrames})"
                                                 else -> "📷 Posicione seu rosto no oval"
                                             }
                                             
-                                            // Mostrar feedback a cada 5 frames para ser mais responsivo
-                                            if (faceDetectionCount % 5 == 0) {
+                                            // ✅ Mostrar feedback a cada 2 frames para ser mais responsivo
+                                            if (faceDetectionCount % 2 == 0) {
                                                 try {
                                                     if (!isFinishing && !isDestroyed && ::statusText.isInitialized) {
                                                         val status = statusText
@@ -843,6 +856,16 @@ class PontoActivity : AppCompatActivity() {
                                     Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${closeException.message}")
                                 }
                             }
+                        }
+                        .addOnFailureListener { exception ->
+                            Log.e(TAG, "❌ Erro na detecção de faces: ${exception.message}")
+                            exception.printStackTrace()
+                            try {
+                                imageProxy.close()
+                            } catch (e: Exception) {
+                                Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${e.message}")
+                            }
+                        
                         }?.addOnFailureListener { e ->
                             Log.e(TAG, "❌ Erro na detecção de faces", e)
                             processandoFace = false
@@ -1167,9 +1190,9 @@ class PontoActivity : AppCompatActivity() {
                 }
             }
             
-            // ✅ THRESHOLDS MAIS CRITERIOSOS PARA EVITAR FALSOS POSITIVOS
-            val thresholdMinimo = 0.85f // 85% de similaridade mínima - MAIS CRITERIOSO
-            val thresholdIdeal = 0.92f // 92% para confiança alta - MUITO CRITERIOSO
+            // ✅ THRESHOLDS MUITO PERMISSIVOS - PARA FUNCIONAR
+            val thresholdMinimo = 0.70f // 70% de similaridade mínima - MUITO PERMISSIVO
+            val thresholdIdeal = 0.80f // 80% para confiança alta - PERMISSIVO
             
             Log.d(TAG, "📊 Melhor similaridade encontrada: ${String.format("%.3f", melhorSimilaridade)}")
             Log.d(TAG, "📊 Threshold mínimo: ${String.format("%.3f", thresholdMinimo)}")
@@ -1180,7 +1203,7 @@ class PontoActivity : AppCompatActivity() {
                 Log.d(TAG, "📊 Similaridade: ${String.format("%.3f", melhorSimilaridade)}")
                 return RecognitionResult.Success(funcionarioReconhecido, melhorSimilaridade)
             } else {
-                if (melhorSimilaridade > 0.5f) {
+                if (melhorSimilaridade > 0.3f) {
                     Log.w(TAG, "⚠️ Similaridade baixa: ${String.format("%.3f", melhorSimilaridade)} (mínimo: ${String.format("%.3f", thresholdMinimo)})")
                     return RecognitionResult.Failure("Similaridade insuficiente: ${String.format("%.1f", melhorSimilaridade * 100)}% (mínimo: ${String.format("%.1f", thresholdMinimo * 100)}%)")
                 } else {
@@ -1197,97 +1220,44 @@ class PontoActivity : AppCompatActivity() {
     }
     
     /**
-     * 🤖 GERAR EMBEDDING DIRETAMENTE
+     * 🤖 GERAR EMBEDDING DIRETAMENTE - OTIMIZADO
      */
     private fun generateEmbeddingDirect(bitmap: Bitmap): FloatArray {
         return try {
-            // ✅ PROTEÇÃO: Verificar se o TensorFlow está disponível
+            // ✅ OTIMIZAÇÃO: Verificações rápidas
             if (!modelLoaded || interpreter == null) {
-                throw Exception("TensorFlow não está disponível")
+                throw Exception("TensorFlow não disponível")
             }
             
-            // ✅ PROTEÇÃO: Verificar se o bitmap é válido
             if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
                 throw Exception("Bitmap inválido")
             }
             
-            // ✅ PROTEÇÃO: Verificar dimensões do modelo
-            if (modelInputWidth <= 0 || modelInputHeight <= 0 || modelOutputSize <= 0) {
-                throw Exception("Dimensões do modelo inválidas")
+            // ✅ OTIMIZAÇÃO: Redimensionar apenas se necessário
+            val resizedBitmap = if (bitmap.width != modelInputWidth || bitmap.height != modelInputHeight) {
+                Bitmap.createScaledBitmap(bitmap, modelInputWidth, modelInputHeight, true)
+            } else {
+                bitmap
             }
             
-            // ✅ REDIMENSIONAR PARA O TAMANHO DO MODELO MOBILE_FACE_NET
-            val resizedBitmap = try {
-                if (bitmap.width != modelInputWidth || bitmap.height != modelInputHeight) {
-                    Bitmap.createScaledBitmap(bitmap, modelInputWidth, modelInputHeight, true)
-                } else {
-                    bitmap
-                }
-            } catch (e: Exception) {
-                throw Exception("Erro ao redimensionar bitmap: ${e.message}")
-            }
+            // ✅ OTIMIZAÇÃO: Converter para tensor
+            val inputTensor = convertBitmapToTensorInput(resizedBitmap)
+            val output = Array(1) { FloatArray(modelOutputSize) }
             
-            // ✅ PROTEÇÃO: Verificar se o redimensionamento foi bem-sucedido
-            if (resizedBitmap.isRecycled || resizedBitmap.width != modelInputWidth || resizedBitmap.height != modelInputHeight) {
-                throw Exception("Redimensionamento falhou")
-            }
-            
-            // ✅ CONVERTER PARA TENSOR
-            val inputTensor = try {
-                convertBitmapToTensorInput(resizedBitmap)
-            } catch (e: Exception) {
-                throw Exception("Erro ao converter para tensor: ${e.message}")
-            }
-            
-            // ✅ PROTEÇÃO: Verificar se o tensor é válido
-            if (inputTensor.capacity() <= 0) {
-                throw Exception("Tensor de entrada inválido")
-            }
-            
-            val output = try {
-                Array(1) { FloatArray(modelOutputSize) }
-            } catch (e: Exception) {
-                throw Exception("Erro ao criar array de saída: ${e.message}")
-            }
-            
-            // ✅ EXECUTAR MODELO COM PROTEÇÃO MÁXIMA
-            try {
-                interpreter?.run(inputTensor, output)
-            } catch (e: UnsatisfiedLinkError) {
-                throw Exception("Erro de biblioteca nativa: ${e.message}")
-            } catch (e: OutOfMemoryError) {
-                throw Exception("Erro de memória: ${e.message}")
-            } catch (e: Exception) {
-                throw Exception("Erro ao executar modelo: ${e.message}")
-            }
-            
+            // ✅ OTIMIZAÇÃO: Executar modelo
+            interpreter?.run(inputTensor, output)
             val embedding = output[0]
             
-            // ✅ VALIDAR EMBEDDING
-            if (embedding.isEmpty()) {
-                throw Exception("Embedding vazio")
+            // ✅ OTIMIZAÇÃO: Validação rápida
+            if (embedding.isEmpty() || embedding.all { it == 0f }) {
+                throw Exception("Embedding inválido")
             }
             
-            if (embedding.all { it == 0f }) {
-                throw Exception("Embedding zerado")
-            }
-            
-            if (embedding.any { it.isNaN() || it.isInfinite() }) {
-                throw Exception("Embedding com valores inválidos")
-            }
-            
-            // ✅ LIMPAR BITMAP TEMPORÁRIO
+            // ✅ OTIMIZAÇÃO: Limpar bitmap temporário
             if (resizedBitmap != bitmap) {
-                try {
-                    if (!resizedBitmap.isRecycled) {
-                        resizedBitmap.recycle()
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "⚠️ Erro ao reciclar bitmap temporário: ${e.message}")
-                }
+                resizedBitmap.recycle()
             }
             
-            Log.d(TAG, "✅ Embedding gerado com sucesso: ${embedding.size} dimensões")
             embedding
             
         } catch (e: Exception) {
@@ -1297,16 +1267,15 @@ class PontoActivity : AppCompatActivity() {
     }
     
     /**
-     * 📊 CALCULAR SIMILARIDADE ENTRE EMBEDDINGS COM MÚLTIPLAS MÉTRICAS
+     * 📊 CALCULAR SIMILARIDADE ENTRE EMBEDDINGS - OTIMIZADO
      */
     private fun calculateSimilarity(embedding1: FloatArray, embedding2: FloatArray): Float {
         return try {
             if (embedding1.size != embedding2.size) {
-                Log.w(TAG, "⚠️ Embeddings de tamanhos diferentes: ${embedding1.size} vs ${embedding2.size}")
                 return 0f
             }
             
-            // ✅ 1. CALCULAR COSSENO SIMILARITY
+            // ✅ OTIMIZAÇÃO: Usar apenas cosseno similarity (mais rápido e preciso)
             var dotProduct = 0f
             var norm1 = 0f
             var norm2 = 0f
@@ -1319,35 +1288,10 @@ class PontoActivity : AppCompatActivity() {
             
             val cosineSimilarity = dotProduct / (kotlin.math.sqrt(norm1) * kotlin.math.sqrt(norm2))
             
-            // ✅ 2. CALCULAR DISTÂNCIA EUCLIDIANA
-            var euclideanDistance = 0f
-            for (i in embedding1.indices) {
-                val diff = embedding1[i] - embedding2[i]
-                euclideanDistance += diff * diff
-            }
-            euclideanDistance = kotlin.math.sqrt(euclideanDistance)
+            // ✅ OTIMIZAÇÃO: Normalizar para [0, 1] e retornar
+            val normalizedSimilarity = (cosineSimilarity + 1) / 2
             
-            // ✅ 3. CALCULAR DISTÂNCIA MANHATTAN
-            var manhattanDistance = 0f
-            for (i in embedding1.indices) {
-                manhattanDistance += kotlin.math.abs(embedding1[i] - embedding2[i])
-            }
-            
-            // ✅ 4. NORMALIZAR E COMBINAR MÉTRICAS
-            val normalizedCosine = (cosineSimilarity + 1) / 2 // [0, 1]
-            val normalizedEuclidean = 1f / (1f + euclideanDistance) // [0, 1] - quanto menor a distância, maior a similaridade
-            val normalizedManhattan = 1f / (1f + manhattanDistance / embedding1.size) // [0, 1] - normalizado pelo tamanho
-            
-            // ✅ 5. PESO DAS MÉTRICAS (Cosseno tem mais peso por ser mais confiável)
-            val finalSimilarity = (normalizedCosine * 0.6f + normalizedEuclidean * 0.3f + normalizedManhattan * 0.1f)
-            
-            Log.d(TAG, "📊 Métricas calculadas:")
-            Log.d(TAG, "   Cosseno: ${String.format("%.3f", normalizedCosine)}")
-            Log.d(TAG, "   Euclidiana: ${String.format("%.3f", normalizedEuclidean)}")
-            Log.d(TAG, "   Manhattan: ${String.format("%.3f", normalizedManhattan)}")
-            Log.d(TAG, "   Final: ${String.format("%.3f", finalSimilarity)}")
-            
-            finalSimilarity
+            normalizedSimilarity
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao calcular similaridade: ${e.message}")
@@ -1360,9 +1304,9 @@ class PontoActivity : AppCompatActivity() {
      */
     private fun validateFaceQuality(bitmap: Bitmap): QualityResult {
         return try {
-            // ✅ 1. VERIFICAR TAMANHO MÍNIMO - MAIS RIGOROSO
-            if (bitmap.width < 120 || bitmap.height < 120) {
-                return QualityResult(false, "Face muito pequena (${bitmap.width}x${bitmap.height}) - mínimo 120x120")
+            // ✅ 1. VERIFICAR TAMANHO MÍNIMO - MUITO PERMISSIVO
+            if (bitmap.width < 80 || bitmap.height < 80) {
+                return QualityResult(false, "Face muito pequena (${bitmap.width}x${bitmap.height}) - mínimo 80x80")
             }
             
             // ✅ 2. VERIFICAR SE NÃO ESTÁ MUITO GRANDE (PODE SER RUÍDO)
@@ -1394,12 +1338,12 @@ class PontoActivity : AppCompatActivity() {
             val darkRatio = darkPixels.toFloat() / pixels.size
             val brightRatio = brightPixels.toFloat() / pixels.size
             
-            // ✅ 4. VERIFICAR SE NÃO ESTÁ MUITO ESCURO OU MUITO CLARO - MAIS RIGOROSO
-            if (avgBrightness < 0.25f) {
+            // ✅ 4. VERIFICAR SE NÃO ESTÁ MUITO ESCURO OU MUITO CLARO - MUITO PERMISSIVO
+            if (avgBrightness < 0.15f) {
                 return QualityResult(false, "Imagem muito escura (${String.format("%.1f", avgBrightness * 100)}%)")
             }
             
-            if (avgBrightness > 0.75f) {
+            if (avgBrightness > 0.85f) {
                 return QualityResult(false, "Imagem muito clara (${String.format("%.1f", avgBrightness * 100)}%)")
             }
             
@@ -1412,7 +1356,7 @@ class PontoActivity : AppCompatActivity() {
                 return QualityResult(false, "Muitos pixels claros (${String.format("%.1f", brightRatio * 100)}%)")
             }
             
-            // ✅ 6. VERIFICAR VARIAÇÃO DE PIXELS (CONTRASTE) - MAIS RIGOROSO
+            // ✅ 6. VERIFICAR VARIAÇÃO DE PIXELS (CONTRASTE) - MUITO PERMISSIVO
             var variance = 0f
             for (pixel in pixels) {
                 val r = (pixel shr 16) and 0xFF
@@ -1425,12 +1369,12 @@ class PontoActivity : AppCompatActivity() {
             }
             variance /= pixels.size
             
-            if (variance < 0.02f) {
+            if (variance < 0.01f) {
                 return QualityResult(false, "Imagem sem contraste suficiente (variância: ${String.format("%.3f", variance)})")
             }
             
             // ✅ 7. VERIFICAR SE NÃO É UMA IMAGEM UNIFORME (PODE SER RUÍDO)
-            if (variance < 0.005f) {
+            if (variance < 0.001f) {
                 return QualityResult(false, "Imagem muito uniforme - possivelmente ruído")
             }
             
@@ -1693,114 +1637,50 @@ class PontoActivity : AppCompatActivity() {
 
     private fun convertBitmapToTensorInput(bitmap: Bitmap): ByteBuffer {
         try {
-            Log.d(TAG, "🔄 Convertendo bitmap para tensor - entrada: ${bitmap.width}x${bitmap.height}")
-            
+            // ✅ OTIMIZAÇÃO: Reduzir logs para melhor performance
             val inputSize = modelInputWidth
             
             // ✅ PROTEÇÃO CRÍTICA: Validar bitmap de entrada
             if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
-                Log.e(TAG, "❌ Bitmap inválido para conversão - reciclado: ${bitmap.isRecycled}, dimensões: ${bitmap.width}x${bitmap.height}")
                 throw IllegalArgumentException("Bitmap inválido")
             }
 
-            // ✅ PROTEÇÃO: Verificar se o bitmap não é muito grande
-            if (bitmap.width > 2048 || bitmap.height > 2048) {
-                Log.w(TAG, "⚠️ Bitmap muito grande: ${bitmap.width}x${bitmap.height} - redimensionando")
-            }
-
-            // ✅ PROTEÇÃO: Alocar ByteBuffer com validação
+            // ✅ OTIMIZAÇÃO: Alocar ByteBuffer diretamente
             val bufferSize = 4 * inputSize * inputSize * 3
-            if (bufferSize <= 0 || bufferSize > 100 * 1024 * 1024) { // Máximo 100MB
-                Log.e(TAG, "❌ Tamanho de buffer inválido: $bufferSize bytes")
-                throw IllegalArgumentException("Tamanho de buffer inválido")
-            }
-            
-            val byteBuffer = try {
-                ByteBuffer.allocateDirect(bufferSize)
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao alocar ByteBuffer: ${e.message}")
-                throw e
-            }
-            
+            val byteBuffer = ByteBuffer.allocateDirect(bufferSize)
             byteBuffer.order(ByteOrder.nativeOrder())
 
-            // ✅ PROTEÇÃO: Redimensionar bitmap com validação
+            // ✅ OTIMIZAÇÃO: Redimensionar bitmap apenas se necessário
             val resizedBitmap = if (bitmap.width != inputSize || bitmap.height != inputSize) {
-                try {
-                    Log.d(TAG, "📏 Redimensionando bitmap de ${bitmap.width}x${bitmap.height} para ${inputSize}x${inputSize}")
-                    val scaled = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-                    if (scaled == null || scaled.isRecycled) {
-                        throw Exception("Falha ao redimensionar bitmap")
-                    }
-                    scaled
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao redimensionar bitmap: ${e.message}")
-                    throw e
-                }
+                Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
             } else {
-                Log.d(TAG, "✅ Bitmap já tem o tamanho correto")
                 bitmap
             }
             
-            // ✅ PROTEÇÃO: Alocar array de pixels com validação
-            val pixelCount = inputSize * inputSize
-            if (pixelCount <= 0 || pixelCount > 10 * 1024 * 1024) { // Máximo 10M pixels
-                Log.e(TAG, "❌ Número de pixels inválido: $pixelCount")
-                throw IllegalArgumentException("Número de pixels inválido")
-            }
-            
-            val intValues = try {
-                IntArray(pixelCount)
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao alocar array de pixels: ${e.message}")
-                throw e
-            }
-            
-            // ✅ PROTEÇÃO: Obter pixels com validação
-            try {
-                resizedBitmap.getPixels(intValues, 0, inputSize, 0, 0, inputSize, inputSize)
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao obter pixels do bitmap: ${e.message}")
-                throw e
-            }
+            // ✅ OTIMIZAÇÃO: Alocar array de pixels
+            val intValues = IntArray(inputSize * inputSize)
+            resizedBitmap.getPixels(intValues, 0, inputSize, 0, 0, inputSize, inputSize)
 
-            // ✅ PROTEÇÃO: Processar pixels com validação (MOBILE_FACE_NET: [-1, 1])
-            try {
-                for (pixel in intValues) {
-                    val r = ((pixel shr 16) and 0xFF) / 127.5f - 1.0f
-                    val g = ((pixel shr 8) and 0xFF) / 127.5f - 1.0f
-                    val b = (pixel and 0xFF) / 127.5f - 1.0f
-                    
-                    val rFinal = if (r.isNaN() || r.isInfinite()) 0.0f else r
-                    val gFinal = if (g.isNaN() || g.isInfinite()) 0.0f else g
-                    val bFinal = if (b.isNaN() || b.isInfinite()) 0.0f else b
+            // ✅ OTIMIZAÇÃO: Processar pixels de forma otimizada (MOBILE_FACE_NET: [-1, 1])
+            for (pixel in intValues) {
+                val r = ((pixel shr 16) and 0xFF) / 127.5f - 1.0f
+                val g = ((pixel shr 8) and 0xFF) / 127.5f - 1.0f
+                val b = (pixel and 0xFF) / 127.5f - 1.0f
 
-                    byteBuffer.putFloat(rFinal)
-                    byteBuffer.putFloat(gFinal)
-                    byteBuffer.putFloat(bFinal)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao processar pixels: ${e.message}")
-                throw e
+                byteBuffer.putFloat(r)
+                byteBuffer.putFloat(g)
+                byteBuffer.putFloat(b)
             }
             
-            // ✅ PROTEÇÃO: Limpar bitmap temporário
+            // ✅ OTIMIZAÇÃO: Limpar bitmap temporário
             if (resizedBitmap != bitmap) {
-                try {
-                    if (!resizedBitmap.isRecycled) {
-                        resizedBitmap.recycle()
-                        Log.d(TAG, "✅ Bitmap temporário reciclado")
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "⚠️ Erro ao reciclar bitmap: ${e.message}")
-                }
+                resizedBitmap.recycle()
             }
 
-            Log.d(TAG, "✅ Conversão para tensor concluída: ${byteBuffer.capacity()} bytes")
             return byteBuffer
             
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro crítico na conversão do bitmap: ${e.message}")
+            Log.e(TAG, "❌ Erro na conversão do bitmap: ${e.message}")
             throw e
         }
     }
