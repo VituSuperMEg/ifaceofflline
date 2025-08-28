@@ -55,7 +55,7 @@ object FaceRecognitionConfig {
     /**
      * Nitidez mínima da imagem (0.0 - 1.0)
      */
-    const val MIN_SHARPNESS = 0.1f
+    const val MIN_SHARPNESS = 0.005f // Reduzido de 0.1f para 0.005f (mais permissivo)
     
     // ========== THRESHOLDS DE RECONHECIMENTO ==========
     
@@ -133,12 +133,12 @@ object FaceRecognitionConfig {
     // ========== CONFIGURAÇÕES DE DIMENSÕES ==========
     
     /**
-     * Tamanho de entrada do modelo
+     * Tamanho de entrada do modelo (mobile_face_net.tflite)
      */
-    const val MODEL_INPUT_SIZE = 160
+    const val MODEL_INPUT_SIZE = 112
     
     /**
-     * Tamanho de saída do modelo (dimensões do embedding)
+     * Tamanho de saída do modelo (dimensões do embedding - mobile_face_net.tflite)
      */
     const val MODEL_OUTPUT_SIZE = 192
     

@@ -65,7 +65,7 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-metadata:0.4.4")
     implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
-    
+
     // ML Kit Face Detection - Versão mais recente
     implementation("com.google.mlkit:face-detection:16.1.5")
     

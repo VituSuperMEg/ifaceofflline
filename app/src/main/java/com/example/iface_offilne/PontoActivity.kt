@@ -10,7 +10,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.*
-import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -20,35 +19,34 @@ import androidx.core.content.ContextCompat
 import com.example.iface_offilne.data.AppDatabase
 import com.example.iface_offilne.data.FuncionariosEntity
 import com.example.iface_offilne.data.PontosGenericosEntity
-import com.example.iface_offilne.service.PontoSincronizacaoService
-import com.example.iface_offilne.helpers.FaceRecognitionHelper
-import com.example.iface_offilne.helpers.LocationHelper
-import com.example.iface_offilne.helpers.DeviceCapabilityHelper
 import com.example.iface_offilne.helpers.AdaptiveFaceRecognitionHelper
 import com.example.iface_offilne.helpers.AdvancedFaceRecognitionHelper
+import com.example.iface_offilne.helpers.DeviceCapabilityHelper
 import com.example.iface_offilne.helpers.FaceRecognitionDebugHelper
-import com.example.iface_offilne.helpers.PerformanceLevel
+import com.example.iface_offilne.helpers.FaceRecognitionHelper
+import com.example.iface_offilne.helpers.LocationHelper
 import com.example.iface_offilne.helpers.bitmapToBase64
 import com.example.iface_offilne.helpers.cropFace
 import com.example.iface_offilne.helpers.fixImageOrientationDefinitive
 import com.example.iface_offilne.helpers.toBitmap
+import com.example.iface_offilne.service.PontoSincronizacaoService
 import com.example.iface_offilne.util.FaceOverlayView
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.text.SimpleDateFormat
+import java.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.tensorflow.lite.Interpreter
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.text.SimpleDateFormat
-import java.util.*
 
 /**
  * Activity principal para registro de ponto com reconhecimento facial
- * 
+ *
  * ✅ VERSÃO SIMPLIFICADA E ORGANIZADA:
  * - Sistema de reconhecimento facial simplificado
  * - Cooldown de 5 segundos entre registros
@@ -81,38 +79,39 @@ class PontoActivity : AppCompatActivity() {
     private var lastProcessingTime = 0L
     private var processingTimeout = 10000L
     private var faceDetectionCount = 0 // Contador de detecções de face
-    
+
     // ✅ COOLDOWN: Sistema para evitar múltiplos registros
     private var lastPontoRegistrado = 0L
     private var cooldownPonto = 8000L // 8 segundos de cooldown
-    
+
     // ✅ ESTABILIZAÇÃO: Sistema EQUILIBRADO para precisão
     private var faceStableCount = 0 // Contador de frames estáveis
     private var lastFacePosition: Rect? = null // Última posição da face
     private var faceStableStartTime = 0L // Tempo de início da estabilização
-    private var minStableFrames = 5 // Mínimo de frames estáveis (EQUILIBRADO)
-    private var maxStableTime = 4000L // Tempo máximo de estabilização (4 segundos)
-    private var positionTolerance = 80 // Tolerância de movimento (pixels) - EQUILIBRADO
-    
+    private var minStableFrames = 6 // Mínimo de frames estáveis (EQUILIBRADO)
+    private var maxStableTime = 5000L // Tempo máximo de estabilização (4 segundos)
+    private var positionTolerance = 120 // Tolerância de movimento (pixels) - EQUILIBRADO
 
-    
     // ✅ NOVO: Helpers adaptativos para reconhecimento facial
     private var deviceCapabilityHelper: DeviceCapabilityHelper? = null
     private var adaptiveFaceRecognitionHelper: AdaptiveFaceRecognitionHelper? = null
     private var advancedFaceRecognitionHelper: AdvancedFaceRecognitionHelper? = null
     
+    // 🎯 PRÉ-PROCESSADOR FACIAL AVANÇADO (igual ao CameraActivity)
+    private lateinit var facePreprocessor: com.example.iface_offilne.util.FacePreprocessor
+
     // ✅ FALLBACK: Sistema de fallback para TensorFlow
     private var tensorFlowFallbackMode = false
     private var tensorFlowErrorCount = 0
     private var lastTensorFlowError = 0L
     private var maxTensorFlowErrors = 3
-    
+
     // ✅ PROTEÇÃO: Sistema de proteção contra crashes
     private var tensorFlowCrashCount = 0
     private var maxTensorFlowCrashes = 2
     private var lastTensorFlowCrash = 0L
     private var tensorFlowCrashCooldown = 30000L // 30 segundos
-    
+
     // ✅ HISTÓRICO: Sistema para evitar falsos positivos
     private var recognitionHistory = mutableListOf<RecognitionAttempt>()
     private var maxHistorySize = 10
@@ -122,32 +121,32 @@ class PontoActivity : AppCompatActivity() {
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 10
         private const val REQUEST_CODE_LOCATION_PERMISSIONS = 20
-        private val REQUIRED_PERMISSIONS = when {
-            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+        private val REQUIRED_PERMISSIONS =
+                when {
+                    android.os.Build.VERSION.SDK_INT >=
+                            android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+                        arrayOf(
+                                Manifest.permission.CAMERA,
+                                Manifest.permission.READ_MEDIA_IMAGES,
+                                Manifest.permission.POST_NOTIFICATIONS
+                        )
+                    }
+                    android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU -> {
+                        arrayOf(Manifest.permission.CAMERA, Manifest.permission.READ_MEDIA_IMAGES)
+                    }
+                    else -> {
+                        arrayOf(
+                                Manifest.permission.CAMERA,
+                                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                                Manifest.permission.READ_EXTERNAL_STORAGE
+                        )
+                    }
+                }
+        private val LOCATION_PERMISSIONS =
                 arrayOf(
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.READ_MEDIA_IMAGES,
-                    Manifest.permission.POST_NOTIFICATIONS
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
                 )
-            }
-            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU -> {
-                arrayOf(
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.READ_MEDIA_IMAGES
-                )
-            }
-            else -> {
-                arrayOf(
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                    Manifest.permission.READ_EXTERNAL_STORAGE
-                )
-            }
-        }
-        private val LOCATION_PERMISSIONS = arrayOf(
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        )
         private const val TAG = "PontoActivity"
     }
 
@@ -156,24 +155,21 @@ class PontoActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_ponto)
-        
+
         Log.d(TAG, "🚀 === INICIANDO PONTOACTIVITY ===")
-        
+
         try {
-            // ✅ VERIFICAR SE VEM DA TELA DE SUCESSO
             val fromSuccessScreen = intent.getBooleanExtra("FROM_SUCCESS_SCREEN", false)
             if (fromSuccessScreen) {
-                Log.d(TAG, "🔄 Reinicialização completa após tela de sucesso")
-                // ✅ FORÇAR LIMPEZA COMPLETA DOS RECURSOS
                 forceCleanup()
             }
-            
+
             setupUI()
             Log.d(TAG, "✅ UI configurada")
-            
+
             initializeHelpers()
             Log.d(TAG, "✅ Helpers inicializados")
-            
+
             // ✅ PROTEÇÃO: Verificar se TensorFlow está desabilitado antes de carregar
             if (shouldDisableTensorFlowDueToCrashes()) {
                 Log.w(TAG, "⚠️ TensorFlow desabilitado - pulando carregamento")
@@ -182,26 +178,33 @@ class PontoActivity : AppCompatActivity() {
                 loadTensorFlowModel()
                 Log.d(TAG, "✅ Modelo TensorFlow iniciado")
             }
-            
+
             createTestEmployeeIfNeeded()
             Log.d(TAG, "✅ Funcionário de teste verificado")
-            
+
             if (allPermissionsGranted()) {
                 Log.d(TAG, "✅ Permissões concedidas")
                 if (!allLocationPermissionsGranted()) {
                     Log.d(TAG, "📍 Solicitando permissões de localização")
-                    ActivityCompat.requestPermissions(this, LOCATION_PERMISSIONS, REQUEST_CODE_LOCATION_PERMISSIONS)
+                    ActivityCompat.requestPermissions(
+                            this,
+                            LOCATION_PERMISSIONS,
+                            REQUEST_CODE_LOCATION_PERMISSIONS
+                    )
                 } else {
                     Log.d(TAG, "📍 Permissões de localização já concedidas")
                 }
                 startCamera()
             } else {
                 Log.d(TAG, "🔐 Solicitando permissões")
-                ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
+                ActivityCompat.requestPermissions(
+                        this,
+                        REQUIRED_PERMISSIONS,
+                        REQUEST_CODE_PERMISSIONS
+                )
             }
-            
+
             Log.d(TAG, "✅ PontoActivity inicializada com sucesso")
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro crítico na inicialização", e)
             e.printStackTrace()
@@ -217,55 +220,63 @@ class PontoActivity : AppCompatActivity() {
         funcionarioNome = findViewById(R.id.funcionarioNome)
         ultimoPonto = findViewById(R.id.ultimoPonto)
         tipoPontoRadioGroup = findViewById(R.id.tipoPontoRadioGroup)
-        
+
         // Mensagem da mensagem de sucesso
         statusText.text = ""
-        
+
         findViewById<Button>(R.id.btnVoltar).setOnClickListener {
             val intent = Intent(this, ConfiguracoesActivity::class.java)
             startActivity(intent)
         }
-        
-        findViewById<Button>(R.id.btnSair).setOnClickListener {
-            onBackPressed()
-        }
+
+        findViewById<Button>(R.id.btnSair).setOnClickListener { onBackPressed() }
     }
 
     private fun initializeHelpers() {
         try {
             Log.d(TAG, "🔧 Inicializando helpers...")
-            
+
             // ✅ INICIALIZAR FACE DETECTOR - OTIMIZADO PARA VELOCIDADE
             try {
-                faceDetector = FaceDetection.getClient(
-                    FaceDetectorOptions.Builder()
-                        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
-                        .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
-                        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
-                        .setMinFaceSize(0.05f) // ✅ CORRIGIDO: Face menor para detectar qualquer rosto
-                        .setContourMode(FaceDetectorOptions.CONTOUR_MODE_NONE) // ✅ DESABILITAR CONTOURS
-                        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE) // ✅ DESABILITAR CLASSIFICAÇÕES
-                        .build()
-                )
+                faceDetector =
+                        FaceDetection.getClient(
+                                FaceDetectorOptions.Builder()
+                                        .setPerformanceMode(
+                                                FaceDetectorOptions.PERFORMANCE_MODE_FAST
+                                        )
+                                        .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
+                                        .setClassificationMode(
+                                                FaceDetectorOptions.CLASSIFICATION_MODE_NONE
+                                        )
+                                        .setMinFaceSize(
+                                                0.5f
+                                        ) // ✅ CORRIGIDO: Face menor para detectar qualquer rosto
+                                        .setContourMode(
+                                                FaceDetectorOptions.CONTOUR_MODE_NONE
+                                        ) // ✅ DESABILITAR CONTOURS
+                                        .setClassificationMode(
+                                                FaceDetectorOptions.CLASSIFICATION_MODE_NONE
+                                        ) // ✅ DESABILITAR CLASSIFICAÇÕES
+                                        .build()
+                        )
                 Log.d(TAG, "✅ FaceDetector otimizado para velocidade inicializado")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao inicializar FaceDetector: ${e.message}")
                 e.printStackTrace()
             }
-            
+
             // ✅ NOVO: Inicializar DeviceCapabilityHelper primeiro
             try {
                 deviceCapabilityHelper = DeviceCapabilityHelper(this)
                 Log.d(TAG, "✅ DeviceCapabilityHelper inicializado")
-                
+
                 val isSupported = deviceCapabilityHelper?.isFaceRecognitionSupported() ?: false
                 Log.d(TAG, "🔍 Suporte ao reconhecimento facial: $isSupported")
-                
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao inicializar DeviceCapabilityHelper: ${e.message}")
                 e.printStackTrace()
             }
-            
+
             try {
                 adaptiveFaceRecognitionHelper = AdaptiveFaceRecognitionHelper(this)
                 Log.d(TAG, "✅ AdaptiveFaceRecognitionHelper inicializado")
@@ -273,7 +284,7 @@ class PontoActivity : AppCompatActivity() {
                 Log.e(TAG, "❌ Erro ao inicializar AdaptiveFaceRecognitionHelper: ${e.message}")
                 e.printStackTrace()
             }
-            
+
             try {
                 faceRecognitionHelper = FaceRecognitionHelper(this)
                 Log.d(TAG, "✅ FaceRecognitionHelper inicializado")
@@ -281,7 +292,7 @@ class PontoActivity : AppCompatActivity() {
                 Log.e(TAG, "❌ Erro ao inicializar FaceRecognitionHelper: ${e.message}")
                 e.printStackTrace()
             }
-            
+
             try {
                 advancedFaceRecognitionHelper = AdvancedFaceRecognitionHelper(this)
                 Log.d(TAG, "✅ AdvancedFaceRecognitionHelper inicializado")
@@ -289,7 +300,7 @@ class PontoActivity : AppCompatActivity() {
                 Log.e(TAG, "❌ Erro ao inicializar AdvancedFaceRecognitionHelper: ${e.message}")
                 e.printStackTrace()
             }
-            
+
             try {
                 locationHelper = LocationHelper(this)
                 Log.d(TAG, "✅ LocationHelper inicializado")
@@ -298,6 +309,15 @@ class PontoActivity : AppCompatActivity() {
                 e.printStackTrace()
             }
             
+            // 🎯 INICIALIZAR PRÉ-PROCESSADOR FACIAL
+            try {
+                facePreprocessor = com.example.iface_offilne.util.FacePreprocessor(this)
+                Log.d(TAG, "✅ FacePreprocessor inicializado")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro ao inicializar FacePreprocessor: ${e.message}")
+                e.printStackTrace()
+            }
+
             Log.d(TAG, "✅ Helpers inicializados com sucesso")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro crítico ao inicializar helpers", e)
@@ -307,13 +327,13 @@ class PontoActivity : AppCompatActivity() {
 
     private fun loadTensorFlowModel() {
         Log.d(TAG, "🤖 Carregando modelo TensorFlow...")
-        
+
         // ✅ PROTEÇÃO: Verificar se já está carregando
         if (modelLoaded && interpreter != null) {
             Log.d(TAG, "✅ Modelo já carregado - pulando carregamento")
             return
         }
-        
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 // ✅ PROTEÇÃO: Verificar se a Activity ainda está válida
@@ -321,7 +341,7 @@ class PontoActivity : AppCompatActivity() {
                     Log.w(TAG, "⚠️ Activity finalizada - cancelando carregamento do modelo")
                     return@launch
                 }
-                
+
                 // ✅ PROTEÇÃO: Limpar interpreter anterior
                 try {
                     interpreter?.close()
@@ -331,193 +351,215 @@ class PontoActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Log.w(TAG, "⚠️ Erro ao limpar interpreter anterior: ${e.message}")
                 }
-                
-                val modelFile = try {
-                    Log.d(TAG, "📁 Tentando abrir modelo do assets...")
-                    assets.open("model.tflite") // ✅ PRIORIDADE: mobile_face_net
-                } catch (e: Exception) {
-                    Log.w(TAG, "⚠️ Modelo model.tflite não encontrado, tentando facenet_model.tflite...")
-                    try {
-                        assets.open("facenet_model.tflite")
-                    } catch (e2: Exception) {
-                        Log.w(TAG, "⚠️ Modelo não encontrado em assets, tentando raw resources...")
+
+                val modelFile =
                         try {
-                            resources.openRawResource(R.raw.mobilefacenet)
-                        } catch (e3: Exception) {
-                            Log.e(TAG, "❌ Erro ao abrir modelo: ${e3.message}")
-                            throw e3
+                            Log.d(TAG, "📁 Tentando abrir modelo do assets...")
+                            assets.open("model.tflite") // ✅ PRIORIDADE: mobile_face_net
+                        } catch (e: Exception) {
+                            Log.w(
+                                    TAG,
+                                    "⚠️ Modelo model.tflite não encontrado, tentando facenet_model.tflite..."
+                            )
+                            try {
+                                assets.open("facenet_model.tflite")
+                            } catch (e2: Exception) {
+                                Log.w(
+                                        TAG,
+                                        "⚠️ Modelo não encontrado em assets, tentando raw resources..."
+                                )
+                                try {
+                                    resources.openRawResource(R.raw.mobilefacenet)
+                                } catch (e3: Exception) {
+                                    Log.e(TAG, "❌ Erro ao abrir modelo: ${e3.message}")
+                                    throw e3
+                                }
+                            }
                         }
-                    }
-                }
-                
+
                 Log.d(TAG, "📄 Modelo encontrado, lendo bytes...")
-                val modelBuffer = modelFile.use { input ->
-                    val available = input.available()
-                    if (available <= 0 || available > 100 * 1024 * 1024) { // Máximo 100MB
-                        throw Exception("Tamanho de modelo inválido: $available bytes")
-                    }
-                    
-                    val bytes = ByteArray(available)
-                    val bytesRead = input.read(bytes)
-                    if (bytesRead != available) {
-                        throw Exception("Erro na leitura do modelo: lidos $bytesRead de $available bytes")
-                    }
-                    
-                    Log.d(TAG, "📊 Bytes lidos: ${bytes.size}")
-                    
-                    try {
-                        ByteBuffer.allocateDirect(bytes.size).apply {
-                            order(ByteOrder.nativeOrder())
-                            put(bytes)
-                            rewind()
+                val modelBuffer =
+                        modelFile.use { input ->
+                            val available = input.available()
+                            if (available <= 0 || available > 100 * 1024 * 1024) { // Máximo 100MB
+                                throw Exception("Tamanho de modelo inválido: $available bytes")
+                            }
+
+                            val bytes = ByteArray(available)
+                            val bytesRead = input.read(bytes)
+                            if (bytesRead != available) {
+                                throw Exception(
+                                        "Erro na leitura do modelo: lidos $bytesRead de $available bytes"
+                                )
+                            }
+
+                            Log.d(TAG, "📊 Bytes lidos: ${bytes.size}")
+
+                            try {
+                                ByteBuffer.allocateDirect(bytes.size).apply {
+                                    order(ByteOrder.nativeOrder())
+                                    put(bytes)
+                                    rewind()
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "❌ Erro ao alocar buffer do modelo: ${e.message}")
+                                throw e
+                            }
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro ao alocar buffer do modelo: ${e.message}")
-                        throw e
-                    }
-                }
-                
+
                 Log.d(TAG, "⚙️ Configurando opções do Interpreter...")
-                val options = try {
-                    Interpreter.Options().apply {
-                        setNumThreads(1)
-                        setUseNNAPI(false)
-                        setAllowFp16PrecisionForFp32(false) // Desabilitar FP16 para evitar problemas
-                        setAllowBufferHandleOutput(false) // Desabilitar buffer handle
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao configurar opções: ${e.message}")
-                    throw e
-                }
-                
+                val options =
+                        try {
+                            Interpreter.Options().apply {
+                                setNumThreads(1)
+                                setUseNNAPI(false)
+                                setAllowFp16PrecisionForFp32(
+                                        false
+                                ) // Desabilitar FP16 para evitar problemas
+                                setAllowBufferHandleOutput(false) // Desabilitar buffer handle
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro ao configurar opções: ${e.message}")
+                            throw e
+                        }
+
                 Log.d(TAG, "🔧 Criando Interpreter...")
-                interpreter = try {
-                    // ✅ PROTEÇÃO: Verificar se o modelo não está corrompido
-                    if (modelBuffer.capacity() < 1000) {
-                        throw Exception("Modelo muito pequeno, possivelmente corrompido")
-                    }
-                    
-                    Interpreter(modelBuffer, options)
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao criar Interpreter: ${e.message}")
-                    throw e
-                }
-                
+                interpreter =
+                        try {
+                            // ✅ PROTEÇÃO: Verificar se o modelo não está corrompido
+                            if (modelBuffer.capacity() < 1000) {
+                                throw Exception("Modelo muito pequeno, possivelmente corrompido")
+                            }
+
+                            Interpreter(modelBuffer, options)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro ao criar Interpreter: ${e.message}")
+                            throw e
+                        }
+
                 // ✅ PROTEÇÃO: Verificar se o interpreter foi criado corretamente
                 if (interpreter != null) {
-                                    // ✅ PROTEÇÃO: Testar o interpreter com dados dummy
-                try {
-                    val currentInterpreter = interpreter
-                    if (currentInterpreter != null) {
-                        // ✅ PROTEÇÃO: Verificar se TensorFlow está desabilitado
-                        if (shouldDisableTensorFlowDueToCrashes()) {
-                            Log.w(TAG, "⚠️ TensorFlow desabilitado devido a crashes anteriores")
-                            modelLoaded = false
-                            return@launch
-                        }
-                        
-                        // ✅ DETECTAR DIMENSÕES DO MODELO AUTOMATICAMENTE
-                        detectModelDimensions(currentInterpreter)
-                        
-                        // ✅ PROTEÇÃO: Verificar se as dimensões são válidas
-                        if (modelInputWidth <= 0 || modelInputHeight <= 0 || modelOutputSize <= 0) {
-                            Log.e(TAG, "❌ Dimensões inválidas detectadas: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}")
-                            throw Exception("Dimensões do modelo inválidas")
-                        }
-                        
-                        // ✅ PROTEÇÃO: Verificar tamanho do buffer
-                        val bufferSize = 4 * modelInputWidth * modelInputHeight * 3
-                        if (bufferSize <= 0 || bufferSize > 10 * 1024 * 1024) { // Máximo 10MB
-                            Log.e(TAG, "❌ Tamanho de buffer inválido: $bufferSize")
-                            throw Exception("Tamanho de buffer inválido")
-                        }
-                        
-                        val testInput = try {
-                            ByteBuffer.allocateDirect(bufferSize)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Erro ao alocar buffer de teste: ${e.message}")
-                            throw e
-                        }
-                        
-                        testInput.order(ByteOrder.nativeOrder())
-                        
-                        // ✅ PROTEÇÃO: Preencher buffer com validação
-                        try {
-                            for (i in 0 until modelInputWidth * modelInputHeight * 3) {
-                                testInput.putFloat(0.1f)
-                            }
-                            testInput.rewind()
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Erro ao preencher buffer: ${e.message}")
-                            throw e
-                        }
-                        
-                        val testOutput = try {
-                            Array(1) { FloatArray(modelOutputSize) }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Erro ao criar array de saída: ${e.message}")
-                            throw e
-                        }
-                        
-                        // ✅ PROTEÇÃO: Executar teste com captura de SIGBUS
-                        try {
-                            currentInterpreter.run(testInput, testOutput)
-                            
-                            // ✅ VERIFICAÇÃO: Validar output
-                            val output = testOutput[0]
-                            if (output.isEmpty()) {
-                                throw Exception("Output vazio do teste")
-                            }
-                            
-                            if (output.any { it.isNaN() || it.isInfinite() }) {
-                                throw Exception("Output com valores inválidos")
-                            }
-                            
-                            Log.d(TAG, "✅ Teste do interpreter bem-sucedido")
-                            Log.d(TAG, "📊 Dimensões detectadas: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}")
-                            
-                            modelLoaded = true
-                            Log.d(TAG, "✅ Modelo TensorFlow carregado com sucesso")
-                            
-                        } catch (e: UnsatisfiedLinkError) {
-                            Log.e(TAG, "❌ Erro de biblioteca nativa: ${e.message}")
-                            registerTensorFlowCrash()
-                            throw e
-                        } catch (e: OutOfMemoryError) {
-                            Log.e(TAG, "❌ Erro de memória: ${e.message}")
-                            registerTensorFlowCrash()
-                            throw e
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Erro no teste do interpreter: ${e.message}")
-                            throw e
-                        }
-                        
-                    } else {
-                        Log.e(TAG, "❌ Interpreter é nulo durante teste")
-                        modelLoaded = false
-                        throw Exception("Interpreter é nulo")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro no teste do interpreter: ${e.message}")
+                    // ✅ PROTEÇÃO: Testar o interpreter com dados dummy
                     try {
-                        interpreter?.close()
-                    } catch (closeException: Exception) {
-                        Log.e(TAG, "❌ Erro ao fechar interpreter: ${closeException.message}")
+                        val currentInterpreter = interpreter
+                        if (currentInterpreter != null) {
+                            // ✅ PROTEÇÃO: Verificar se TensorFlow está desabilitado
+                            if (shouldDisableTensorFlowDueToCrashes()) {
+                                Log.w(TAG, "⚠️ TensorFlow desabilitado devido a crashes anteriores")
+                                modelLoaded = false
+                                return@launch
+                            }
+
+                            // ✅ DETECTAR DIMENSÕES DO MODELO AUTOMATICAMENTE
+                            detectModelDimensions(currentInterpreter)
+
+                            // ✅ PROTEÇÃO: Verificar se as dimensões são válidas
+                            if (modelInputWidth <= 0 ||
+                                            modelInputHeight <= 0 ||
+                                            modelOutputSize <= 0
+                            ) {
+                                Log.e(
+                                        TAG,
+                                        "❌ Dimensões inválidas detectadas: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}"
+                                )
+                                throw Exception("Dimensões do modelo inválidas")
+                            }
+
+                            // ✅ PROTEÇÃO: Verificar tamanho do buffer
+                            val bufferSize = 4 * modelInputWidth * modelInputHeight * 3
+                            if (bufferSize <= 0 || bufferSize > 10 * 1024 * 1024) { // Máximo 10MB
+                                Log.e(TAG, "❌ Tamanho de buffer inválido: $bufferSize")
+                                throw Exception("Tamanho de buffer inválido")
+                            }
+
+                            val testInput =
+                                    try {
+                                        ByteBuffer.allocateDirect(bufferSize)
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "❌ Erro ao alocar buffer de teste: ${e.message}")
+                                        throw e
+                                    }
+
+                            testInput.order(ByteOrder.nativeOrder())
+
+                            // ✅ PROTEÇÃO: Preencher buffer com validação
+                            try {
+                                for (i in 0 until modelInputWidth * modelInputHeight * 3) {
+                                    testInput.putFloat(0.1f)
+                                }
+                                testInput.rewind()
+                            } catch (e: Exception) {
+                                Log.e(TAG, "❌ Erro ao preencher buffer: ${e.message}")
+                                throw e
+                            }
+
+                            val testOutput =
+                                    try {
+                                        Array(1) { FloatArray(modelOutputSize) }
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "❌ Erro ao criar array de saída: ${e.message}")
+                                        throw e
+                                    }
+
+                            // ✅ PROTEÇÃO: Executar teste com captura de SIGBUS
+                            try {
+                                currentInterpreter.run(testInput, testOutput)
+
+                                // ✅ VERIFICAÇÃO: Validar output
+                                val output = testOutput[0]
+                                if (output.isEmpty()) {
+                                    throw Exception("Output vazio do teste")
+                                }
+
+                                if (output.any { it.isNaN() || it.isInfinite() }) {
+                                    throw Exception("Output com valores inválidos")
+                                }
+
+                                Log.d(TAG, "✅ Teste do interpreter bem-sucedido")
+                                Log.d(
+                                        TAG,
+                                        "📊 Dimensões detectadas: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}"
+                                )
+
+                                modelLoaded = true
+                                Log.d(TAG, "✅ Modelo TensorFlow carregado com sucesso")
+                            } catch (e: UnsatisfiedLinkError) {
+                                Log.e(TAG, "❌ Erro de biblioteca nativa: ${e.message}")
+                                registerTensorFlowCrash()
+                                throw e
+                            } catch (e: OutOfMemoryError) {
+                                Log.e(TAG, "❌ Erro de memória: ${e.message}")
+                                registerTensorFlowCrash()
+                                throw e
+                            } catch (e: Exception) {
+                                Log.e(TAG, "❌ Erro no teste do interpreter: ${e.message}")
+                                throw e
+                            }
+                        } else {
+                            Log.e(TAG, "❌ Interpreter é nulo durante teste")
+                            modelLoaded = false
+                            throw Exception("Interpreter é nulo")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro no teste do interpreter: ${e.message}")
+                        try {
+                            interpreter?.close()
+                        } catch (closeException: Exception) {
+                            Log.e(TAG, "❌ Erro ao fechar interpreter: ${closeException.message}")
+                        }
+                        interpreter = null
+                        modelLoaded = false
+                        throw e
                     }
-                    interpreter = null
-                    modelLoaded = false
-                    throw e
-                }
                 } else {
                     Log.e(TAG, "❌ Interpreter criado mas é nulo")
                     modelLoaded = false
                 }
-                
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao carregar modelo TensorFlow", e)
                 e.printStackTrace()
                 modelLoaded = false
-                
+
                 // ✅ PROTEÇÃO: Limpar recursos em caso de erro
                 try {
                     interpreter?.close()
@@ -531,94 +573,114 @@ class PontoActivity : AppCompatActivity() {
 
     private fun startCamera() {
         Log.d(TAG, "📷 Iniciando câmera")
-        
+
         // ✅ PROTEÇÃO: Verificar se a Activity ainda está válida
         if (isFinishing || isDestroyed) {
             Log.w(TAG, "⚠️ Activity finalizada - cancelando inicialização da câmera")
             return
         }
-        
+
         // ✅ PROTEÇÃO: Verificar se a câmera já está ativa
         if (cameraProvider != null) {
             Log.d(TAG, "✅ Câmera já está ativa - pulando inicialização")
             return
         }
-        
+
         try {
             val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-            cameraProviderFuture.addListener({
-                try {
-                    // ✅ PROTEÇÃO: Verificar novamente se a Activity ainda está válida
-                    if (isFinishing || isDestroyed) {
-                        Log.w(TAG, "⚠️ Activity finalizada durante inicialização da câmera")
-                        return@addListener
-                    }
-                    
-                    cameraProvider = cameraProviderFuture.get()
-                    Log.d(TAG, "✅ CameraProvider obtido")
-
-                    // ✅ PROTEÇÃO: Verificar se previewView está inicializado
-                    if (!::previewView.isInitialized) {
-                        Log.e(TAG, "❌ PreviewView não inicializado")
-                        return@addListener
-                    }
-
-                    val preview = Preview.Builder()
-                        .setTargetResolution(android.util.Size(800, 600))
-                        .build().also {
-                            try {
-                                val preview = previewView
-                                it.setSurfaceProvider(preview.surfaceProvider)
-                                Log.d(TAG, "✅ Preview configurado")
-                            } catch (e: Exception) {
-                                Log.e(TAG, "❌ Erro ao configurar preview: ${e.message}")
+            cameraProviderFuture.addListener(
+                    {
+                        try {
+                            // ✅ PROTEÇÃO: Verificar novamente se a Activity ainda está válida
+                            if (isFinishing || isDestroyed) {
+                                Log.w(TAG, "⚠️ Activity finalizada durante inicialização da câmera")
                                 return@addListener
                             }
-                        }
 
-                    imageAnalyzer = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setTargetResolution(android.util.Size(480, 360)) // ✅ RESOLUÇÃO MENOR PARA PROCESSAMENTO MAIS RÁPIDO
-                        .build()
-                        .also {
-                            try {
-                                it.setAnalyzer(ContextCompat.getMainExecutor(this)) { imageProxy ->
-                                    processImage(imageProxy)
-                                }
-                                Log.d(TAG, "✅ ImageAnalyzer configurado")
-                            } catch (e: Exception) {
-                                Log.e(TAG, "❌ Erro ao configurar ImageAnalyzer: ${e.message}")
+                            cameraProvider = cameraProviderFuture.get()
+                            Log.d(TAG, "✅ CameraProvider obtido")
+
+                            // ✅ PROTEÇÃO: Verificar se previewView está inicializado
+                            if (!::previewView.isInitialized) {
+                                Log.e(TAG, "❌ PreviewView não inicializado")
                                 return@addListener
                             }
+
+                            val preview =
+                                    Preview.Builder()
+                                            .setTargetResolution(android.util.Size(800, 600))
+                                            .build()
+                                            .also {
+                                                try {
+                                                    val preview = previewView
+                                                    it.setSurfaceProvider(preview.surfaceProvider)
+                                                    Log.d(TAG, "✅ Preview configurado")
+                                                } catch (e: Exception) {
+                                                    Log.e(
+                                                            TAG,
+                                                            "❌ Erro ao configurar preview: ${e.message}"
+                                                    )
+                                                    return@addListener
+                                                }
+                                            }
+
+                            imageAnalyzer =
+                                    ImageAnalysis.Builder()
+                                            .setBackpressureStrategy(
+                                                    ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST
+                                            )
+                                            .setTargetResolution(
+                                                    android.util.Size(480, 360)
+                                            ) // ✅ RESOLUÇÃO MENOR PARA PROCESSAMENTO MAIS RÁPIDO
+                                            .build()
+                                            .also {
+                                                try {
+                                                    it.setAnalyzer(
+                                                            ContextCompat.getMainExecutor(this)
+                                                    ) { imageProxy -> processImage(imageProxy) }
+                                                    Log.d(TAG, "✅ ImageAnalyzer configurado")
+                                                } catch (e: Exception) {
+                                                    Log.e(
+                                                            TAG,
+                                                            "❌ Erro ao configurar ImageAnalyzer: ${e.message}"
+                                                    )
+                                                    return@addListener
+                                                }
+                                            }
+
+                            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+                            Log.d(TAG, "✅ CameraSelector configurado")
+
+                            try {
+                                val provider = cameraProvider
+                                provider?.unbindAll()
+                                Log.d(TAG, "✅ Câmeras desvinculadas")
+                            } catch (e: Exception) {
+                                Log.w(TAG, "⚠️ Erro ao desvincular câmeras: ${e.message}")
+                            }
+
+                            try {
+                                val provider = cameraProvider
+                                provider?.bindToLifecycle(
+                                        this,
+                                        cameraSelector,
+                                        preview,
+                                        imageAnalyzer
+                                )
+                                Log.d(TAG, "✅ Câmera vinculada ao lifecycle")
+                            } catch (e: Exception) {
+                                Log.e(TAG, "❌ Erro ao vincular câmera: ${e.message}")
+                                return@addListener
+                            }
+
+                            Log.d(TAG, "✅ Câmera iniciada com sucesso")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro ao iniciar câmera", e)
+                            e.printStackTrace()
                         }
-
-                    val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
-                    Log.d(TAG, "✅ CameraSelector configurado")
-
-                    try {
-                        val provider = cameraProvider
-                        provider?.unbindAll()
-                        Log.d(TAG, "✅ Câmeras desvinculadas")
-                    } catch (e: Exception) {
-                        Log.w(TAG, "⚠️ Erro ao desvincular câmeras: ${e.message}")
-                    }
-
-                    try {
-                        val provider = cameraProvider
-                        provider?.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
-                        Log.d(TAG, "✅ Câmera vinculada ao lifecycle")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro ao vincular câmera: ${e.message}")
-                        return@addListener
-                    }
-                    
-                    Log.d(TAG, "✅ Câmera iniciada com sucesso")
-                    
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao iniciar câmera", e)
-                    e.printStackTrace()
-                }
-            }, ContextCompat.getMainExecutor(this))
+                    },
+                    ContextCompat.getMainExecutor(this)
+            )
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro crítico ao obter CameraProvider", e)
             e.printStackTrace()
@@ -655,9 +717,13 @@ class PontoActivity : AppCompatActivity() {
             val mediaImage = imageProxy.image
             if (mediaImage != null) {
                 Log.d(TAG, "📸 Processando imagem: ${mediaImage.width}x${mediaImage.height}")
-                
+
                 try {
-                    val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                    val image =
+                            InputImage.fromMediaImage(
+                                    mediaImage,
+                                    imageProxy.imageInfo.rotationDegrees
+                            )
                     Log.d(TAG, "🔄 Imagem convertida para InputImage")
 
                     // ✅ DEBUG: Verificar se faceDetector está disponível
@@ -667,231 +733,360 @@ class PontoActivity : AppCompatActivity() {
                         imageProxy.close()
                         return
                     }
-                    
+
                     Log.d(TAG, "🔍 Iniciando detecção de faces...")
                     detector.process(image)
-                        .addOnSuccessListener { faces ->
-                            Log.d(TAG, "✅ Detecção bem-sucedida: ${faces.size} faces")
-                            
-                            try {
-                                Log.d(TAG, "👥 Faces detectadas: ${faces.size}")
-                                
-                                if (faces.isNotEmpty()) {
-                                    faceDetectionCount++
-                                    val face = faces[0]
-                                    Log.d(TAG, "🎯 Face principal #$faceDetectionCount: ${face.boundingBox}")
-                                    
-                                    try {
-                                        if (!isFinishing && !isDestroyed && ::overlay.isInitialized) {
-                                            val overlayView = overlay
-                                            overlayView.setBoundingBox(face.boundingBox, mediaImage.width, mediaImage.height)
-                                        } else {
-                                            Log.w(TAG, "⚠️ Overlay não disponível para atualização")
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.w(TAG, "⚠️ Erro ao atualizar overlay: ${e.message}")
-                                    }
+                            .addOnSuccessListener { faces ->
+                                Log.d(TAG, "✅ Detecção bem-sucedida: ${faces.size} faces")
 
-                                    val faceArea = face.boundingBox.width() * face.boundingBox.height()
-                                    val screenArea = mediaImage.width * mediaImage.height
-                                    val faceRatio = faceArea.toFloat() / screenArea.toFloat()
-                                    
-                                    Log.d(TAG, "📊 Face ratio: $faceRatio")
-                                    
-                                    // ✅ SEGURANÇA: Verificar se deve bloquear por atividade suspeita
-                                    if (shouldBlockDueToSuspiciousActivity()) {
+                                try {
+                                    Log.d(TAG, "👥 Faces detectadas: ${faces.size}")
+
+                                    if (faces.isNotEmpty()) {
+                                        faceDetectionCount++
+                                        val face = faces[0]
+                                        Log.d(
+                                                TAG,
+                                                "🎯 Face principal #$faceDetectionCount: ${face.boundingBox}"
+                                        )
+
                                         try {
-                                            if (!isFinishing && !isDestroyed && ::statusText.isInitialized) {
-                                                val status = statusText
-                                                val remainingTime = 10
-                                                status.text = "🚫 Atividade suspeita detectada\nAguarde ${remainingTime}s"
+                                            if (!isFinishing &&
+                                                            !isDestroyed &&
+                                                            ::overlay.isInitialized
+                                            ) {
+                                                val overlayView = overlay
+                                                overlayView.removeFaces()
+                                                overlayView.addFace(
+                                                        faceRect = face.boundingBox,
+                                                        confidence = 1.0f,
+                                                        label = "Face Detectada"
+                                                )
+                                            } else {
+                                                Log.w(
+                                                        TAG,
+                                                        "⚠️ Overlay não disponível para atualização"
+                                                )
                                             }
                                         } catch (e: Exception) {
-                                            Log.w(TAG, "⚠️ Erro ao atualizar status de bloqueio: ${e.message}")
+                                            Log.w(TAG, "⚠️ Erro ao atualizar overlay: ${e.message}")
                                         }
-                                        try {
-                                            imageProxy.close()
-                                        } catch (e: Exception) {
-                                            Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${e.message}")
-                                        }
-                                        return@addOnSuccessListener
-                                    }
-                                    
-                                    // ✅ ESTABILIZAÇÃO: Verificar se a face está estável
-                                    val isFaceStable = checkFaceStability(face.boundingBox)
-                                    
-                                    // ✅ CRITÉRIOS DE QUALIDADE DA FACE - EQUILIBRADOS
-                                    val isFaceBigEnough = faceRatio >= 0.008f // Face deve ocupar pelo menos 0.8% da tela (EQUILIBRADO)
-                                    val isFaceInOval = overlay.isFaceInOval(face.boundingBox)
-                                    val isFaceNotTooBig = faceRatio <= 0.35f // Face não deve ocupar mais de 35% da tela (EQUILIBRADO)
-                                    
-                                    Log.d(TAG, "📊 Face estável: $isFaceStable, Frames estáveis: $faceStableCount")
-                                    Log.d(TAG, "📊 Face grande o suficiente: $isFaceBigEnough, No oval: $isFaceInOval")
-                                    
-                                    // ✅ PROTEÇÃO: Verificar se TensorFlow está desabilitado devido a crashes
-                                    if (shouldDisableTensorFlowDueToCrashes()) {
-                                        try {
-                                            if (!isFinishing && !isDestroyed && ::statusText.isInitialized) {
-                                                val status = statusText
-                                                val remainingTime = (tensorFlowCrashCooldown - (System.currentTimeMillis() - lastTensorFlowCrash)) / 1000
-                                                status.text = "🚫 Sistema temporariamente indisponível\nAguarde ${remainingTime}s"
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.w(TAG, "⚠️ Erro ao atualizar status de indisponibilidade: ${e.message}")
-                                        }
-                                        try {
-                                            imageProxy.close()
-                                        } catch (e: Exception) {
-                                            Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${e.message}")
-                                        }
-                                        return@addOnSuccessListener
-                                    }
-                                    
-                                    if (!processandoFace && modelLoaded && interpreter != null && !isFinishing && !isDestroyed) {
-                                        // ✅ COOLDOWN: Verificar se está em cooldown
-                                        if (isCooldownActive()) {
-                                            val segundosRestantes = getCooldownRemainingSeconds()
-                                            Log.d(TAG, "⏰ Aguardando cooldown: ${segundosRestantes}s restantes")
-                                            
+
+                                        val faceArea =
+                                                face.boundingBox.width() * face.boundingBox.height()
+                                        val screenArea = mediaImage.width * mediaImage.height
+                                        val faceRatio = faceArea.toFloat() / screenArea.toFloat()
+
+                                        Log.d(TAG, "📊 Face ratio: $faceRatio")
+
+                                        // ✅ SEGURANÇA: Verificar se deve bloquear por atividade
+                                        // suspeita
+                                        if (shouldBlockDueToSuspiciousActivity()) {
                                             try {
-                                                if (!isFinishing && !isDestroyed && ::statusText.isInitialized) {
+                                                if (!isFinishing &&
+                                                                !isDestroyed &&
+                                                                ::statusText.isInitialized
+                                                ) {
                                                     val status = statusText
-                                                    status.text = "⏰ Aguarde ${segundosRestantes}s\npara próximo ponto"
+                                                    val remainingTime = 10
+                                                    status.text =
+                                                            "🚫 Atividade suspeita detectada\nAguarde ${remainingTime}s"
                                                 }
                                             } catch (e: Exception) {
-                                                Log.w(TAG, "⚠️ Erro ao atualizar status do cooldown: ${e.message}")
+                                                Log.w(
+                                                        TAG,
+                                                        "⚠️ Erro ao atualizar status de bloqueio: ${e.message}"
+                                                )
                                             }
-                                            
                                             try {
                                                 imageProxy.close()
                                             } catch (e: Exception) {
-                                                Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${e.message}")
+                                                Log.w(
+                                                        TAG,
+                                                        "⚠️ Erro ao fechar imageProxy: ${e.message}"
+                                                )
                                             }
                                             return@addOnSuccessListener
                                         }
-                                        
-                                        // ✅ ESTABILIZAÇÃO: Processar apenas se face estiver estável
-                                        if (!isFaceStable || !isFaceBigEnough || !isFaceInOval || !isFaceNotTooBig) {
-                                            // ✅ FEEDBACK PARA O USUÁRIO SE POSICIONAR - MAIS AMIGÁVEL
-                                            val feedbackMessage = when {
-                                                !isFaceBigEnough -> "📷 Aproxime mais o rosto (0.5% da tela)"
-                                                isFaceNotTooBig -> "📷 Afaste um pouco o rosto"
-                                                !isFaceInOval -> "📷 Centre o rosto no oval"
-                                                !isFaceStable -> "📷 Fique parado (${faceStableCount}/${minStableFrames})"
-                                                else -> "📷 Posicione seu rosto no oval"
+
+                                        // ✅ ESTABILIZAÇÃO: Verificar se a face está estável
+                                        val isFaceStable = checkFaceStability(face.boundingBox)
+
+                                        // ✅ CRITÉRIOS DE QUALIDADE DA FACE - EQUILIBRADOS
+                                        val isFaceBigEnough =
+                                                faceRatio >=
+                                                        0.008f // Face deve ocupar pelo menos 0.8%
+                                        // da tela (EQUILIBRADO)
+                                        val isFaceInOval = overlay.isFaceInOval(face.boundingBox)
+                                        val isFaceNotTooBig =
+                                                faceRatio <=
+                                                        0.35f // Face não deve ocupar mais de 35% da
+                                        // tela (EQUILIBRADO)
+
+                                        Log.d(
+                                                TAG,
+                                                "📊 Face estável: $isFaceStable, Frames estáveis: $faceStableCount"
+                                        )
+                                        Log.d(
+                                                TAG,
+                                                "📊 Face grande o suficiente: $isFaceBigEnough, No oval: $isFaceInOval"
+                                        )
+
+                                        // ✅ PROTEÇÃO: Verificar se TensorFlow está desabilitado
+                                        // devido a crashes
+                                        if (shouldDisableTensorFlowDueToCrashes()) {
+                                            try {
+                                                if (!isFinishing &&
+                                                                !isDestroyed &&
+                                                                ::statusText.isInitialized
+                                                ) {
+                                                    val status = statusText
+                                                    val remainingTime =
+                                                            (tensorFlowCrashCooldown -
+                                                                    (System.currentTimeMillis() -
+                                                                            lastTensorFlowCrash)) /
+                                                                    1000
+                                                    status.text =
+                                                            "🚫 Sistema temporariamente indisponível\nAguarde ${remainingTime}s"
+                                                }
+                                            } catch (e: Exception) {
+                                                Log.w(
+                                                        TAG,
+                                                        "⚠️ Erro ao atualizar status de indisponibilidade: ${e.message}"
+                                                )
                                             }
-                                            
-                                            // ✅ Mostrar feedback a cada 2 frames para ser mais responsivo
-                                            if (faceDetectionCount % 2 == 0) {
+                                            try {
+                                                imageProxy.close()
+                                            } catch (e: Exception) {
+                                                Log.w(
+                                                        TAG,
+                                                        "⚠️ Erro ao fechar imageProxy: ${e.message}"
+                                                )
+                                            }
+                                            return@addOnSuccessListener
+                                        }
+
+                                        if (!processandoFace &&
+                                                        modelLoaded &&
+                                                        interpreter != null &&
+                                                        !isFinishing &&
+                                                        !isDestroyed
+                                        ) {
+                                            // ✅ COOLDOWN: Verificar se está em cooldown
+                                            if (isCooldownActive()) {
+                                                val segundosRestantes =
+                                                        getCooldownRemainingSeconds()
+                                                Log.d(
+                                                        TAG,
+                                                        "⏰ Aguardando cooldown: ${segundosRestantes}s restantes"
+                                                )
+
                                                 try {
-                                                    if (!isFinishing && !isDestroyed && ::statusText.isInitialized) {
+                                                    if (!isFinishing &&
+                                                                    !isDestroyed &&
+                                                                    ::statusText.isInitialized
+                                                    ) {
                                                         val status = statusText
-                                                        status.text = feedbackMessage
+                                                        status.text =
+                                                                "⏰ Aguarde ${segundosRestantes}s\npara próximo ponto"
                                                     }
                                                 } catch (e: Exception) {
-                                                    Log.w(TAG, "⚠️ Erro ao atualizar feedback: ${e.message}")
+                                                    Log.w(
+                                                            TAG,
+                                                            "⚠️ Erro ao atualizar status do cooldown: ${e.message}"
+                                                    )
+                                                }
+
+                                                try {
+                                                    imageProxy.close()
+                                                } catch (e: Exception) {
+                                                    Log.w(
+                                                            TAG,
+                                                            "⚠️ Erro ao fechar imageProxy: ${e.message}"
+                                                    )
+                                                }
+                                                return@addOnSuccessListener
+                                            }
+
+                                            // ✅ ESTABILIZAÇÃO: Processar apenas se face estiver
+                                            // estável
+                                            if (!isFaceStable ||
+                                                            !isFaceBigEnough ||
+                                                            !isFaceInOval ||
+                                                            !isFaceNotTooBig
+                                            ) {
+                                                // ✅ FEEDBACK PARA O USUÁRIO SE POSICIONAR - MAIS
+                                                // AMIGÁVEL
+                                                val feedbackMessage =
+                                                        when {
+                                                            !isFaceBigEnough ->
+                                                                    "📷 Aproxime mais o rosto (0.5% da tela)"
+                                                            isFaceNotTooBig ->
+                                                                    "📷 Afaste um pouco o rosto"
+                                                            !isFaceInOval ->
+                                                                    "📷 Centre o rosto no oval"
+                                                            !isFaceStable ->
+                                                                    "📷 Fique parado (${faceStableCount}/${minStableFrames})"
+                                                            else -> "📷 Posicione seu rosto no oval"
+                                                        }
+
+                                                // ✅ Mostrar feedback a cada 2 frames para ser mais
+                                                // responsivo
+                                                if (faceDetectionCount % 2 == 0) {
+                                                    try {
+                                                        if (!isFinishing &&
+                                                                        !isDestroyed &&
+                                                                        ::statusText.isInitialized
+                                                        ) {
+                                                            val status = statusText
+                                                            status.text = feedbackMessage
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        Log.w(
+                                                                TAG,
+                                                                "⚠️ Erro ao atualizar feedback: ${e.message}"
+                                                        )
+                                                    }
+                                                }
+
+                                                try {
+                                                    imageProxy.close()
+                                                } catch (e: Exception) {
+                                                    Log.w(
+                                                            TAG,
+                                                            "⚠️ Erro ao fechar imageProxy: ${e.message}"
+                                                    )
+                                                }
+                                                return@addOnSuccessListener
+                                            }
+
+                                            Log.d(
+                                                    TAG,
+                                                    "✅ INICIANDO RECONHECIMENTO - FACE ESTÁVEL E BEM POSICIONADA!"
+                                            )
+
+                                            processandoFace = true
+                                            lastProcessingTime = System.currentTimeMillis()
+
+                                            // ✅ PROTEÇÃO: Atualizar status com verificação
+                                            try {
+                                                if (!isFinishing &&
+                                                                !isDestroyed &&
+                                                                ::statusText.isInitialized
+                                                ) {
+                                                    val status = statusText
+                                                    status.text = "🔍 Reconhecendo..."
+                                                } else {
+                                                    Log.w(
+                                                            TAG,
+                                                            "⚠️ StatusText não disponível para atualização"
+                                                    )
+                                                }
+                                            } catch (e: Exception) {
+                                                Log.w(
+                                                        TAG,
+                                                        "⚠️ Erro ao atualizar status: ${e.message}"
+                                                )
+                                            }
+
+                                            // ✅ PROTEÇÃO: Converter bitmap com verificação
+                                            try {
+                                                val bitmap = toBitmap(mediaImage)
+                                                Log.d(
+                                                        TAG,
+                                                        "🖼️ Bitmap convertido: ${bitmap.width}x${bitmap.height}"
+                                                )
+
+                                                // ✅ PROTEÇÃO: Fechar imageProxy antes de processar
+                                                try {
+                                                    imageProxy.close()
+                                                } catch (e: Exception) {
+                                                    Log.w(
+                                                            TAG,
+                                                            "⚠️ Erro ao fechar imageProxy: ${e.message}"
+                                                    )
+                                                }
+
+                                                processDetectedFace(bitmap, face.boundingBox)
+                                            } catch (e: Exception) {
+                                                Log.e(TAG, "❌ Erro ao converter bitmap", e)
+                                                processandoFace = false
+                                                try {
+                                                    imageProxy.close()
+                                                } catch (closeException: Exception) {
+                                                    Log.w(
+                                                            TAG,
+                                                            "⚠️ Erro ao fechar imageProxy: ${closeException.message}"
+                                                    )
                                                 }
                                             }
-                                            
+                                        } else {
+                                            Log.d(
+                                                    TAG,
+                                                    "⏸️ Não processando face - processandoFace: $processandoFace, modelLoaded: $modelLoaded, interpreter: ${interpreter != null}"
+                                            )
                                             try {
                                                 imageProxy.close()
                                             } catch (e: Exception) {
-                                                Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${e.message}")
-                                            }
-                                            return@addOnSuccessListener
-                                        }
-                                        
-                                        Log.d(TAG, "✅ INICIANDO RECONHECIMENTO - FACE ESTÁVEL E BEM POSICIONADA!")
-                                        
-                                        processandoFace = true
-                                        lastProcessingTime = System.currentTimeMillis()
-                                        
-                                        // ✅ PROTEÇÃO: Atualizar status com verificação
-                                        try {
-                                            if (!isFinishing && !isDestroyed && ::statusText.isInitialized) {
-                                                val status = statusText
-                                                status.text = "🔍 Reconhecendo..."
-                                            } else {
-                                                Log.w(TAG, "⚠️ StatusText não disponível para atualização")
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.w(TAG, "⚠️ Erro ao atualizar status: ${e.message}")
-                                        }
-                                        
-                                        // ✅ PROTEÇÃO: Converter bitmap com verificação
-                                        try {
-                                            val bitmap = toBitmap(mediaImage)
-                                            Log.d(TAG, "🖼️ Bitmap convertido: ${bitmap.width}x${bitmap.height}")
-                                            
-                                            // ✅ PROTEÇÃO: Fechar imageProxy antes de processar
-                                            try {
-                                                imageProxy.close()
-                                            } catch (e: Exception) {
-                                                Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${e.message}")
-                                            }
-                                            
-                                            processDetectedFace(bitmap, face.boundingBox)
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "❌ Erro ao converter bitmap", e)
-                                            processandoFace = false
-                                            try {
-                                                imageProxy.close()
-                                            } catch (closeException: Exception) {
-                                                Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${closeException.message}")
+                                                Log.w(
+                                                        TAG,
+                                                        "⚠️ Erro ao fechar imageProxy: ${e.message}"
+                                                )
                                             }
                                         }
                                     } else {
-                                        Log.d(TAG, "⏸️ Não processando face - processandoFace: $processandoFace, modelLoaded: $modelLoaded, interpreter: ${interpreter != null}")
+                                        Log.d(TAG, "👤 Nenhuma face detectada")
+                                        try {
+                                            if (!isFinishing &&
+                                                            !isDestroyed &&
+                                                            ::overlay.isInitialized
+                                            ) {
+                                                val overlayView = overlay
+                                                overlayView.clear()
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.w(TAG, "⚠️ Erro ao limpar overlay: ${e.message}")
+                                        }
                                         try {
                                             imageProxy.close()
                                         } catch (e: Exception) {
                                             Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${e.message}")
                                         }
                                     }
-                                } else {
-                                    Log.d(TAG, "👤 Nenhuma face detectada")
-                                    try {
-                                        if (!isFinishing && !isDestroyed && ::overlay.isInitialized) {
-                                            val overlayView = overlay
-                                            overlayView.clear()
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.w(TAG, "⚠️ Erro ao limpar overlay: ${e.message}")
-                                    }
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "❌ Erro no processamento de faces", e)
+                                    processandoFace = false
                                     try {
                                         imageProxy.close()
-                                    } catch (e: Exception) {
-                                        Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${e.message}")
+                                    } catch (closeException: Exception) {
+                                        Log.w(
+                                                TAG,
+                                                "⚠️ Erro ao fechar imageProxy: ${closeException.message}"
+                                        )
                                     }
                                 }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "❌ Erro no processamento de faces", e)
+                            }
+                            .addOnFailureListener { exception ->
+                                Log.e(TAG, "❌ Erro na detecção de faces: ${exception.message}")
+                                exception.printStackTrace()
+                                try {
+                                    imageProxy.close()
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${e.message}")
+                                }
+                            }
+                            ?.addOnFailureListener { e ->
+                                Log.e(TAG, "❌ Erro na detecção de faces", e)
                                 processandoFace = false
                                 try {
                                     imageProxy.close()
                                 } catch (closeException: Exception) {
-                                    Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${closeException.message}")
+                                    Log.w(
+                                            TAG,
+                                            "⚠️ Erro ao fechar imageProxy: ${closeException.message}"
+                                    )
                                 }
                             }
-                        }
-                        .addOnFailureListener { exception ->
-                            Log.e(TAG, "❌ Erro na detecção de faces: ${exception.message}")
-                            exception.printStackTrace()
-                            try {
-                                imageProxy.close()
-                            } catch (e: Exception) {
-                                Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${e.message}")
-                            }
-                        
-                        }?.addOnFailureListener { e ->
-                            Log.e(TAG, "❌ Erro na detecção de faces", e)
-                            processandoFace = false
-                            try {
-                                imageProxy.close()
-                            } catch (closeException: Exception) {
-                                Log.w(TAG, "⚠️ Erro ao fechar imageProxy: ${closeException.message}")
-                            }
-                        }
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro ao criar InputImage", e)
                     try {
@@ -922,21 +1117,24 @@ class PontoActivity : AppCompatActivity() {
 
     private fun processDetectedFace(bitmap: Bitmap, boundingBox: Rect) {
         Log.d(TAG, "🔄 Processando face detectada - MODO DIRETO SIMPLIFICADO")
-        
+
         // ✅ PROTEÇÃO CRÍTICA: Verificar se a Activity ainda está válida
         if (isFinishing || isDestroyed) {
             Log.w(TAG, "⚠️ Activity finalizada - cancelando processamento de face")
             processandoFace = false
             return
         }
-        
+
         // ✅ PROTEÇÃO: Verificar se o bitmap é válido
         if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
-            Log.e(TAG, "❌ Bitmap inválido - reciclado: ${bitmap.isRecycled}, dimensões: ${bitmap.width}x${bitmap.height}")
+            Log.e(
+                    TAG,
+                    "❌ Bitmap inválido - reciclado: ${bitmap.isRecycled}, dimensões: ${bitmap.width}x${bitmap.height}"
+            )
             processandoFace = false
             return
         }
-        
+
         // ✅ PROTEÇÃO: Verificar se o boundingBox é válido
         if (boundingBox.isEmpty || boundingBox.width() <= 0 || boundingBox.height() <= 0) {
             Log.e(TAG, "❌ BoundingBox inválido: $boundingBox")
@@ -955,13 +1153,14 @@ class PontoActivity : AppCompatActivity() {
                 }
 
                 // ✅ PROTEÇÃO: Recortar face com validação
-                val faceBmp = try {
-                    cropFace(bitmap, boundingBox)
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao recortar face: ${e.message}")
-                    processandoFace = false
-                    return@launch
-                }
+                val faceBmp =
+                        try {
+                            cropFace(bitmap, boundingBox)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro ao recortar face: ${e.message}")
+                            processandoFace = false
+                            return@launch
+                        }
 
                 if (faceBmp.isRecycled || faceBmp.width <= 0 || faceBmp.height <= 0) {
                     Log.e(TAG, "❌ Face recortada inválida")
@@ -973,31 +1172,42 @@ class PontoActivity : AppCompatActivity() {
 
                 Log.d(TAG, "📸 Face recortada: ${faceBmp.width}x${faceBmp.height}")
 
-                // ✅ PROTEÇÃO: Salvar foto da face com validação
-                currentFaceBitmap = try {
-                    val scaledBitmap = Bitmap.createScaledBitmap(faceBmp, 300, 300, true)
-                    fixImageOrientationDefinitive(scaledBitmap)
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao processar foto: ${e.message}")
-                    null
+                // 🎯 PRÉ-PROCESSAMENTO FACIAL AVANÇADO (igual ao CameraActivity)
+                Log.d(TAG, "🎯 === APLICANDO PRÉ-PROCESSAMENTO FACIAL ===")
+                val preprocessedFace = facePreprocessor.preprocessFace(faceBmp)
+                
+                val faceToProcess = if (preprocessedFace != null) {
+                    Log.d(TAG, "✅ Face pré-processada com qualidade: ${preprocessedFace.quality}")
+                    preprocessedFace.bitmap
+                } else {
+                    Log.w(TAG, "⚠️ Falha no pré-processamento, usando face original")
+                    faceBmp
                 }
-                
-                Log.d(TAG, "🎯 EXECUTANDO RECONHECIMENTO DIRETO")
-                
-                // ✅ RECONHECIMENTO DIRETO - SEM HELPER COMPLEXO
-                val recognitionResult = performDirectRecognition(faceBmp)
-                
+
+                // ✅ PROTEÇÃO: Salvar foto da face com validação
+                currentFaceBitmap =
+                        try {
+                            val scaledBitmap = Bitmap.createScaledBitmap(faceToProcess, 300, 300, true)
+                            fixImageOrientationDefinitive(scaledBitmap)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Erro ao processar foto: ${e.message}")
+                            null
+                        }
+
+                Log.d(TAG, "🎯 EXECUTANDO RECONHECIMENTO DIRETO COM FACE PRÉ-PROCESSADA")
+
+                // ✅ RECONHECIMENTO DIRETO - COM FACE PRÉ-PROCESSADA
+                val recognitionResult = performDirectRecognition(faceToProcess)
+
                 when (recognitionResult) {
                     is RecognitionResult.Success -> {
                         val funcionario = recognitionResult.funcionario
                         val similarity = recognitionResult.similarity
-                        
+
                         Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO DIRETAMENTE!")
                         Log.d(TAG, "👤 Funcionário: ${funcionario.nome}")
                         Log.d(TAG, "📊 Similaridade: ${String.format("%.3f", similarity)}")
 
-
-                        
                         // ✅ ESTABILIZAÇÃO: Resetar estabilização após sucesso
                         resetFaceStability()
 
@@ -1011,7 +1221,10 @@ class PontoActivity : AppCompatActivity() {
                                     try {
                                         registrarPontoDireto(funcionario)
                                     } catch (e: Exception) {
-                                        Log.e(TAG, "❌ Erro crítico no registro de ponto: ${e.message}")
+                                        Log.e(
+                                                TAG,
+                                                "❌ Erro crítico no registro de ponto: ${e.message}"
+                                        )
                                         processandoFace = false
                                     }
                                 }
@@ -1021,41 +1234,50 @@ class PontoActivity : AppCompatActivity() {
                             }
                         }
                     }
-                    
                     is RecognitionResult.Failure -> {
                         Log.w(TAG, "❌ Reconhecimento direto falhou: ${recognitionResult.reason}")
-                        
+
                         withContext(Dispatchers.Main) {
                             try {
                                 if (!isFinishing && !isDestroyed) {
                                     val status = statusText
-                                    
+
                                     // ✅ MENSAGEM MAIS INFORMATIVA PARA FALHAS
-                                    val failureMessage = when {
-                                        recognitionResult.reason.contains("Nenhuma face cadastrada") -> 
-                                            "❌ Pessoa não cadastrada\nSistema de alta segurança"
-                                        recognitionResult.reason.contains("Similaridade insuficiente") -> 
-                                            "❌ Similaridade baixa\nPosicione melhor o rosto"
-                                        recognitionResult.reason.contains("Face de baixa qualidade") -> 
-                                            "❌ Qualidade insuficiente\nMelhore a iluminação"
-                                        recognitionResult.reason.contains("Embedding") -> 
-                                            "❌ Processamento falhou\nTente novamente"
-                                        else -> 
-                                            "❌ Reconhecimento falhou\nSistema de alta segurança"
-                                    }
-                                    
+                                    val failureMessage =
+                                            when {
+                                                recognitionResult.reason.contains(
+                                                        "Nenhuma face cadastrada"
+                                                ) ->
+                                                        "❌ Pessoa não cadastrada\nSistema de alta segurança"
+                                                recognitionResult.reason.contains(
+                                                        "Similaridade insuficiente"
+                                                ) ->
+                                                        "❌ Similaridade baixa\nPosicione melhor o rosto"
+                                                recognitionResult.reason.contains(
+                                                        "Face de baixa qualidade"
+                                                ) ->
+                                                        "❌ Qualidade insuficiente\nMelhore a iluminação"
+                                                recognitionResult.reason.contains("Embedding") ->
+                                                        "❌ Processamento falhou\nTente novamente"
+                                                else ->
+                                                        "❌ Reconhecimento falhou\nSistema de alta segurança"
+                                            }
+
                                     status.text = failureMessage
 
-                                    status.postDelayed({
-                                        try {
-                                            if (!isFinishing && !isDestroyed) {
-                                                val statusInner = statusText
-                                                statusInner.text = ""
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "❌ Erro no reset UI: ${e.message}")
-                                        }
-                                    }, 3000)
+                                    status.postDelayed(
+                                            {
+                                                try {
+                                                    if (!isFinishing && !isDestroyed) {
+                                                        val statusInner = statusText
+                                                        statusInner.text = ""
+                                                    }
+                                                } catch (e: Exception) {
+                                                    Log.e(TAG, "❌ Erro no reset UI: ${e.message}")
+                                                }
+                                            },
+                                            3000
+                                    )
                                 } else {
                                     Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
                                 }
@@ -1065,7 +1287,6 @@ class PontoActivity : AppCompatActivity() {
                         }
                     }
                 }
-
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro no processamento direto: ${e.message}")
                 e.printStackTrace()
@@ -1076,16 +1297,19 @@ class PontoActivity : AppCompatActivity() {
                             val status = statusText
                             status.text = "❌ Erro no reconhecimento\nTente novamente"
 
-                            status.postDelayed({
-                                try {
-                                    if (!isFinishing && !isDestroyed) {
-                                        val statusInner = statusText
-                                        statusInner.text = ""
-                                    }
-                                } catch (e2: Exception) {
-                                    Log.e(TAG, "❌ Erro no reset UI: ${e2.message}")
-                                }
-                            }, 3000)
+                            status.postDelayed(
+                                    {
+                                        try {
+                                            if (!isFinishing && !isDestroyed) {
+                                                val statusInner = statusText
+                                                statusInner.text = ""
+                                            }
+                                        } catch (e2: Exception) {
+                                            Log.e(TAG, "❌ Erro no reset UI: ${e2.message}")
+                                        }
+                                    },
+                                    3000
+                            )
                         } else {
                             Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
                         }
@@ -1098,14 +1322,12 @@ class PontoActivity : AppCompatActivity() {
             }
         }
     }
-    
-    /**
-     * 🎯 RECONHECIMENTO DIRETO SIMPLIFICADO
-     */
+
+    /** 🎯 RECONHECIMENTO DIRETO SIMPLIFICADO */
     private suspend fun performDirectRecognition(faceBmp: Bitmap): RecognitionResult {
         return try {
             Log.d(TAG, "🔍 === RECONHECIMENTO DIRETO ===")
-            
+
             // ✅ VERIFICAR SE O TENSORFLOW ESTÁ DISPONÍVEL
             if (!modelLoaded || interpreter == null) {
                 Log.e(TAG, "❌ TensorFlow não está disponível")
@@ -1113,338 +1335,466 @@ class PontoActivity : AppCompatActivity() {
             } else {
                 Log.d(TAG, "✅ TensorFlow disponível para reconhecimento")
             }
-            
+
             // ✅ VALIDAR QUALIDADE DA FACE ANTES DO RECONHECIMENTO
             val faceQuality = validateFaceQuality(faceBmp)
             if (!faceQuality.isValid) {
                 Log.w(TAG, "❌ Face de baixa qualidade rejeitada: ${faceQuality.reason}")
                 return RecognitionResult.Failure("")
             }
-            
+
             Log.d(TAG, "✅ Face aprovada na validação de qualidade")
-            
+
             // ✅ GERAR EMBEDDING COM PROTEÇÃO CONTRA CRASH
-            val embedding = try {
-                generateEmbeddingDirect(faceBmp)
-            } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "❌ Erro de biblioteca nativa: ${e.message}")
-                registerTensorFlowCrash()
-                return RecognitionResult.Failure("Sistema temporariamente indisponível")
-            } catch (e: OutOfMemoryError) {
-                Log.e(TAG, "❌ Erro de memória: ${e.message}")
-                registerTensorFlowCrash()
-                return RecognitionResult.Failure("Erro de memória - tente novamente")
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao gerar embedding: ${e.message}")
-                return RecognitionResult.Failure("Erro ao processar face: ${e.message}")
-            }
-            
+            val embedding =
+                    try {
+                        generateEmbeddingDirect(faceBmp)
+                    } catch (e: UnsatisfiedLinkError) {
+                        Log.e(TAG, "❌ Erro de biblioteca nativa: ${e.message}")
+                        registerTensorFlowCrash()
+                        return RecognitionResult.Failure("Sistema temporariamente indisponível")
+                    } catch (e: OutOfMemoryError) {
+                        Log.e(TAG, "❌ Erro de memória: ${e.message}")
+                        registerTensorFlowCrash()
+                        return RecognitionResult.Failure("Erro de memória - tente novamente")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao gerar embedding: ${e.message}")
+                        return RecognitionResult.Failure("Erro ao processar face: ${e.message}")
+                    }
+
             if (embedding.isEmpty()) {
                 Log.e(TAG, "❌ Embedding vazio")
                 return RecognitionResult.Failure("Falha ao processar face")
             }
-            
+
             // ✅ VALIDAR QUALIDADE DO EMBEDDING GERADO
             val embeddingQuality = validateEmbeddingQuality(embedding)
             if (!embeddingQuality.isValid) {
                 Log.w(TAG, "❌ Embedding de baixa qualidade: ${embeddingQuality.reason}")
-                return RecognitionResult.Failure("Processamento facial instável: ${embeddingQuality.reason}")
+                return RecognitionResult.Failure(
+                        "Processamento facial instável: ${embeddingQuality.reason}"
+                )
             }
-            
+
             Log.d(TAG, "✅ Embedding gerado e validado: ${embedding.size} dimensões")
-            
+
             // ✅ COMPARAR COM BANCO DE DADOS
             val db = AppDatabase.getInstance(this@PontoActivity)
             val faceDao = db.faceDao()
             val funcionarioDao = db.usuariosDao()
-            
+
             val faces = faceDao.getAllFaces()
             val funcionarios = funcionarioDao.getUsuario()
-            
+
             Log.d(TAG, "📊 Faces cadastradas: ${faces.size}")
             Log.d(TAG, "👥 Funcionários: ${funcionarios.size}")
-            
+
             if (faces.isEmpty()) {
                 Log.w(TAG, "⚠️ Nenhuma face cadastrada no banco")
                 return RecognitionResult.Failure("Nenhuma face cadastrada no sistema")
             }
-            
+
             // ✅ COMPARAR COM CADA FACE CADASTRADA
             var melhorSimilaridade = 0f
             var funcionarioReconhecido: FuncionariosEntity? = null
             var melhorFace: com.example.iface_offilne.data.FaceEntity? = null
-            
+
             for (face in faces) {
                 try {
-                    val embeddingCadastrado = face.embedding.split(",").map { it.toFloat() }.toFloatArray()
-                    
+                    val embeddingCadastrado =
+                            face.embedding.split(",").map { it.toFloat() }.toFloatArray()
+
                     if (embeddingCadastrado.size != embedding.size) {
-                        Log.w(TAG, "⚠️ Tamanho de embedding diferente: ${embeddingCadastrado.size} vs ${embedding.size}")
+                        Log.w(
+                                TAG,
+                                "⚠️ Tamanho de embedding diferente: ${embeddingCadastrado.size} vs ${embedding.size}"
+                        )
                         continue
                     }
-                    
+
                     // ✅ VALIDAR QUALIDADE DO EMBEDDING CADASTRADO
-                    if (embeddingCadastrado.all { it == 0f } || embeddingCadastrado.any { it.isNaN() || it.isInfinite() }) {
+                    if (embeddingCadastrado.all { it == 0f } ||
+                                    embeddingCadastrado.any { it.isNaN() || it.isInfinite() }
+                    ) {
                         Log.w(TAG, "⚠️ Embedding cadastrado inválido para ${face.funcionarioId}")
                         continue
                     }
-                    
+
                     val similaridade = calculateSimilarity(embedding, embeddingCadastrado)
-                    // Log.d(TAG, "📊 Similaridade com ${face.funcionarioId}: ${String.format("%.3f", similaridade)}")
-                    
+                    // Log.d(TAG, "📊 Similaridade com ${face.funcionarioId}:
+                    // ${String.format("%.3f", similaridade)}")
+
                     if (similaridade > melhorSimilaridade) {
                         melhorSimilaridade = similaridade
-                        funcionarioReconhecido = funcionarios.find { it.codigo == face.funcionarioId }
+                        funcionarioReconhecido =
+                                funcionarios.find { it.codigo == face.funcionarioId }
                         melhorFace = face
                     }
-                    
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro ao comparar com face ${face.funcionarioId}: ${e.message}")
                 }
             }
-            
-            // ✅ THRESHOLDS EQUILIBRADOS - PRECISÃO E SEGURANÇA
-            val thresholdMinimo = 0.75f // 75% de similaridade mínima - EQUILIBRADO
-            val thresholdIdeal = 0.85f // 85% para confiança alta - SEGURO
-            
-            Log.d(TAG, "📊 Melhor similaridade encontrada: ${String.format("%.3f", melhorSimilaridade)}")
+
+                // ✅ THRESHOLDS MUITO RIGOROSOS - SEGURANÇA MÁXIMA
+    val thresholdMinimo = 0.85f // 85% de similaridade mínima - MUITO RIGOROSO
+    val thresholdIdeal = 0.88f // 95% para confiança alta - MÁXIMA SEGURANÇA
+    val thresholdRejeicao = 0.75f // 75% - abaixo disso rejeita automaticamente
+
+            Log.d(
+                    TAG,
+                    "📊 Melhor similaridade encontrada: ${String.format("%.3f", melhorSimilaridade)}"
+            )
             Log.d(TAG, "📊 Threshold mínimo: ${String.format("%.3f", thresholdMinimo)}")
-            
+
             if (funcionarioReconhecido != null && melhorSimilaridade >= thresholdMinimo) {
-                // ✅ VALIDAÇÃO DUPLA: Verificar se a similaridade é consistente
-                val isHighConfidence = melhorSimilaridade >= thresholdIdeal
-                val isConsistentMatch = validateConsistentMatch(embedding, melhorFace?.embedding?.split(",")?.map { it.toFloat() }?.toFloatArray() ?: FloatArray(0))
-                
-                if (isHighConfidence || isConsistentMatch) {
-                    // ✅ VALIDAR HISTÓRICO PARA EVITAR FALSOS POSITIVOS
-                    val isHistoryConsistent = validateRecognitionHistory(funcionarioReconhecido.codigo ?: "", melhorSimilaridade)
-                    
-                    if (isHistoryConsistent) {
-                        Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO COM SUCESSO!")
-                        Log.d(TAG, "👤 Funcionário: ${funcionarioReconhecido.nome}")
-                        Log.d(TAG, "📊 Similaridade: ${String.format("%.3f", melhorSimilaridade)}")
-                        Log.d(TAG, "🔒 Alta confiança: $isHighConfidence, Match consistente: $isConsistentMatch, Histórico: $isHistoryConsistent")
-                        
-                        // ✅ ADICIONAR AO HISTÓRICO
-                        addToRecognitionHistory(funcionarioReconhecido.codigo ?: "", melhorSimilaridade, true, 0.8f)
-                        
-                        return RecognitionResult.Success(funcionarioReconhecido, melhorSimilaridade)
-                    } else {
-                        Log.w(TAG, "⚠️ Histórico inconsistente - possível falso positivo")
-                        addToRecognitionHistory(funcionarioReconhecido.codigo ?: "", melhorSimilaridade, false, 0.3f)
-                        return RecognitionResult.Failure("Reconhecimento inconsistente com histórico")
-                    }
-                } else {
-                    Log.w(TAG, "⚠️ Similaridade insuficiente para confirmação: ${String.format("%.3f", melhorSimilaridade)}")
-                    addToRecognitionHistory(null, melhorSimilaridade, false, 0.2f)
-                    return RecognitionResult.Failure("Similaridade insuficiente para confirmação segura")
-                }
-            } else {
-                if (melhorSimilaridade > 0.3f) {
-                    Log.w(TAG, "⚠️ Similaridade baixa: ${String.format("%.3f", melhorSimilaridade)} (mínimo: ${String.format("%.3f", thresholdMinimo)})")
-                    return RecognitionResult.Failure("Similaridade insuficiente: ${String.format("%.1f", melhorSimilaridade * 100)}% (mínimo: ${String.format("%.1f", thresholdMinimo * 100)}%)")
-                } else {
-                    Log.w(TAG, "❌ Nenhuma face reconhecida (melhor: ${String.format("%.3f", melhorSimilaridade)})")
-                    return RecognitionResult.Failure("Nenhuma face cadastrada reconhecida")
-                }
-            }
+                    // ✅ VALIDAÇÃO DE SEGURANÇA MÁXIMA: Verificar se não é falso positivo
+    val isHighConfidence = melhorSimilaridade >= thresholdIdeal
+    val isConsistentMatch =
+            validateConsistentMatch(
+                    embedding,
+                    melhorFace
+                            ?.embedding
+                            ?.split(",")
+                            ?.map { it.toFloat() }
+                            ?.toFloatArray()
+                            ?: FloatArray(0)
+            )
+    
+    // ✅ VALIDAÇÃO ADICIONAL: Verificar se não é falso positivo
+    val isNotFalsePositive = validateNotFalsePositive(
+            embedding,
+            melhorFace
+                    ?.embedding
+                    ?.split(",")
+                    ?.map { it.toFloat() }
+                    ?.toFloatArray()
+                    ?: FloatArray(0)
+    )
+
+    // ✅ LÓGICA DE SEGURANÇA MÁXIMA: Aceitar apenas se for realmente seguro
+    if (isHighConfidence && isConsistentMatch && isNotFalsePositive) {
+        // ✅ VALIDAR HISTÓRICO PARA EVITAR FALSOS POSITIVOS
+        val isHistoryConsistent =
+                validateRecognitionHistory(
+                        funcionarioReconhecido.codigo ?: "",
+                        melhorSimilaridade
+                )
+        
+        // ✅ VALIDAÇÃO FINAL: Verificar se a similaridade é realmente excepcional
+        val isExceptionalMatch = melhorSimilaridade >= 0.98f
+
+        if (isHistoryConsistent && isExceptionalMatch) {
+            Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO COM SUCESSO!")
+            Log.d(TAG, "👤 Funcionário: ${funcionarioReconhecido.nome}")
+            Log.d(TAG, "📊 Similaridade: ${String.format("%.3f", melhorSimilaridade)}")
+            Log.d(
+                    TAG,
+                    "🔒 Alta confiança: $isHighConfidence, Match consistente: $isConsistentMatch, Histórico: $isHistoryConsistent, Não falso positivo: $isNotFalsePositive, Match excepcional: $isExceptionalMatch"
+            )
+
+            // ✅ ADICIONAR AO HISTÓRICO
+            addToRecognitionHistory(
+                    funcionarioReconhecido.codigo ?: "",
+                    melhorSimilaridade,
+                    true,
+                    0.95f
+            )
+
+            return RecognitionResult.Success(funcionarioReconhecido, melhorSimilaridade)
+        } else {
+            Log.w(TAG, "⚠️ Validações finais falharam:")
+            Log.w(TAG, "   - Histórico consistente: $isHistoryConsistent")
+            Log.w(TAG, "   - Match excepcional: $isExceptionalMatch")
+            Log.w(TAG, "   - Similaridade: ${String.format("%.3f", melhorSimilaridade)}")
             
+            addToRecognitionHistory(
+                    funcionarioReconhecido.codigo ?: "",
+                    melhorSimilaridade,
+                    false,
+                    0.2f
+            )
+            return RecognitionResult.Failure(
+                    "Validações finais falharam - possível falso positivo"
+            )
+        }
+    } else {
+        // ✅ SE NÃO ATENDER AOS CRITÉRIOS DE SEGURANÇA MÁXIMA, REJEITAR
+        Log.w(TAG, "⚠️ Validações de segurança falharam:")
+        Log.w(TAG, "   - Alta confiança: $isHighConfidence")
+        Log.w(TAG, "   - Match consistente: $isConsistentMatch")
+        Log.w(TAG, "   - Não falso positivo: $isNotFalsePositive")
+        Log.w(TAG, "   - Similaridade: ${String.format("%.3f", melhorSimilaridade)}")
+
+        addToRecognitionHistory(
+                funcionarioReconhecido.codigo ?: "",
+                melhorSimilaridade,
+                false,
+                0.1f
+        )
+        return RecognitionResult.Failure(
+                "Validações de segurança falharam - possível falso positivo"
+        )
+    }
+            } else {
+                // ✅ REJEIÇÃO AUTOMÁTICA: Não atende aos critérios mínimos
+                Log.w(TAG, "🚫 REJEIÇÃO: Não atende aos critérios de segurança")
+                Log.w(TAG, "   - Funcionário reconhecido: ${funcionarioReconhecido != null}")
+                Log.w(TAG, "   - Similaridade: ${String.format("%.3f", melhorSimilaridade)}")
+                Log.w(TAG, "   - Threshold mínimo: ${String.format("%.3f", thresholdMinimo)}")
+
+                addToRecognitionHistory(null, melhorSimilaridade, false, 0.1f)
+                return RecognitionResult.Failure(
+                        "Pessoa não reconhecida - verifique se está cadastrada no sistema"
+                )
+            }
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro crítico no reconhecimento direto: ${e.message}")
             e.printStackTrace()
             return RecognitionResult.Failure("Erro interno: ${e.message}")
         }
     }
-    
-    /**
-     * 🤖 GERAR EMBEDDING DIRETAMENTE - OTIMIZADO
-     */
+
+    /** 🤖 GERAR EMBEDDING DIRETAMENTE - OTIMIZADO */
     private fun generateEmbeddingDirect(bitmap: Bitmap): FloatArray {
         return try {
             // ✅ OTIMIZAÇÃO: Verificações rápidas
             if (!modelLoaded || interpreter == null) {
                 throw Exception("TensorFlow não disponível")
             }
-            
+
             if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
                 throw Exception("Bitmap inválido")
             }
-            
+
             // ✅ OTIMIZAÇÃO: Redimensionar apenas se necessário
-            val resizedBitmap = if (bitmap.width != modelInputWidth || bitmap.height != modelInputHeight) {
-                Bitmap.createScaledBitmap(bitmap, modelInputWidth, modelInputHeight, true)
-            } else {
-                bitmap
-            }
-            
+            val resizedBitmap =
+                    if (bitmap.width != modelInputWidth || bitmap.height != modelInputHeight) {
+                        Bitmap.createScaledBitmap(bitmap, modelInputWidth, modelInputHeight, true)
+                    } else {
+                        bitmap
+                    }
+
             // ✅ OTIMIZAÇÃO: Converter para tensor
             val inputTensor = convertBitmapToTensorInput(resizedBitmap)
             val output = Array(1) { FloatArray(modelOutputSize) }
-            
+
             // ✅ OTIMIZAÇÃO: Executar modelo
             interpreter?.run(inputTensor, output)
             val embedding = output[0]
-            
+
             // ✅ OTIMIZAÇÃO: Validação rápida
             if (embedding.isEmpty() || embedding.all { it == 0f }) {
                 throw Exception("Embedding inválido")
             }
-            
+
             // ✅ OTIMIZAÇÃO: Limpar bitmap temporário
             if (resizedBitmap != bitmap) {
                 resizedBitmap.recycle()
             }
-            
+
             embedding
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao gerar embedding: ${e.message}")
             throw e
         }
     }
-    
-    /**
-     * 📊 CALCULAR SIMILARIDADE ENTRE EMBEDDINGS - OTIMIZADO
-     */
+
+    /** 📊 CALCULAR SIMILARIDADE ENTRE EMBEDDINGS - OTIMIZADO */
     private fun calculateSimilarity(embedding1: FloatArray, embedding2: FloatArray): Float {
         return try {
             if (embedding1.size != embedding2.size) {
                 return 0f
             }
-            
+
             // ✅ OTIMIZAÇÃO: Usar apenas cosseno similarity (mais rápido e preciso)
             var dotProduct = 0f
             var norm1 = 0f
             var norm2 = 0f
-            
+
             for (i in embedding1.indices) {
                 dotProduct += embedding1[i] * embedding2[i]
                 norm1 += embedding1[i] * embedding1[i]
                 norm2 += embedding2[i] * embedding2[i]
             }
-            
+
             val cosineSimilarity = dotProduct / (kotlin.math.sqrt(norm1) * kotlin.math.sqrt(norm2))
-            
+
             // ✅ OTIMIZAÇÃO: Normalizar para [0, 1] e retornar
             val normalizedSimilarity = (cosineSimilarity + 1) / 2
-            
+
             normalizedSimilarity
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao calcular similaridade: ${e.message}")
             0f
         }
     }
     
-    /**
-     * ✅ VALIDAR QUALIDADE DA FACE - MAIS CRITERIOSO
-     */
+    /** 📊 CALCULAR SIMILARIDADE COSSENO DIRETA - PARA VALIDAÇÕES RIGOROSAS */
+    private fun calculateCosineSimilarity(embedding1: FloatArray, embedding2: FloatArray): Float {
+        return try {
+            if (embedding1.size != embedding2.size) {
+                return 0f
+            }
+
+            var dotProduct = 0f
+            var norm1 = 0f
+            var norm2 = 0f
+
+            for (i in embedding1.indices) {
+                dotProduct += embedding1[i] * embedding2[i]
+                norm1 += embedding1[i] * embedding1[i]
+                norm2 += embedding2[i] * embedding2[i]
+            }
+
+            val cosineSimilarity = dotProduct / (kotlin.math.sqrt(norm1) * kotlin.math.sqrt(norm2))
+            cosineSimilarity
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao calcular similaridade cosseno: ${e.message}")
+            0f
+        }
+    }
+
+    /** ✅ VALIDAR QUALIDADE DA FACE - MUITO RIGOROSO */
     private fun validateFaceQuality(bitmap: Bitmap): QualityResult {
         return try {
-            // ✅ 1. VERIFICAR TAMANHO MÍNIMO - MUITO PERMISSIVO
-            if (bitmap.width < 80 || bitmap.height < 80) {
-                return QualityResult(false, "Face muito pequena (${bitmap.width}x${bitmap.height}) - mínimo 80x80")
+            // ✅ 1. VERIFICAR TAMANHO MÍNIMO - MUITO RIGOROSO
+            if (bitmap.width < 150 || bitmap.height < 150) {
+                return QualityResult(
+                        false,
+                        "Face muito pequena (${bitmap.width}x${bitmap.height}) - mínimo 150x150"
+                )
             }
-            
+
             // ✅ 2. VERIFICAR SE NÃO ESTÁ MUITO GRANDE (PODE SER RUÍDO)
-            if (bitmap.width > 800 || bitmap.height > 800) {
-                return QualityResult(false, "Face muito grande (${bitmap.width}x${bitmap.height}) - pode ser ruído")
+            if (bitmap.width > 600 || bitmap.height > 600) {
+                return QualityResult(
+                        false,
+                        "Face muito grande (${bitmap.width}x${bitmap.height}) - pode ser ruído"
+                )
             }
-            
-            // ✅ 3. VERIFICAR LUMINOSIDADE - MAIS RIGOROSO
+
+            // ✅ 3. VERIFICAR LUMINOSIDADE - MUITO RIGOROSO
             val pixels = IntArray(bitmap.width * bitmap.height)
             bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-            
+
             var totalBrightness = 0f
             var darkPixels = 0
             var brightPixels = 0
-            
+
             for (pixel in pixels) {
                 val r = (pixel shr 16) and 0xFF
                 val g = (pixel shr 8) and 0xFF
                 val b = pixel and 0xFF
-                
+
                 val brightness = (r + g + b) / 3f / 255f
                 totalBrightness += brightness
-                
-                if (brightness < 0.1f) darkPixels++
-                if (brightness > 0.9f) brightPixels++
+
+                if (brightness < 0.15f) darkPixels++
+                if (brightness > 0.85f) brightPixels++
             }
-            
+
             val avgBrightness = totalBrightness / pixels.size
             val darkRatio = darkPixels.toFloat() / pixels.size
             val brightRatio = brightPixels.toFloat() / pixels.size
-            
-            // ✅ 4. VERIFICAR SE NÃO ESTÁ MUITO ESCURO OU MUITO CLARO - MUITO PERMISSIVO
-            if (avgBrightness < 0.15f) {
-                return QualityResult(false, "Imagem muito escura (${String.format("%.1f", avgBrightness * 100)}%)")
+
+            // ✅ 4. VERIFICAR SE NÃO ESTÁ MUITO ESCURO OU MUITO CLARO - MUITO RIGOROSO
+            if (avgBrightness < 0.25f) {
+                return QualityResult(
+                        false,
+                        "Imagem muito escura (${String.format("%.1f", avgBrightness * 100)}%)"
+                )
             }
-            
-            if (avgBrightness > 0.85f) {
-                return QualityResult(false, "Imagem muito clara (${String.format("%.1f", avgBrightness * 100)}%)")
+
+            if (avgBrightness > 0.75f) {
+                return QualityResult(
+                        false,
+                        "Imagem muito clara (${String.format("%.1f", avgBrightness * 100)}%)"
+                )
             }
-            
-            // ✅ 5. VERIFICAR SE NÃO TEM MUITOS PIXELS ESCUROS OU CLAROS
-            if (darkRatio > 0.3f) {
-                return QualityResult(false, "Muitos pixels escuros (${String.format("%.1f", darkRatio * 100)}%)")
+
+            // ✅ 5. VERIFICAR SE NÃO TEM MUITOS PIXELS ESCUROS OU CLAROS - MUITO RIGOROSO
+            if (darkRatio > 0.2f) {
+                return QualityResult(
+                        false,
+                        "Muitos pixels escuros (${String.format("%.1f", darkRatio * 100)}%)"
+                )
             }
-            
-            if (brightRatio > 0.3f) {
-                return QualityResult(false, "Muitos pixels claros (${String.format("%.1f", brightRatio * 100)}%)")
+
+            if (brightRatio > 0.2f) {
+                return QualityResult(
+                        false,
+                        "Muitos pixels claros (${String.format("%.1f", brightRatio * 100)}%)"
+                )
             }
-            
-            // ✅ 6. VERIFICAR VARIAÇÃO DE PIXELS (CONTRASTE) - MUITO PERMISSIVO
+
+            // ✅ 6. VERIFICAR VARIAÇÃO DE PIXELS (CONTRASTE) - MUITO RIGOROSO
             var variance = 0f
             for (pixel in pixels) {
                 val r = (pixel shr 16) and 0xFF
                 val g = (pixel shr 8) and 0xFF
                 val b = pixel and 0xFF
-                
+
                 val brightness = (r + g + b) / 3f / 255f
                 val diff = brightness - avgBrightness
                 variance += diff * diff
             }
             variance /= pixels.size
-            
-            if (variance < 0.01f) {
-                return QualityResult(false, "Imagem sem contraste suficiente (variância: ${String.format("%.3f", variance)})")
+
+            if (variance < 0.02f) {
+                return QualityResult(
+                        false,
+                        "Imagem sem contraste suficiente (variância: ${String.format("%.3f", variance)})"
+                )
             }
-            
+
             // ✅ 7. VERIFICAR SE NÃO É UMA IMAGEM UNIFORME (PODE SER RUÍDO)
-            if (variance < 0.001f) {
+            if (variance < 0.005f) {
                 return QualityResult(false, "Imagem muito uniforme - possivelmente ruído")
             }
+
+            // ✅ 8. VERIFICAR SE A FACE ESTÁ CENTRADA E BEM POSICIONADA
+            val centerX = bitmap.width / 2
+            val centerY = bitmap.height / 2
+            val centerPixel = pixels[centerY * bitmap.width + centerX]
+            val centerBrightness = ((centerPixel shr 16) and 0xFF + (centerPixel shr 8) and 0xFF + centerPixel and 0xFF) / 3f / 255f
             
-            Log.d(TAG, "✅ Qualidade da face aprovada: luminosidade=${String.format("%.2f", avgBrightness)}, contraste=${String.format("%.3f", variance)}, pixels_escuros=${String.format("%.1f", darkRatio * 100)}%, pixels_claros=${String.format("%.1f", brightRatio * 100)}%")
+            if (centerBrightness < 0.2f || centerBrightness > 0.8f) {
+                return QualityResult(
+                        false,
+                        "Face não está bem posicionada no centro"
+                )
+            }
+
+            Log.d(
+                    TAG,
+                    "✅ Qualidade da face aprovada: luminosidade=${String.format("%.2f", avgBrightness)}, contraste=${String.format("%.3f", variance)}, pixels_escuros=${String.format("%.1f", darkRatio * 100)}%, pixels_claros=${String.format("%.1f", brightRatio * 100)}%"
+            )
             return QualityResult(true, "Qualidade aprovada")
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao validar qualidade da face: ${e.message}")
             return QualityResult(false, "Erro na validação: ${e.message}")
         }
     }
-    
-    /**
-     * ✅ VALIDAR QUALIDADE DO EMBEDDING - MAIS CRITERIOSO
-     */
+
+    /** ✅ VALIDAR QUALIDADE DO EMBEDDING - MAIS CRITERIOSO */
     private fun validateEmbeddingQuality(embedding: FloatArray): QualityResult {
         return try {
             // ✅ 1. VERIFICAR SE NÃO É TUDO ZERO
             if (embedding.all { it == 0f }) {
                 return QualityResult(false, "Embedding zerado")
             }
-            
+
             // ✅ 2. VERIFICAR SE HÁ VALORES INVÁLIDOS
             if (embedding.any { it.isNaN() || it.isInfinite() }) {
                 return QualityResult(false, "Embedding com valores inválidos")
             }
-            
+
             // ✅ 3. VERIFICAR SE NÃO SÃO TODOS IGUAIS (PODE SER RUÍDO)
             val firstValue = embedding[0]
             if (embedding.all { kotlin.math.abs(it - firstValue) < 0.0001f }) {
                 return QualityResult(false, "Embedding com valores idênticos - possivelmente ruído")
             }
-            
+
             // ✅ 4. VERIFICAR VARIÂNCIA DO EMBEDDING - MAIS RIGOROSO
             val mean = embedding.average().toFloat()
             var variance = 0f
@@ -1453,156 +1803,169 @@ class PontoActivity : AppCompatActivity() {
                 variance += diff * diff
             }
             variance /= embedding.size
-            
+
             if (variance < 0.005f) {
-                return QualityResult(false, "Embedding sem variação suficiente (variância: ${String.format("%.6f", variance)})")
+                return QualityResult(
+                        false,
+                        "Embedding sem variação suficiente (variância: ${String.format("%.6f", variance)})"
+                )
             }
-            
+
             // ✅ 5. VERIFICAR MAGNITUDE DO EMBEDDING - MAIS RIGOROSO
             var magnitude = 0f
             for (value in embedding) {
                 magnitude += value * value
             }
             magnitude = kotlin.math.sqrt(magnitude)
-            
+
             if (magnitude < 0.5f) {
-                return QualityResult(false, "Embedding com magnitude muito baixa (${String.format("%.3f", magnitude)})")
+                return QualityResult(
+                        false,
+                        "Embedding com magnitude muito baixa (${String.format("%.3f", magnitude)})"
+                )
             }
-            
+
             // ✅ 6. VERIFICAR SE NÃO TEM VALORES EXTREMOS (PODE SER RUÍDO)
             val maxValue = embedding.maxOrNull() ?: 0f
             val minValue = embedding.minOrNull() ?: 0f
             val range = maxValue - minValue
-            
+
             if (range < 0.1f) {
-                return QualityResult(false, "Embedding com range muito pequeno (${String.format("%.3f", range)})")
+                return QualityResult(
+                        false,
+                        "Embedding com range muito pequeno (${String.format("%.3f", range)})"
+                )
             }
-            
+
             // ✅ 7. VERIFICAR SE NÃO TEM MUITOS VALORES ZEROS
             val zeroCount = embedding.count { kotlin.math.abs(it) < 0.001f }
             val zeroRatio = zeroCount.toFloat() / embedding.size
-            
+
             if (zeroRatio > 0.5f) {
-                return QualityResult(false, "Muitos valores próximos de zero (${String.format("%.1f", zeroRatio * 100)}%)")
+                return QualityResult(
+                        false,
+                        "Muitos valores próximos de zero (${String.format("%.1f", zeroRatio * 100)}%)"
+                )
             }
-            
-            Log.d(TAG, "✅ Qualidade do embedding aprovada: variância=${String.format("%.6f", variance)}, magnitude=${String.format("%.3f", magnitude)}, range=${String.format("%.3f", range)}, zeros=${String.format("%.1f", zeroRatio * 100)}%")
+
+            Log.d(
+                    TAG,
+                    "✅ Qualidade do embedding aprovada: variância=${String.format("%.6f", variance)}, magnitude=${String.format("%.3f", magnitude)}, range=${String.format("%.3f", range)}, zeros=${String.format("%.1f", zeroRatio * 100)}%"
+            )
             return QualityResult(true, "Embedding de qualidade")
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao validar qualidade do embedding: ${e.message}")
             return QualityResult(false, "Erro na validação: ${e.message}")
         }
     }
-    
-    /**
-     * 📊 RESULTADO DE QUALIDADE
-     */
+
+    /** 📊 RESULTADO DE QUALIDADE */
     data class QualityResult(val isValid: Boolean, val reason: String)
-    
-    /**
-     * ✅ VALIDAR SE O MATCH É CONSISTENTE (EVITA FALSOS POSITIVOS)
-     */
+
+    /** ✅ VALIDAR SE O MATCH É CONSISTENTE (EVITA FALSOS POSITIVOS) - MUITO RIGOROSO */
     private fun validateConsistentMatch(embedding1: FloatArray, embedding2: FloatArray): Boolean {
         return try {
             // ✅ VERIFICAR DISTRIBUIÇÃO DOS VALORES
             val mean1 = embedding1.average().toFloat()
             val mean2 = embedding2.average().toFloat()
             val meanDiff = kotlin.math.abs(mean1 - mean2)
-            
+
             // ✅ VERIFICAR VARIÂNCIA
             val variance1 = embedding1.map { (it - mean1) * (it - mean1) }.average().toFloat()
             val variance2 = embedding2.map { (it - mean2) * (it - mean2) }.average().toFloat()
             val varianceDiff = kotlin.math.abs(variance1 - variance2)
-            
+
             // ✅ VERIFICAR CORRELAÇÃO
             val correlation = calculateCorrelation(embedding1, embedding2)
-            
-            // ✅ CRITÉRIOS DE CONSISTÊNCIA
-            val isMeanConsistent = meanDiff < 0.1f
-            val isVarianceConsistent = varianceDiff < 0.05f
-            val isCorrelationGood = correlation > 0.8f
-            
-            Log.d(TAG, "🔍 Validação consistente: meanDiff=${String.format("%.3f", meanDiff)}, varianceDiff=${String.format("%.3f", varianceDiff)}, correlation=${String.format("%.3f", correlation)}")
-            Log.d(TAG, "🔍 Consistência: mean=$isMeanConsistent, variance=$isVarianceConsistent, correlation=$isCorrelationGood")
-            
-            isMeanConsistent && isVarianceConsistent && isCorrelationGood
-            
+
+            // ✅ CRITÉRIOS DE CONSISTÊNCIA - MUITO RIGOROSOS
+            val isMeanConsistent = meanDiff < 0.08f // ✅ MUITO RIGOROSO
+            val isVarianceConsistent = varianceDiff < 0.04f // ✅ MUITO RIGOROSO
+            val isCorrelationGood = correlation > 0.85f // ✅ MUITO RIGOROSO
+
+            // ✅ VERIFICAÇÃO ADICIONAL: Verificar se os padrões são similares
+            val patternSimilarity = calculatePatternSimilarity(embedding1, embedding2)
+            val isPatternConsistent = patternSimilarity > 0.8f // ✅ MUITO RIGOROSO
+
+            Log.d(
+                    TAG,
+                    "🔍 Validação consistente: meanDiff=${String.format("%.3f", meanDiff)}, varianceDiff=${String.format("%.3f", varianceDiff)}, correlation=${String.format("%.3f", correlation)}, pattern=${String.format("%.3f", patternSimilarity)}"
+            )
+            Log.d(
+                    TAG,
+                    "🔍 Consistência: mean=$isMeanConsistent, variance=$isVarianceConsistent, correlation=$isCorrelationGood, pattern=$isPatternConsistent"
+            )
+
+            isMeanConsistent && isVarianceConsistent && isCorrelationGood && isPatternConsistent
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro na validação consistente: ${e.message}")
             false
         }
     }
-    
-    /**
-     * 📊 CALCULAR CORRELAÇÃO ENTRE EMBEDDINGS
-     */
+
+    /** 📊 CALCULAR CORRELAÇÃO ENTRE EMBEDDINGS */
     private fun calculateCorrelation(embedding1: FloatArray, embedding2: FloatArray): Float {
         return try {
             if (embedding1.size != embedding2.size) return 0f
-            
+
             val mean1 = embedding1.average().toFloat()
             val mean2 = embedding2.average().toFloat()
-            
+
             var numerator = 0f
             var denominator1 = 0f
             var denominator2 = 0f
-            
+
             for (i in embedding1.indices) {
                 val diff1 = embedding1[i] - mean1
                 val diff2 = embedding2[i] - mean2
-                
+
                 numerator += diff1 * diff2
                 denominator1 += diff1 * diff1
                 denominator2 += diff2 * diff2
             }
-            
+
             if (denominator1 == 0f || denominator2 == 0f) return 0f
-            
+
             val correlation = numerator / kotlin.math.sqrt(denominator1 * denominator2)
             correlation
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao calcular correlação: ${e.message}")
             0f
         }
     }
-    
-    /**
-     * 📊 HISTÓRICO DE TENTATIVAS DE RECONHECIMENTO
-     */
+
+    /** 📊 HISTÓRICO DE TENTATIVAS DE RECONHECIMENTO */
     data class RecognitionAttempt(
-        val timestamp: Long,
-        val similarity: Float,
-        val funcionarioId: String?,
-        val wasSuccessful: Boolean,
-        val qualityScore: Float
+            val timestamp: Long,
+            val similarity: Float,
+            val funcionarioId: String?,
+            val wasSuccessful: Boolean,
+            val qualityScore: Float
     )
-    
-    /**
-     * 📊 RESULTADO DO RECONHECIMENTO
-     */
+
+    /** 📊 RESULTADO DO RECONHECIMENTO */
     sealed class RecognitionResult {
-        data class Success(val funcionario: FuncionariosEntity, val similarity: Float) : RecognitionResult()
+        data class Success(val funcionario: FuncionariosEntity, val similarity: Float) :
+                RecognitionResult()
         data class Failure(val reason: String) : RecognitionResult()
     }
 
     private suspend fun registrarPontoDireto(funcionario: FuncionariosEntity) {
         try {
             Log.d(TAG, "💾 Registrando ponto para: ${funcionario.nome}")
-            
+
             if (isFinishing || isDestroyed) {
                 Log.w(TAG, "⚠️ Activity finalizada - cancelando registro de ponto")
                 return
             }
-            
+
             val horarioAtual = System.currentTimeMillis()
             val formato = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault())
             val dataFormatada = formato.format(Date(horarioAtual))
-            
+
             var latitude: Double? = null
             var longitude: Double? = null
-            
+
             try {
                 val helper = locationHelper
                 val locationData = helper?.getCurrentLocationForPoint()
@@ -1616,92 +1979,96 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro na localização: ${e.message}")
             }
-            
+
             // ✅ PROTEÇÃO: Converter foto com validação
-            val fotoBase64 = try {
-                val bitmap = currentFaceBitmap
-                bitmap?.let { bmp ->
-                    if (!bmp.isRecycled && bmp.width > 0 && bmp.height > 0) {
-                        val base64 = bitmapToBase64(bmp, 80)
-                        base64
-                    } else {
-                        Log.w(TAG, "⚠️ Bitmap inválido para conversão")
+            val fotoBase64 =
+                    try {
+                        val bitmap = currentFaceBitmap
+                        bitmap?.let { bmp ->
+                            if (!bmp.isRecycled && bmp.width > 0 && bmp.height > 0) {
+                                val base64 = bitmapToBase64(bmp, 80)
+                                base64
+                            } else {
+                                Log.w(TAG, "⚠️ Bitmap inválido para conversão")
+                                null
+                            }
+                        }
+                                ?: null
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao converter foto: ${e.message}")
                         null
                     }
-                } ?: null
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao converter foto: ${e.message}")
-                null
-            }
-            
+
             // ✅ PROTEÇÃO: Validar dados do funcionário
             val funcionarioId = funcionario.codigo ?: "FUNCIONARIO_${System.currentTimeMillis()}"
             val funcionarioNome = funcionario.nome ?: "Funcionário"
-            
+
             if (funcionarioId.isEmpty()) {
                 Log.e(TAG, "❌ ID do funcionário vazio")
                 throw Exception("ID do funcionário inválido")
             }
-            
+
             // ✅ PROTEÇÃO: Criar ponto com validação
-            val ponto = try {
-                PontosGenericosEntity(
-                    funcionarioId = funcionarioId,
-                    funcionarioNome = funcionarioNome,
-                    funcionarioMatricula = funcionario.matricula ?: "",
-                    funcionarioCpf = funcionario.cpf ?: "",
-                    funcionarioCargo = funcionario.cargo ?: "",
-                    funcionarioSecretaria = funcionario.secretaria ?: "",
-                    funcionarioLotacao = funcionario.lotacao ?: "",
-                    tipoPonto = "PONTO",
-                    dataHora = horarioAtual,
-                    latitude = latitude,
-                    longitude = longitude,
-                    fotoBase64 = fotoBase64
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao criar entidade de ponto: ${e.message}")
-                throw Exception("Erro ao criar ponto: ${e.message}")
-            }
-            
+            val ponto =
+                    try {
+                        PontosGenericosEntity(
+                                funcionarioId = funcionarioId,
+                                funcionarioNome = funcionarioNome,
+                                funcionarioMatricula = funcionario.matricula ?: "",
+                                funcionarioCpf = funcionario.cpf ?: "",
+                                funcionarioCargo = funcionario.cargo ?: "",
+                                funcionarioSecretaria = funcionario.secretaria ?: "",
+                                funcionarioLotacao = funcionario.lotacao ?: "",
+                                tipoPonto = "PONTO",
+                                dataHora = horarioAtual,
+                                latitude = latitude,
+                                longitude = longitude,
+                                fotoBase64 = fotoBase64
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao criar entidade de ponto: ${e.message}")
+                        throw Exception("Erro ao criar ponto: ${e.message}")
+                    }
+
             var pontoSalvo = false
             var tentativas = 0
             val maxTentativas = 3
-            
+
             while (!pontoSalvo && tentativas < maxTentativas) {
                 try {
                     tentativas++
                     Log.d(TAG, "💾 Tentativa $tentativas de salvar ponto...")
-                    
+
                     AppDatabase.getInstance(this@PontoActivity).pontosGenericosDao().insert(ponto)
                     pontoSalvo = true
                     Log.d(TAG, "✅ Ponto salvo com sucesso na tentativa $tentativas")
-                    
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro na tentativa $tentativas: ${e.message}")
                     if (tentativas >= maxTentativas) {
-                        throw Exception("Falha ao salvar ponto após $maxTentativas tentativas: ${e.message}")
+                        throw Exception(
+                                "Falha ao salvar ponto após $maxTentativas tentativas: ${e.message}"
+                        )
                     }
                     kotlinx.coroutines.delay(500)
                 }
             }
-            
+
             try {
                 val pontoService = PontoSincronizacaoService()
                 pontoService.salvarPontoParaSincronizacao(
-                    this@PontoActivity,
-                    funcionarioId,
-                    funcionarioNome,
-                    "ponto",
-                    fotoBase64,
-                    latitude,
-                    longitude
+                        this@PontoActivity,
+                        funcionarioId,
+                        funcionarioNome,
+                        "ponto",
+                        fotoBase64,
+                        latitude,
+                        longitude
                 )
                 Log.d(TAG, "✅ Ponto salvo para sincronização")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro na sincronização (não crítico): ${e.message}")
             }
-            
+
             withContext(Dispatchers.Main) {
                 try {
                     if (!isFinishing && !isDestroyed) {
@@ -1713,30 +2080,35 @@ class PontoActivity : AppCompatActivity() {
                     Log.e(TAG, "❌ Erro ao mostrar sucesso: ${e.message}")
                 }
             }
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro crítico ao registrar ponto: ${e.message}")
             e.printStackTrace()
-            
+
             // ✅ PROTEÇÃO: Mostrar erro com verificações de contexto
             withContext(Dispatchers.Main) {
                 try {
                     if (!isFinishing && !isDestroyed) {
                         val status = statusText
                         status.text = "❌ Erro ao registrar ponto\nTente novamente"
-                        
-                        status.postDelayed({
-                            try {
-                                if (!isFinishing && !isDestroyed) {
-                                    val statusInner = statusText
-                                    statusInner.text = ""
-                                } else {
-                                    Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
-                                }
-                            } catch (e2: Exception) {
-                                Log.e(TAG, "❌ Erro no reset: ${e2.message}")
-                            }
-                        }, 3000)
+
+                        status.postDelayed(
+                                {
+                                    try {
+                                        if (!isFinishing && !isDestroyed) {
+                                            val statusInner = statusText
+                                            statusInner.text = ""
+                                        } else {
+                                            Log.w(
+                                                    TAG,
+                                                    "⚠️ Activity finalizada - não atualizando UI"
+                                            )
+                                        }
+                                    } catch (e2: Exception) {
+                                        Log.e(TAG, "❌ Erro no reset: ${e2.message}")
+                                    }
+                                },
+                                3000
+                        )
                     } else {
                         Log.w(TAG, "⚠️ Activity finalizada - não atualizando UI")
                     }
@@ -1755,7 +2127,7 @@ class PontoActivity : AppCompatActivity() {
         try {
             // ✅ OTIMIZAÇÃO: Reduzir logs para melhor performance
             val inputSize = modelInputWidth
-            
+
             // ✅ PROTEÇÃO CRÍTICA: Validar bitmap de entrada
             if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) {
                 throw IllegalArgumentException("Bitmap inválido")
@@ -1767,12 +2139,13 @@ class PontoActivity : AppCompatActivity() {
             byteBuffer.order(ByteOrder.nativeOrder())
 
             // ✅ OTIMIZAÇÃO: Redimensionar bitmap apenas se necessário
-            val resizedBitmap = if (bitmap.width != inputSize || bitmap.height != inputSize) {
-                Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-            } else {
-                bitmap
-            }
-            
+            val resizedBitmap =
+                    if (bitmap.width != inputSize || bitmap.height != inputSize) {
+                        Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
+                    } else {
+                        bitmap
+                    }
+
             // ✅ OTIMIZAÇÃO: Alocar array de pixels
             val intValues = IntArray(inputSize * inputSize)
             resizedBitmap.getPixels(intValues, 0, inputSize, 0, 0, inputSize, inputSize)
@@ -1787,14 +2160,13 @@ class PontoActivity : AppCompatActivity() {
                 byteBuffer.putFloat(g)
                 byteBuffer.putFloat(b)
             }
-            
+
             // ✅ OTIMIZAÇÃO: Limpar bitmap temporário
             if (resizedBitmap != bitmap) {
                 resizedBitmap.recycle()
             }
 
             return byteBuffer
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro na conversão do bitmap: ${e.message}")
             throw e
@@ -1805,64 +2177,76 @@ class PontoActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 Log.d(TAG, "🔍 === VERIFICANDO E CRIANDO DADOS DE TESTE ===")
-                
+
                 val db = AppDatabase.getInstance(this@PontoActivity)
                 val funcionarioDao = db.usuariosDao()
                 val faceDao = db.faceDao()
-                
+
                 val funcionarios = funcionarioDao.getUsuario()
                 val faces = faceDao.getAllFaces()
-                
-                Log.d(TAG, "📊 Estado atual: ${funcionarios.size} funcionários, ${faces.size} faces")
-                
+
+                Log.d(
+                        TAG,
+                        "📊 Estado atual: ${funcionarios.size} funcionários, ${faces.size} faces"
+                )
+
                 // ✅ CRIAR FUNCIONÁRIO DE TESTE SE NECESSÁRIO
                 var funcionarioTeste: FuncionariosEntity? = null
                 if (funcionarios.isEmpty()) {
                     Log.d(TAG, "📝 Criando funcionário de teste...")
-                    
-                    funcionarioTeste = FuncionariosEntity(
-                        id = 1,
-                        codigo = "TEST001",
-                        nome = "Funcionário Teste",
-                        matricula = "001",
-                        cpf = "00000000000",
-                        cargo = "Teste",
-                        secretaria = "TI",
-                        lotacao = "Desenvolvimento",
-                        ativo = 1
-                    )
-                    
+
+                    funcionarioTeste =
+                            FuncionariosEntity(
+                                    id = 1,
+                                    codigo = "TEST001",
+                                    nome = "Funcionário Teste",
+                                    matricula = "001",
+                                    cpf = "00000000000",
+                                    cargo = "Teste",
+                                    secretaria = "TI",
+                                    lotacao = "Desenvolvimento",
+                                    ativo = 1
+                            )
+
                     funcionarioDao.insert(funcionarioTeste)
                     Log.d(TAG, "✅ Funcionário de teste criado: ${funcionarioTeste.nome}")
                 } else {
                     funcionarioTeste = funcionarios.first()
                     Log.d(TAG, "✅ Funcionário já existe: ${funcionarioTeste.nome}")
                 }
-                
+
                 // ✅ CRIAR FACE DE TESTE SE NECESSÁRIO
                 if (faces.isEmpty()) {
                     Log.d(TAG, "📝 Criando face de teste com embedding realista...")
-                    
+
                     try {
                         // ✅ GERAR EMBEDDING USANDO O PRÓPRIO TENSORFLOW
                         val testEmbedding = generateTestEmbedding()
                         if (testEmbedding != null) {
                             val embeddingString = testEmbedding.joinToString(",")
-                            
-                            val faceTeste = com.example.iface_offilne.data.FaceEntity(
-                                id = 0,
-                                funcionarioId = funcionarioTeste.codigo ?: "TEST001",
-                                embedding = embeddingString,
-                                synced = true
-                            )
-                            
+
+                            val faceTeste =
+                                    com.example.iface_offilne.data.FaceEntity(
+                                            id = 0,
+                                            funcionarioId = funcionarioTeste.codigo ?: "TEST001",
+                                            embedding = embeddingString,
+                                            synced = true
+                                    )
+
                             kotlinx.coroutines.runBlocking { faceDao.insert(faceTeste) }
-                            Log.d(TAG, "✅ Face de teste criada com embedding TensorFlow (${testEmbedding.size} dimensões)")
-                            
+                            Log.d(
+                                    TAG,
+                                    "✅ Face de teste criada com embedding TensorFlow (${testEmbedding.size} dimensões)"
+                            )
+
                             // ✅ VERIFICAR SE FOI SALVA CORRETAMENTE
-                            val savedFace = faceDao.getByFuncionarioId(funcionarioTeste.codigo ?: "TEST001")
+                            val savedFace =
+                                    faceDao.getByFuncionarioId(funcionarioTeste.codigo ?: "TEST001")
                             if (savedFace != null) {
-                                Log.d(TAG, "✅ Face de teste salva com sucesso - ID: ${savedFace.id}")
+                                Log.d(
+                                        TAG,
+                                        "✅ Face de teste salva com sucesso - ID: ${savedFace.id}"
+                                )
                                 Log.d(TAG, "📐 Embedding: ${savedFace.embedding.length} caracteres")
                             } else {
                                 Log.e(TAG, "❌ Erro: Face de teste não foi salva")
@@ -1872,124 +2256,143 @@ class PontoActivity : AppCompatActivity() {
                             createRandomTestFace(funcionarioTeste, faceDao)
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro ao gerar face com TensorFlow - usando método alternativo: ${e.message}")
+                        Log.e(
+                                TAG,
+                                "❌ Erro ao gerar face com TensorFlow - usando método alternativo: ${e.message}"
+                        )
                         createRandomTestFace(funcionarioTeste, faceDao)
                     }
                 } else {
                     Log.d(TAG, "✅ Faces já cadastradas:")
                     faces.forEach { face ->
-                        Log.d(TAG, "   - ID: ${face.funcionarioId}, Embedding: ${face.embedding.length} chars")
+                        Log.d(
+                                TAG,
+                                "   - ID: ${face.funcionarioId}, Embedding: ${face.embedding.length} chars"
+                        )
                     }
                 }
-                
+
                 // ✅ VERIFICAR ESTADO FINAL
                 val finalFuncionarios = funcionarioDao.getUsuario()
                 val finalFaces = faceDao.getAllFaces()
-                Log.d(TAG, "📊 Estado final: ${finalFuncionarios.size} funcionários, ${finalFaces.size} faces")
-                
+                Log.d(
+                        TAG,
+                        "📊 Estado final: ${finalFuncionarios.size} funcionários, ${finalFaces.size} faces"
+                )
+
                 if (finalFuncionarios.isNotEmpty() && finalFaces.isNotEmpty()) {
                     Log.d(TAG, "✅ === DADOS DE TESTE PRONTOS ===")
                 } else {
                     Log.e(TAG, "❌ === FALHA NA CRIAÇÃO DOS DADOS DE TESTE ===")
                 }
-                
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro crítico ao criar funcionário/face de teste", e)
                 e.printStackTrace()
             }
         }
     }
-    
-    /**
-     * 🔍 DETECTAR DIMENSÕES DO MODELO AUTOMATICAMENTE
-     */
+
+    /** 🔍 DETECTAR DIMENSÕES DO MODELO AUTOMATICAMENTE */
     private fun detectModelDimensions(interpreter: Interpreter) {
         try {
             Log.d(TAG, "🔍 === DETECTANDO DIMENSÕES DO MODELO ===")
-            
+
             // ✅ PROTEÇÃO CRÍTICA: Verificar se o interpreter é válido
             if (interpreter == null) {
                 Log.e(TAG, "❌ Interpreter é nulo")
                 return
             }
-            
+
             // ✅ PROTEÇÃO: Capturar SIGBUS ao acessar tensores
-            val inputTensor = try {
-                interpreter.getInputTensor(0)
-            } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "❌ Erro de biblioteca nativa ao acessar input tensor: ${e.message}")
-                registerTensorFlowCrash()
-                return
-            } catch (e: OutOfMemoryError) {
-                Log.e(TAG, "❌ Erro de memória ao acessar input tensor: ${e.message}")
-                registerTensorFlowCrash()
-                return
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao acessar input tensor: ${e.message}")
-                return
-            }
-            
-            val outputTensor = try {
-                interpreter.getOutputTensor(0)
-            } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "❌ Erro de biblioteca nativa ao acessar output tensor: ${e.message}")
-                registerTensorFlowCrash()
-                return
-            } catch (e: OutOfMemoryError) {
-                Log.e(TAG, "❌ Erro de memória ao acessar output tensor: ${e.message}")
-                registerTensorFlowCrash()
-                return
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao acessar output tensor: ${e.message}")
-                return
-            }
-            
+            val inputTensor =
+                    try {
+                        interpreter.getInputTensor(0)
+                    } catch (e: UnsatisfiedLinkError) {
+                        Log.e(
+                                TAG,
+                                "❌ Erro de biblioteca nativa ao acessar input tensor: ${e.message}"
+                        )
+                        registerTensorFlowCrash()
+                        return
+                    } catch (e: OutOfMemoryError) {
+                        Log.e(TAG, "❌ Erro de memória ao acessar input tensor: ${e.message}")
+                        registerTensorFlowCrash()
+                        return
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao acessar input tensor: ${e.message}")
+                        return
+                    }
+
+            val outputTensor =
+                    try {
+                        interpreter.getOutputTensor(0)
+                    } catch (e: UnsatisfiedLinkError) {
+                        Log.e(
+                                TAG,
+                                "❌ Erro de biblioteca nativa ao acessar output tensor: ${e.message}"
+                        )
+                        registerTensorFlowCrash()
+                        return
+                    } catch (e: OutOfMemoryError) {
+                        Log.e(TAG, "❌ Erro de memória ao acessar output tensor: ${e.message}")
+                        registerTensorFlowCrash()
+                        return
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao acessar output tensor: ${e.message}")
+                        return
+                    }
+
             // ✅ PROTEÇÃO: Verificar se os tensores são válidos
             if (inputTensor == null || outputTensor == null) {
                 Log.e(TAG, "❌ Tensores são nulos")
                 return
             }
-            
+
             // ✅ PROTEÇÃO: Capturar SIGBUS ao obter shapes
-            val inputShape = try {
-                inputTensor.shape()
-            } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "❌ Erro de biblioteca nativa ao obter input shape: ${e.message}")
-                registerTensorFlowCrash()
-                return
-            } catch (e: OutOfMemoryError) {
-                Log.e(TAG, "❌ Erro de memória ao obter input shape: ${e.message}")
-                registerTensorFlowCrash()
-                return
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao obter input shape: ${e.message}")
-                return
-            }
-            
-            val outputShape = try {
-                outputTensor.shape()
-            } catch (e: UnsatisfiedLinkError) {
-                Log.e(TAG, "❌ Erro de biblioteca nativa ao obter output shape: ${e.message}")
-                registerTensorFlowCrash()
-                return
-            } catch (e: OutOfMemoryError) {
-                Log.e(TAG, "❌ Erro de memória ao obter output shape: ${e.message}")
-                registerTensorFlowCrash()
-                return
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao obter output shape: ${e.message}")
-                return
-            }
-            
+            val inputShape =
+                    try {
+                        inputTensor.shape()
+                    } catch (e: UnsatisfiedLinkError) {
+                        Log.e(TAG, "❌ Erro de biblioteca nativa ao obter input shape: ${e.message}")
+                        registerTensorFlowCrash()
+                        return
+                    } catch (e: OutOfMemoryError) {
+                        Log.e(TAG, "❌ Erro de memória ao obter input shape: ${e.message}")
+                        registerTensorFlowCrash()
+                        return
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao obter input shape: ${e.message}")
+                        return
+                    }
+
+            val outputShape =
+                    try {
+                        outputTensor.shape()
+                    } catch (e: UnsatisfiedLinkError) {
+                        Log.e(
+                                TAG,
+                                "❌ Erro de biblioteca nativa ao obter output shape: ${e.message}"
+                        )
+                        registerTensorFlowCrash()
+                        return
+                    } catch (e: OutOfMemoryError) {
+                        Log.e(TAG, "❌ Erro de memória ao obter output shape: ${e.message}")
+                        registerTensorFlowCrash()
+                        return
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao obter output shape: ${e.message}")
+                        return
+                    }
+
             // ✅ PROTEÇÃO: Verificar se as shapes são válidas
             if (inputShape.isEmpty() || outputShape.isEmpty()) {
                 Log.e(TAG, "❌ Shapes vazias")
                 return
             }
-            
+
             Log.d(TAG, "📊 Input shape: ${inputShape.contentToString()}")
             Log.d(TAG, "📊 Output shape: ${outputShape.contentToString()}")
-            
+
             // ✅ PROTEÇÃO: Extrair dimensões com validação
             try {
                 // Extrair dimensões de entrada
@@ -1997,38 +2400,45 @@ class PontoActivity : AppCompatActivity() {
                     modelInputHeight = inputShape[1]
                     modelInputWidth = inputShape[2]
                     val channels = inputShape[3]
-                    Log.d(TAG, "📐 Entrada detectada: ${modelInputWidth}x${modelInputHeight}x${channels}")
+                    Log.d(
+                            TAG,
+                            "📐 Entrada detectada: ${modelInputWidth}x${modelInputHeight}x${channels}"
+                    )
                 } else if (inputShape.size >= 3) {
                     modelInputHeight = inputShape[1]
                     modelInputWidth = inputShape[2]
                     Log.d(TAG, "📐 Entrada detectada: ${modelInputWidth}x${modelInputHeight}")
                 }
-                
+
                 // Extrair dimensão de saída
                 if (outputShape.size >= 2) {
                     modelOutputSize = outputShape[1]
                     Log.d(TAG, "📐 Saída detectada: ${modelOutputSize} dimensões")
                 }
-                
+
                 // ✅ VALIDAÇÃO: Verificar se as dimensões são razoáveis
                 if (modelInputWidth <= 0 || modelInputHeight <= 0 || modelOutputSize <= 0) {
-                    Log.e(TAG, "❌ Dimensões inválidas detectadas: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}")
+                    Log.e(
+                            TAG,
+                            "❌ Dimensões inválidas detectadas: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}"
+                    )
                     throw Exception("Dimensões do modelo inválidas")
                 }
-                
+
                 if (modelInputWidth > 1000 || modelInputHeight > 1000 || modelOutputSize > 10000) {
-                    Log.e(TAG, "❌ Dimensões muito grandes: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}")
+                    Log.e(
+                            TAG,
+                            "❌ Dimensões muito grandes: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}"
+                    )
                     throw Exception("Dimensões do modelo muito grandes")
                 }
-                
+
                 Log.d(TAG, "✅ Dimensões detectadas com sucesso!")
-                
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao extrair dimensões: ${e.message}")
                 // Manter valores padrão em caso de erro
                 Log.d(TAG, "🔄 Usando dimensões padrão: 112x112 → 192")
             }
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro crítico ao detectar dimensões: ${e.message}")
             e.printStackTrace()
@@ -2036,145 +2446,146 @@ class PontoActivity : AppCompatActivity() {
             Log.d(TAG, "🔄 Usando dimensões padrão: 112x112 → 192")
         }
     }
-    
-    /**
-     * 🤖 GERAR EMBEDDING DE TESTE USANDO TENSORFLOW
-     */
+
+    /** 🤖 GERAR EMBEDDING DE TESTE USANDO TENSORFLOW */
     private fun generateTestEmbedding(): FloatArray? {
         return try {
             if (!modelLoaded || interpreter == null) {
                 Log.w(TAG, "⚠️ TensorFlow não está carregado para gerar embedding de teste")
                 return null
             }
-            
+
             Log.d(TAG, "🤖 Gerando embedding de teste com TensorFlow...")
-            
+
             // ✅ CRIAR IMAGEM DE TESTE (PATTERN SIMPLES)
             val testBitmap = createTestFaceBitmap()
             val inputTensor = convertBitmapToTensorInput(testBitmap)
             val output = Array(1) { FloatArray(modelOutputSize) }
-            
+
             // ✅ EXECUTAR MODELO
             interpreter?.run(inputTensor, output)
             val embedding = output[0]
-            
+
             // ✅ VALIDAR EMBEDDING
-            if (embedding.isEmpty() || embedding.all { it == 0f } || embedding.any { it.isNaN() || it.isInfinite() }) {
+            if (embedding.isEmpty() ||
+                            embedding.all { it == 0f } ||
+                            embedding.any { it.isNaN() || it.isInfinite() }
+            ) {
                 Log.w(TAG, "⚠️ Embedding gerado é inválido")
                 return null
             }
-            
+
             Log.d(TAG, "✅ Embedding de teste gerado: ${embedding.size} dimensões")
-            Log.d(TAG, "📊 Amostra: [${embedding.take(5).joinToString(", ") { String.format("%.3f", it) }}...]")
-            
+            Log.d(
+                    TAG,
+                    "📊 Amostra: [${embedding.take(5).joinToString(", ") { String.format("%.3f", it) }}...]"
+            )
+
             return embedding
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao gerar embedding de teste: ${e.message}")
             null
         }
     }
-    
-    /**
-     * 🖼️ CRIAR BITMAP DE TESTE PARA FACE
-     */
+
+    /** 🖼️ CRIAR BITMAP DE TESTE PARA FACE */
     private fun createTestFaceBitmap(): Bitmap {
         val size = 160
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565)
         val canvas = Canvas(bitmap)
-        
+
         // ✅ CRIAR PATTERN SIMPLES DE FACE
-        val paint = Paint().apply {
-            isAntiAlias = true
-        }
-        
+        val paint = Paint().apply { isAntiAlias = true }
+
         // Fundo claro
         paint.color = android.graphics.Color.rgb(220, 220, 220)
         canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
-        
+
         // "Rosto" (círculo)
         paint.color = android.graphics.Color.rgb(200, 180, 160)
         canvas.drawCircle(size / 2f, size / 2f, size / 3f, paint)
-        
+
         // "Olhos"
         paint.color = android.graphics.Color.rgb(50, 50, 50)
         canvas.drawCircle(size / 2f - 20, size / 2f - 10, 8f, paint)
         canvas.drawCircle(size / 2f + 20, size / 2f - 10, 8f, paint)
-        
+
         // "Boca"
         paint.color = android.graphics.Color.rgb(100, 50, 50)
         canvas.drawCircle(size / 2f, size / 2f + 20, 15f, paint)
-        
+
         return bitmap
     }
-    
-    /**
-     * 🎲 CRIAR FACE DE TESTE COM EMBEDDING ALEATÓRIO (FALLBACK)
-     */
-    private suspend fun createRandomTestFace(funcionario: FuncionariosEntity, faceDao: com.example.iface_offilne.data.FaceDao) {
+
+    /** 🎲 CRIAR FACE DE TESTE COM EMBEDDING ALEATÓRIO (FALLBACK) */
+    private suspend fun createRandomTestFace(
+            funcionario: FuncionariosEntity,
+            faceDao: com.example.iface_offilne.data.FaceDao
+    ) {
         try {
             Log.d(TAG, "🎲 Criando face com embedding aleatório...")
-            
+
             // ✅ GERAR EMBEDDING ALEATÓRIO MAS REALISTA
             val random = java.util.Random()
-            val testEmbedding = FloatArray(192) { 
-                (random.nextGaussian() * 0.1).toFloat() // Distribuição gaussiana centrada em 0
-            }
-            
+            val testEmbedding =
+                    FloatArray(192) {
+                        (random.nextGaussian() * 0.1)
+                                .toFloat() // Distribuição gaussiana centrada em 0
+                    }
+
             val embeddingString = testEmbedding.joinToString(",")
-            
-            val faceTeste = com.example.iface_offilne.data.FaceEntity(
-                id = 0,
-                funcionarioId = funcionario.codigo ?: "TEST001",
-                embedding = embeddingString,
-                synced = true
-            )
-            
+
+            val faceTeste =
+                    com.example.iface_offilne.data.FaceEntity(
+                            id = 0,
+                            funcionarioId = funcionario.codigo ?: "TEST001",
+                            embedding = embeddingString,
+                            synced = true
+                    )
+
             faceDao.insert(faceTeste)
             Log.d(TAG, "✅ Face aleatória criada: ${testEmbedding.size} dimensões")
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao criar face aleatória: ${e.message}")
         }
     }
-    
-    /**
-     * ✅ NOVO: Verificar se há faces cadastradas e criar face de teste se necessário
-     */
+
+    /** ✅ NOVO: Verificar se há faces cadastradas e criar face de teste se necessário */
     private fun checkAndCreateTestFace() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 Log.d(TAG, "🔍 Verificando faces cadastradas...")
-                
+
                 val db = AppDatabase.getInstance(this@PontoActivity)
                 val faceDao = db.faceDao()
                 val funcionarioDao = db.usuariosDao()
-                
+
                 val faces = faceDao.getAllFaces()
                 Log.d(TAG, "📸 Faces encontradas: ${faces.size}")
-                
+
                 if (faces.isEmpty()) {
                     Log.d(TAG, "📝 Nenhuma face cadastrada - criando face de teste...")
-                    
+
                     // Buscar funcionário de teste
                     val funcionarios = funcionarioDao.getUsuario()
                     if (funcionarios.isNotEmpty()) {
                         val funcionarioTeste = funcionarios.first()
-                        
+
                         // ✅ CRIAR FACE DE TESTE: Gerar embedding de teste
                         val testEmbedding = FloatArray(192) { 0.1f } // Embedding de teste simples
                         val embeddingString = testEmbedding.joinToString(",")
-                        
-                        val faceTeste = com.example.iface_offilne.data.FaceEntity(
-                            id = 0,
-                            funcionarioId = funcionarioTeste.codigo,
-                            embedding = embeddingString,
-                            synced = true
-                        )
-                        
+
+                        val faceTeste =
+                                com.example.iface_offilne.data.FaceEntity(
+                                        id = 0,
+                                        funcionarioId = funcionarioTeste.codigo,
+                                        embedding = embeddingString,
+                                        synced = true
+                                )
+
                         faceDao.insert(faceTeste)
                         Log.d(TAG, "✅ Face de teste criada para: ${funcionarioTeste.nome}")
-                        
+
                         // Verificar se foi salva
                         val savedFace = faceDao.getByFuncionarioId(funcionarioTeste.codigo)
                         if (savedFace != null) {
@@ -2191,74 +2602,69 @@ class PontoActivity : AppCompatActivity() {
                         Log.d(TAG, "   - ${face.funcionarioId}: ${face.embedding.length} chars")
                     }
                 }
-                
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao verificar/criar faces: ${e.message}")
                 e.printStackTrace()
             }
         }
     }
-    
-    /**
-     * ✅ NOVO: Executar testes de debug para diagnosticar problemas
-     */
+
+    /** ✅ NOVO: Executar testes de debug para diagnosticar problemas */
     private fun executarTestesDebug() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 Log.d(TAG, "🔧 Executando testes de debug...")
-                
+
                 val debugHelper = FaceRecognitionDebugHelper(this@PontoActivity)
                 val relatorio = debugHelper.executarTodosTestes()
-                
+
                 Log.d(TAG, "📊 RELATÓRIO DE DEBUG:")
                 Log.d(TAG, relatorio)
-                
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro nos testes de debug: ${e.message}")
                 e.printStackTrace()
             }
         }
     }
-    
-    /**
-     * ✅ NOVO: Testar se o FaceRecognitionHelper está funcionando
-     */
+
+    /** ✅ NOVO: Testar se o FaceRecognitionHelper está funcionando */
     private fun testFaceRecognitionHelper() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 Log.d(TAG, "🧪 Testando FaceRecognitionHelper...")
-                
+
                 if (faceRecognitionHelper != null) {
                     Log.d(TAG, "✅ FaceRecognitionHelper está inicializado")
-                    
+
                     // Testar se consegue acessar o banco de dados
                     val db = AppDatabase.getInstance(this@PontoActivity)
                     val funcionarioDao = db.usuariosDao()
                     val funcionarios = funcionarioDao.getUsuario()
-                    
+
                     Log.d(TAG, "📊 Funcionários no banco: ${funcionarios.size}")
                     funcionarios.forEach { funcionario ->
                         Log.d(TAG, "👤 Funcionário: ${funcionario.nome} (${funcionario.codigo})")
                     }
-                    
+
                     // ✅ NOVO: Testar se consegue acessar as faces
                     try {
                         val faceDao = db.faceDao()
                         val faces = faceDao.getAllFaces()
                         Log.d(TAG, "📸 Faces cadastradas: ${faces.size}")
-                        
+
                         faces.forEach { face ->
-                            Log.d(TAG, "🖼️ Face: ${face.funcionarioId} - embedding: ${face.embedding.length} chars")
+                            Log.d(
+                                    TAG,
+                                    "🖼️ Face: ${face.funcionarioId} - embedding: ${face.embedding.length} chars"
+                            )
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ Erro ao acessar faces: ${e.message}")
                         e.printStackTrace()
                     }
-                    
                 } else {
                     Log.e(TAG, "❌ FaceRecognitionHelper é nulo")
                 }
-                
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao testar FaceRecognitionHelper", e)
                 e.printStackTrace()
@@ -2266,29 +2672,42 @@ class PontoActivity : AppCompatActivity() {
         }
     }
 
-    private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
-        ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
-    }
-    
-    private fun allLocationPermissionsGranted() = LOCATION_PERMISSIONS.any {
-        ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
-    }
+    private fun allPermissionsGranted() =
+            REQUIRED_PERMISSIONS.all {
+                ContextCompat.checkSelfPermission(baseContext, it) ==
+                        PackageManager.PERMISSION_GRANTED
+            }
+
+    private fun allLocationPermissionsGranted() =
+            LOCATION_PERMISSIONS.any {
+                ContextCompat.checkSelfPermission(baseContext, it) ==
+                        PackageManager.PERMISSION_GRANTED
+            }
 
     override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
+            requestCode: Int,
+            permissions: Array<String>,
+            grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
             REQUEST_CODE_PERMISSIONS -> {
                 if (allPermissionsGranted()) {
                     if (!allLocationPermissionsGranted()) {
-                        ActivityCompat.requestPermissions(this, LOCATION_PERMISSIONS, REQUEST_CODE_LOCATION_PERMISSIONS)
+                        ActivityCompat.requestPermissions(
+                                this,
+                                LOCATION_PERMISSIONS,
+                                REQUEST_CODE_LOCATION_PERMISSIONS
+                        )
                     }
                     startCamera()
                 } else {
-                    Toast.makeText(this, "❌ Permissões necessárias foram negadas!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                                    this,
+                                    "❌ Permissões necessárias foram negadas!",
+                                    Toast.LENGTH_LONG
+                            )
+                            .show()
                     finish()
                 }
             }
@@ -2304,28 +2723,30 @@ class PontoActivity : AppCompatActivity() {
 
     override fun onBackPressed() {
         AlertDialog.Builder(this)
-            .setTitle("Sair da Tela de Ponto")
-            .setMessage("Tem certeza que deseja sair da tela de registro de ponto?")
-            .setPositiveButton("Sim, Sair") { dialog, _ ->
-                dialog.dismiss()
-                try {
-                    stopCamera()
-                } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao parar câmera: ${e.message}")
-                }
-                Handler(Looper.getMainLooper()).postDelayed({
+                .setTitle("Sair da Tela de Ponto")
+                .setMessage("Tem certeza que deseja sair da tela de registro de ponto?")
+                .setPositiveButton("Sim, Sair") { dialog, _ ->
+                    dialog.dismiss()
                     try {
-                        super.onBackPressed()
+                        stopCamera()
                     } catch (e: Exception) {
-                        finish()
+                        Log.e(TAG, "❌ Erro ao parar câmera: ${e.message}")
                     }
-                }, 200)
-            }
-            .setNegativeButton("Cancelar") { dialog, _ ->
-                dialog.dismiss()
-            }
-            .setCancelable(true)
-            .show()
+                    Handler(Looper.getMainLooper())
+                            .postDelayed(
+                                    {
+                                        try {
+                                            super.onBackPressed()
+                                        } catch (e: Exception) {
+                                            finish()
+                                        }
+                                    },
+                                    200
+                            )
+                }
+                .setNegativeButton("Cancelar") { dialog, _ -> dialog.dismiss() }
+                .setCancelable(true)
+                .show()
     }
 
     private fun stopCamera() {
@@ -2341,7 +2762,7 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "⚠️ Erro ao limpar ImageAnalyzer: ${e.message}")
             }
-            
+
             // ✅ PROTEÇÃO: Desvincular câmeras
             try {
                 val provider = cameraProvider
@@ -2350,7 +2771,7 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "⚠️ Erro ao desvincular câmeras: ${e.message}")
             }
-            
+
             // ✅ PROTEÇÃO: Limpar cameraProvider
             try {
                 cameraProvider = null
@@ -2358,7 +2779,7 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "⚠️ Erro ao limpar CameraProvider: ${e.message}")
             }
-            
+
             // ✅ PROTEÇÃO: Limpar overlay
             try {
                 if (::overlay.isInitialized) {
@@ -2369,24 +2790,24 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "⚠️ Erro ao limpar overlay: ${e.message}")
             }
-            
+
             // ✅ PROTEÇÃO: Resetar flags
             try {
                 processandoFace = false
                 lastProcessingTime = 0L
                 modelLoaded = false
                 funcionarioReconhecido = null
-                
+
                 // ✅ PROTEÇÃO: Limpar recursos do fallback
                 tensorFlowFallbackMode = false
                 tensorFlowErrorCount = 0
                 lastTensorFlowError = 0L
-                
+
                 Log.d(TAG, "✅ Flags resetados")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao resetar flags: ${e.message}")
             }
-            
+
             Log.d(TAG, "✅ Câmera parada com sucesso")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro crítico ao parar câmera", e)
@@ -2398,14 +2819,14 @@ class PontoActivity : AppCompatActivity() {
         super.onDestroy()
         try {
             Log.d(TAG, "🧹 Iniciando limpeza de recursos...")
-            
+
             // ✅ PROTEÇÃO: Parar câmera com segurança
             try {
                 stopCamera()
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao parar câmera: ${e.message}")
             }
-            
+
             // ✅ PROTEÇÃO: Limpar bitmap com validação
             try {
                 val bitmap = currentFaceBitmap
@@ -2419,7 +2840,7 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao reciclar bitmap: ${e.message}")
             }
-            
+
             // ✅ PROTEÇÃO: Fechar interpreter com validação
             try {
                 interpreter?.let { interp ->
@@ -2430,7 +2851,7 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao fechar interpreter: ${e.message}")
             }
-            
+
             // ✅ PROTEÇÃO: Fechar face detector com validação
             try {
                 val detector = faceDetector
@@ -2439,7 +2860,7 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao fechar face detector: ${e.message}")
             }
-            
+
             // ✅ PROTEÇÃO: Limpar cache do face recognition helper
             try {
                 val helper = faceRecognitionHelper
@@ -2449,7 +2870,7 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao limpar face recognition helper: ${e.message}")
             }
-            
+
             // ✅ PROTEÇÃO: Limpar helpers adaptativos
             try {
                 adaptiveFaceRecognitionHelper = null
@@ -2459,7 +2880,7 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao limpar helpers adaptativos: ${e.message}")
             }
-            
+
             // ✅ PROTEÇÃO: Limpar location helper
             try {
                 locationHelper = null
@@ -2467,31 +2888,30 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao limpar location helper: ${e.message}")
             }
-            
+
             // ✅ PROTEÇÃO: Resetar flags
             try {
                 processandoFace = false
                 lastProcessingTime = 0L
                 modelLoaded = false
                 funcionarioReconhecido = null
-                
+
                 // ✅ PROTEÇÃO: Limpar recursos do fallback
                 tensorFlowFallbackMode = false
                 tensorFlowErrorCount = 0
                 lastTensorFlowError = 0L
-                
+
                 Log.d(TAG, "✅ Flags resetados")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao resetar flags: ${e.message}")
             }
-            
+
             Log.d(TAG, "✅ Limpeza de recursos concluída")
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro crítico na limpeza de recursos: ${e.message}")
         }
     }
-    
+
     override fun onPause() {
         super.onPause()
         try {
@@ -2500,12 +2920,12 @@ class PontoActivity : AppCompatActivity() {
             Log.e(TAG, "❌ Erro no onPause: ${e.message}")
         }
     }
-    
+
     override fun onResume() {
         super.onResume()
         try {
             Log.d(TAG, "🔄 === RESUMINDO PONTOACTIVITY ===")
-            
+
             // ✅ PROTEÇÃO: Verificar se TensorFlow está desabilitado
             if (shouldDisableTensorFlowDueToCrashes()) {
                 Log.w(TAG, "⚠️ TensorFlow desabilitado - não recarregando")
@@ -2520,7 +2940,7 @@ class PontoActivity : AppCompatActivity() {
                     reinitializeTensorFlowIfNeeded()
                 }
             }
-            
+
             // ✅ REINICIALIZAR CAMERA
             if (allPermissionsGranted()) {
                 Log.d(TAG, "📷 Reiniciando câmera...")
@@ -2528,70 +2948,66 @@ class PontoActivity : AppCompatActivity() {
             } else {
                 Log.w(TAG, "⚠️ Permissões não concedidas - não iniciando câmera")
             }
-            
+
             // ✅ RESETAR FLAGS DE PROCESSAMENTO
             processandoFace = false
             lastProcessingTime = 0L
             funcionarioReconhecido = null
-            
+
             Log.d(TAG, "✅ PontoActivity resumida com sucesso")
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro no onResume: ${e.message}")
             e.printStackTrace()
         }
     }
 
-    /**
-     * ✅ RESET: Resetar modo fallback após timeout
-     */
+    /** ✅ RESET: Resetar modo fallback após timeout */
     private fun resetFallbackMode() {
         val currentTime = System.currentTimeMillis()
         val fallbackTimeout = 5 * 60 * 1000L // 5 minutos
-        
+
         if (tensorFlowFallbackMode && (currentTime - lastTensorFlowError) > fallbackTimeout) {
             Log.d(TAG, "🔄 Resetando modo fallback após timeout")
             tensorFlowFallbackMode = false
             tensorFlowErrorCount = 0
             lastTensorFlowError = 0L
-            
+
             // Tentar recarregar o modelo TensorFlow
             loadTensorFlowModel()
         }
     }
-    
-    /**
-     * ✅ PROTEÇÃO: Verificar se deve desabilitar TensorFlow devido a crashes
-     */
+
+    /** ✅ PROTEÇÃO: Verificar se deve desabilitar TensorFlow devido a crashes */
     private fun shouldDisableTensorFlowDueToCrashes(): Boolean {
         val currentTime = System.currentTimeMillis()
         val timeSinceLastCrash = currentTime - lastTensorFlowCrash
-        
+
         // Resetar contador se passou muito tempo
         if (timeSinceLastCrash > tensorFlowCrashCooldown) {
             tensorFlowCrashCount = 0
             Log.d(TAG, "🔄 Resetando contador de crashes após timeout")
             return false
         }
-        
+
         // Desabilitar se muitos crashes consecutivos
         if (tensorFlowCrashCount >= maxTensorFlowCrashes) {
             val remainingTime = (tensorFlowCrashCooldown - timeSinceLastCrash) / 1000
-            Log.w(TAG, "🚫 TENSORFLOW DESABILITADO: Muitos crashes consecutivos. Aguarde ${remainingTime}s")
+            Log.w(
+                    TAG,
+                    "🚫 TENSORFLOW DESABILITADO: Muitos crashes consecutivos. Aguarde ${remainingTime}s"
+            )
             return true
         }
-        
+
         return false
     }
-    
-    /**
-     * ✅ PROTEÇÃO: Registrar crash do TensorFlow
-     */
+
+    /** ✅ PROTEÇÃO: Registrar crash do TensorFlow */
     private fun registerTensorFlowCrash() {
         tensorFlowCrashCount++
         lastTensorFlowCrash = System.currentTimeMillis()
         Log.e(TAG, "💥 CRASH DO TENSORFLOW #$tensorFlowCrashCount/$maxTensorFlowCrashes")
-        
+
         if (tensorFlowCrashCount >= maxTensorFlowCrashes) {
             Log.e(TAG, "🚫 TENSORFLOW DESABILITADO: Muitos crashes consecutivos")
             modelLoaded = false
@@ -2603,40 +3019,32 @@ class PontoActivity : AppCompatActivity() {
             }
         }
     }
-    
-    /**
-     * ✅ COOLDOWN: Resetar cooldown do ponto (para testes ou emergências)
-     */
+
+    /** ✅ COOLDOWN: Resetar cooldown do ponto (para testes ou emergências) */
     private fun resetPontoCooldown() {
         Log.d(TAG, "🔄 Resetando cooldown do ponto")
         lastPontoRegistrado = 0L
     }
-    
-    /**
-     * ✅ COOLDOWN: Verificar se o cooldown está ativo
-     */
+
+    /** ✅ COOLDOWN: Verificar se o cooldown está ativo */
     private fun isCooldownActive(): Boolean {
         val tempoAtual = System.currentTimeMillis()
         val tempoDesdeUltimoPonto = tempoAtual - lastPontoRegistrado
         return tempoDesdeUltimoPonto < cooldownPonto
     }
-    
-    /**
-     * ✅ COOLDOWN: Obter tempo restante do cooldown em segundos
-     */
+
+    /** ✅ COOLDOWN: Obter tempo restante do cooldown em segundos */
     private fun getCooldownRemainingSeconds(): Int {
         val tempoAtual = System.currentTimeMillis()
         val tempoDesdeUltimoPonto = tempoAtual - lastPontoRegistrado
         val tempoRestante = cooldownPonto - tempoDesdeUltimoPonto
         return if (tempoRestante > 0) (tempoRestante / 1000).toInt() else 0
     }
-    
-    /**
-     * ✅ ESTABILIZAÇÃO: Verificar se a face está estável
-     */
+
+    /** ✅ ESTABILIZAÇÃO: Verificar se a face está estável */
     private fun checkFaceStability(currentPosition: Rect): Boolean {
         val currentTime = System.currentTimeMillis()
-        
+
         // Se é a primeira detecção, inicializar
         if (lastFacePosition == null) {
             lastFacePosition = currentPosition
@@ -2645,13 +3053,18 @@ class PontoActivity : AppCompatActivity() {
             Log.d(TAG, "🔄 Iniciando estabilização da face")
             return false
         }
-        
+
         // Verificar se a posição mudou significativamente
-        val positionChanged = kotlin.math.abs(currentPosition.centerX() - lastFacePosition!!.centerX()) > positionTolerance ||
-                             kotlin.math.abs(currentPosition.centerY() - lastFacePosition!!.centerY()) > positionTolerance ||
-                             kotlin.math.abs(currentPosition.width() - lastFacePosition!!.width()) > positionTolerance ||
-                             kotlin.math.abs(currentPosition.height() - lastFacePosition!!.height()) > positionTolerance
-        
+        val positionChanged =
+                kotlin.math.abs(currentPosition.centerX() - lastFacePosition!!.centerX()) >
+                        positionTolerance ||
+                        kotlin.math.abs(currentPosition.centerY() - lastFacePosition!!.centerY()) >
+                                positionTolerance ||
+                        kotlin.math.abs(currentPosition.width() - lastFacePosition!!.width()) >
+                                positionTolerance ||
+                        kotlin.math.abs(currentPosition.height() - lastFacePosition!!.height()) >
+                                positionTolerance
+
         if (positionChanged) {
             // Posição mudou - resetar estabilização
             Log.d(TAG, "🔄 Face se moveu - resetando estabilização")
@@ -2663,7 +3076,7 @@ class PontoActivity : AppCompatActivity() {
             // Posição estável - incrementar contador
             lastFacePosition = currentPosition
             faceStableCount++
-            
+
             // Verificar se atingiu o tempo máximo
             val timeElapsed = currentTime - faceStableStartTime
             if (timeElapsed > maxStableTime) {
@@ -2671,34 +3084,26 @@ class PontoActivity : AppCompatActivity() {
                 resetFaceStability()
                 return false
             }
-            
+
             // Verificar se atingiu frames mínimos
             val isStable = faceStableCount >= minStableFrames
             if (isStable) {
                 Log.d(TAG, "✅ Face estabilizada! Frames: $faceStableCount, Tempo: ${timeElapsed}ms")
             }
-            
+
             return isStable
         }
     }
-    
-    /**
-     * ✅ ESTABILIZAÇÃO: Resetar estabilização
-     */
+
+    /** ✅ ESTABILIZAÇÃO: Resetar estabilização */
     private fun resetFaceStability() {
         faceStableCount = 0
         lastFacePosition = null
         faceStableStartTime = 0L
         Log.d(TAG, "🔄 Estabilização resetada")
     }
-    
 
-    
-
-    
-    /**
-     * ✅ SEGURANÇA: Verificar se deve bloquear por atividade suspeita
-     */
+    /** ✅ SEGURANÇA: Verificar se deve bloquear por atividade suspeita */
     private fun shouldBlockDueToSuspiciousActivity(): Boolean {
         if (suspiciousActivityCount >= maxSuspiciousActivity) {
             Log.w(TAG, "🚫 BLOQUEADO: Muitas atividades suspeitas detectadas")
@@ -2706,93 +3111,118 @@ class PontoActivity : AppCompatActivity() {
         }
         return false
     }
-    
-    /**
-     * ✅ HISTÓRICO: Adicionar tentativa ao histórico
-     */
-    private fun addToRecognitionHistory(funcionarioId: String?, similarity: Float, wasSuccessful: Boolean, qualityScore: Float) {
+
+    /** ✅ HISTÓRICO: Adicionar tentativa ao histórico */
+    private fun addToRecognitionHistory(
+            funcionarioId: String?,
+            similarity: Float,
+            wasSuccessful: Boolean,
+            qualityScore: Float
+    ) {
         try {
-            val attempt = RecognitionAttempt(
-                timestamp = System.currentTimeMillis(),
-                similarity = similarity,
-                funcionarioId = funcionarioId,
-                wasSuccessful = wasSuccessful,
-                qualityScore = qualityScore
-            )
-            
+            val attempt =
+                    RecognitionAttempt(
+                            timestamp = System.currentTimeMillis(),
+                            similarity = similarity,
+                            funcionarioId = funcionarioId,
+                            wasSuccessful = wasSuccessful,
+                            qualityScore = qualityScore
+                    )
+
             recognitionHistory.add(attempt)
-            
+
             // ✅ MANTER TAMANHO MÁXIMO DO HISTÓRICO
             if (recognitionHistory.size > maxHistorySize) {
                 recognitionHistory.removeAt(0)
             }
-            
+
             Log.d(TAG, "📊 Histórico atualizado: ${recognitionHistory.size} tentativas")
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao adicionar ao histórico: ${e.message}")
         }
     }
-    
-    /**
-     * ✅ HISTÓRICO: Validar consistência do histórico
-     */
-    private fun validateRecognitionHistory(funcionarioId: String, currentSimilarity: Float): Boolean {
+
+    /** ✅ HISTÓRICO: Validar consistência do histórico - MUITO RIGOROSO */
+    private fun validateRecognitionHistory(
+            funcionarioId: String,
+            currentSimilarity: Float
+    ): Boolean {
         return try {
             if (recognitionHistory.isEmpty()) {
                 Log.d(TAG, "📊 Histórico vazio - primeira tentativa")
                 return true
             }
-            
-            // ✅ FILTRAR TENTATIVAS RECENTES (últimos 30 segundos)
-            val recentTime = System.currentTimeMillis() - 30000L
+
+            // ✅ FILTRAR TENTATIVAS RECENTES (últimos 60 segundos) - MAIS RIGOROSO
+            val recentTime = System.currentTimeMillis() - 60000L
             val recentAttempts = recognitionHistory.filter { it.timestamp > recentTime }
-            
+
             if (recentAttempts.isEmpty()) {
                 Log.d(TAG, "📊 Nenhuma tentativa recente - permitindo")
                 return true
             }
-            
-            // ✅ VERIFICAR CONSISTÊNCIA DO FUNCIONÁRIO
+
+            // ✅ VERIFICAR CONSISTÊNCIA DO FUNCIONÁRIO - MUITO RIGOROSO
             val sameEmployeeAttempts = recentAttempts.filter { it.funcionarioId == funcionarioId }
-            val differentEmployeeAttempts = recentAttempts.filter { it.funcionarioId != funcionarioId && it.funcionarioId != null }
-            
-            // ✅ SE HOUVE TENTATIVAS DE OUTROS FUNCIONÁRIOS, SUSPEITAR
+            val differentEmployeeAttempts =
+                    recentAttempts.filter {
+                        it.funcionarioId != funcionarioId && it.funcionarioId != null
+                    }
+
+            // ✅ SE HOUVE TENTATIVAS DE OUTROS FUNCIONÁRIOS, SUSPEITAR - MUITO RIGOROSO
             if (differentEmployeeAttempts.isNotEmpty()) {
-                Log.w(TAG, "⚠️ Tentativas de outros funcionários detectadas: ${differentEmployeeAttempts.size}")
-                suspiciousActivityCount++
+                Log.w(
+                        TAG,
+                        "⚠️ Tentativas de outros funcionários detectadas: ${differentEmployeeAttempts.size}"
+                )
+                suspiciousActivityCount += 2 // ✅ PENALIDADE MAIOR
                 return false
             }
-            
-            // ✅ VERIFICAR SE A SIMILARIDADE É CONSISTENTE
+
+            // ✅ VERIFICAR SE A SIMILARIDADE É CONSISTENTE - MUITO RIGOROSO
             val successfulAttempts = sameEmployeeAttempts.filter { it.wasSuccessful }
             if (successfulAttempts.isNotEmpty()) {
                 val avgSimilarity = successfulAttempts.map { it.similarity }.average().toFloat()
                 val similarityDiff = kotlin.math.abs(currentSimilarity - avgSimilarity)
-                
-                Log.d(TAG, "📊 Similaridade média: ${String.format("%.3f", avgSimilarity)}, Diferença: ${String.format("%.3f", similarityDiff)}")
-                
-                // ✅ SE A DIFERENÇA É MUITO GRANDE, SUSPEITAR
-                if (similarityDiff > 0.15f) {
+
+                Log.d(
+                        TAG,
+                        "📊 Similaridade média: ${String.format("%.3f", avgSimilarity)}, Diferença: ${String.format("%.3f", similarityDiff)}"
+                )
+
+                // ✅ SE A DIFERENÇA É MUITO GRANDE, SUSPEITAR - MUITO RIGOROSO
+                if (similarityDiff > 0.08f) { // ✅ MUITO RIGOROSO
                     Log.w(TAG, "⚠️ Similaridade muito diferente do histórico")
+                    suspiciousActivityCount += 2 // ✅ PENALIDADE MAIOR
+                    return false
+                }
+                
+                // ✅ VERIFICAR SE A SIMILARIDADE ATUAL É MUITO BAIXA COMPARADA AO HISTÓRICO
+                if (currentSimilarity < avgSimilarity - 0.05f) {
+                    Log.w(TAG, "⚠️ Similaridade atual muito baixa comparada ao histórico")
                     suspiciousActivityCount++
                     return false
                 }
             }
-            
+
+            // ✅ VERIFICAR SE HÁ MUITAS TENTATIVAS FALHADAS RECENTES
+            val failedAttempts = recentAttempts.filter { !it.wasSuccessful }
+            if (failedAttempts.size >= 3) { // ✅ MUITO RIGOROSO
+                Log.w(TAG, "⚠️ Muitas tentativas falhadas recentes: ${failedAttempts.size}")
+                suspiciousActivityCount++
+                return false
+            }
+
             // ✅ RESETAR CONTADOR DE ATIVIDADE SUSPEITA SE TUDO OK
             suspiciousActivityCount = 0
             true
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao validar histórico: ${e.message}")
-            true // Em caso de erro, permitir
+            false // ✅ MUITO RIGOROSO: Em caso de erro, rejeitar
         }
     }
 
-    /**
-     * ✅ TESTE: Verificar se o TensorFlow está funcionando corretamente
-     */
+    /** ✅ TESTE: Verificar se o TensorFlow está funcionando corretamente */
     private fun testTensorFlowHealth(): Boolean {
         return try {
             val interp = interpreter
@@ -2805,20 +3235,19 @@ class PontoActivity : AppCompatActivity() {
             try {
                 val inputTensor = interp.getInputTensor(0)
                 val outputTensor = interp.getOutputTensor(0)
-                
+
                 if (inputTensor == null || outputTensor == null) {
                     Log.e(TAG, "❌ Tensores do modelo são nulos")
                     return false
                 }
-                
+
                 val inputShape = inputTensor.shape()
                 val outputShape = outputTensor.shape()
-                
+
                 if (inputShape.isEmpty() || outputShape.isEmpty()) {
                     Log.e(TAG, "❌ Formas dos tensores inválidas")
                     return false
                 }
-                
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro ao verificar tensores: ${e.message}")
                 return false
@@ -2830,16 +3259,17 @@ class PontoActivity : AppCompatActivity() {
                 Log.e(TAG, "❌ Tamanho de buffer inválido: $bufferSize")
                 return false
             }
-            
-            val testInput = try {
-                ByteBuffer.allocateDirect(bufferSize)
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao alocar buffer de teste: ${e.message}")
-                return false
-            }
-            
+
+            val testInput =
+                    try {
+                        ByteBuffer.allocateDirect(bufferSize)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao alocar buffer de teste: ${e.message}")
+                        return false
+                    }
+
             testInput.order(ByteOrder.nativeOrder())
-            
+
             // Preencher com dados de teste
             try {
                 for (i in 0 until modelInputWidth * modelInputHeight * 3) {
@@ -2850,34 +3280,34 @@ class PontoActivity : AppCompatActivity() {
                 Log.e(TAG, "❌ Erro ao preencher buffer de teste: ${e.message}")
                 return false
             }
-            
-            val testOutput = try {
-                Array(1) { FloatArray(modelOutputSize) }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao criar array de saída: ${e.message}")
-                return false
-            }
-            
+
+            val testOutput =
+                    try {
+                        Array(1) { FloatArray(modelOutputSize) }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Erro ao criar array de saída: ${e.message}")
+                        return false
+                    }
+
             // ✅ TESTE: Executar modelo com proteção máxima
             try {
                 // ✅ PROTEÇÃO: Executar em try-catch separado para capturar SIGBUS
                 interp.run(testInput, testOutput)
-                
+
                 // ✅ VERIFICAÇÃO: Verificar se o output é válido
                 val output = testOutput[0]
                 if (output.isEmpty()) {
                     Log.w(TAG, "⚠️ TensorFlow retornou output vazio")
                     return false
                 }
-                
+
                 if (output.any { it.isNaN() || it.isInfinite() }) {
                     Log.w(TAG, "⚠️ TensorFlow retornou valores inválidos")
                     return false
                 }
-                
+
                 Log.d(TAG, "✅ TensorFlow está funcionando corretamente")
                 return true
-                
             } catch (e: UnsatisfiedLinkError) {
                 Log.e(TAG, "❌ TensorFlow com erro de biblioteca nativa: ${e.message}")
                 return false
@@ -2888,24 +3318,21 @@ class PontoActivity : AppCompatActivity() {
                 Log.e(TAG, "❌ TensorFlow com erro: ${e.message}")
                 return false
             }
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao testar TensorFlow: ${e.message}")
             return false
         }
     }
-    
-    /**
-     * 🔄 REINICIALIZAR MODELO TENSORFLOW SE NECESSÁRIO
-     */
+
+    /** 🔄 REINICIALIZAR MODELO TENSORFLOW SE NECESSÁRIO */
     private fun reinitializeTensorFlowIfNeeded() {
         try {
             Log.d(TAG, "🔄 Verificando necessidade de reinicialização do TensorFlow...")
-            
+
             // ✅ VERIFICAR SE O MODELO ESTÁ FUNCIONANDO
             if (!testTensorFlowHealth()) {
                 Log.w(TAG, "⚠️ TensorFlow não está funcionando - reinicializando...")
-                
+
                 // ✅ LIMPAR RECURSOS ATUAIS
                 try {
                     interpreter?.close()
@@ -2915,40 +3342,40 @@ class PontoActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     Log.w(TAG, "⚠️ Erro ao limpar recursos: ${e.message}")
                 }
-                
+
                 // ✅ RECARREGAR MODELO
                 loadTensorFlowModel()
-                
+
                 // ✅ AGUARDAR UM POUCO E TESTAR NOVAMENTE
-                Handler(Looper.getMainLooper()).postDelayed({
-                    try {
-                        if (testTensorFlowHealth()) {
-                            Log.d(TAG, "✅ TensorFlow reinicializado com sucesso")
-                        } else {
-                            Log.e(TAG, "❌ Falha na reinicialização do TensorFlow")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "❌ Erro ao testar reinicialização: ${e.message}")
-                    }
-                }, 2000)
-                
+                Handler(Looper.getMainLooper())
+                        .postDelayed(
+                                {
+                                    try {
+                                        if (testTensorFlowHealth()) {
+                                            Log.d(TAG, "✅ TensorFlow reinicializado com sucesso")
+                                        } else {
+                                            Log.e(TAG, "❌ Falha na reinicialização do TensorFlow")
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "❌ Erro ao testar reinicialização: ${e.message}")
+                                    }
+                                },
+                                2000
+                        )
             } else {
                 Log.d(TAG, "✅ TensorFlow está funcionando corretamente")
             }
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao verificar TensorFlow: ${e.message}")
             e.printStackTrace()
         }
     }
-    
-    /**
-     * 🧹 FORÇAR LIMPEZA COMPLETA DOS RECURSOS
-     */
+
+    /** 🧹 FORÇAR LIMPEZA COMPLETA DOS RECURSOS */
     private fun forceCleanup() {
         try {
             Log.d(TAG, "🧹 === FORÇANDO LIMPEZA COMPLETA ===")
-            
+
             // ✅ PARAR CÂMERA
             try {
                 stopCamera()
@@ -2956,7 +3383,7 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "⚠️ Erro ao parar câmera: ${e.message}")
             }
-            
+
             // ✅ LIMPAR TENSORFLOW
             try {
                 interpreter?.close()
@@ -2966,7 +3393,7 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "⚠️ Erro ao limpar TensorFlow: ${e.message}")
             }
-            
+
             // ✅ LIMPAR FACE DETECTOR
             try {
                 faceDetector?.close()
@@ -2975,7 +3402,7 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "⚠️ Erro ao limpar face detector: ${e.message}")
             }
-            
+
             // ✅ RESETAR FLAGS
             processandoFace = false
             lastProcessingTime = 0L
@@ -2984,7 +3411,7 @@ class PontoActivity : AppCompatActivity() {
             tensorFlowFallbackMode = false
             tensorFlowErrorCount = 0
             lastTensorFlowError = 0L
-            
+
             // ✅ LIMPAR BITMAP
             try {
                 currentFaceBitmap?.recycle()
@@ -2993,7 +3420,7 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "⚠️ Erro ao limpar bitmap: ${e.message}")
             }
-            
+
             // ✅ LIMPAR OVERLAY
             try {
                 if (::overlay.isInitialized) {
@@ -3003,31 +3430,28 @@ class PontoActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.w(TAG, "⚠️ Erro ao limpar overlay: ${e.message}")
             }
-            
+
             Log.d(TAG, "✅ Limpeza completa finalizada")
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro na limpeza forçada: ${e.message}")
             e.printStackTrace()
         }
     }
 
-    /**
-     * 🎉 NAVEGAR PARA ACTIVITY DE SUCESSO
-     */
+    /** 🎉 NAVEGAR PARA ACTIVITY DE SUCESSO */
     private fun showConfirmationUI(funcionario: FuncionariosEntity, fotoBase64: String?) {
         try {
             Log.d(TAG, "🎉 Navegando para Activity de sucesso para: ${funcionario.nome}")
-            
+
             // ✅ OBTER DADOS ATUAIS
             val horarioAtual = System.currentTimeMillis()
-            
+
             // ✅ USAR COROUTINE PARA OBTER LOCALIZAÇÃO
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     var latitude: Double? = null
                     var longitude: Double? = null
-                    
+
                     try {
                         val helper = locationHelper
                         val locationData = helper?.getCurrentLocationForPoint()
@@ -3039,25 +3463,41 @@ class PontoActivity : AppCompatActivity() {
                     } catch (e: Exception) {
                         Log.e(TAG, "❌ Erro ao obter localização para sucesso: ${e.message}")
                     }
-                    
+
                     // ✅ NAVEGAR PARA ACTIVITY DE SUCESSO NA THREAD PRINCIPAL
                     withContext(Dispatchers.Main) {
                         try {
                             if (!isFinishing && !isDestroyed) {
                                 // ✅ CRIAR INTENT PARA ACTIVITY DE SUCESSO
-                                val intent = Intent(this@PontoActivity, PontoSucessoActivity::class.java).apply {
-                                    putExtra(PontoSucessoActivity.EXTRA_FUNCIONARIO_NOME, funcionario.nome)
-                                    putExtra(PontoSucessoActivity.EXTRA_DATA_HORA, horarioAtual)
-                                    
-                                    if (latitude != null && longitude != null) {
-                                        putExtra(PontoSucessoActivity.EXTRA_LATITUDE, latitude)
-                                        putExtra(PontoSucessoActivity.EXTRA_LONGITUDE, longitude)
-                                    }
-                                }
-                                
+                                val intent =
+                                        Intent(this@PontoActivity, PontoSucessoActivity::class.java)
+                                                .apply {
+                                                    putExtra(
+                                                            PontoSucessoActivity
+                                                                    .EXTRA_FUNCIONARIO_NOME,
+                                                            funcionario.nome
+                                                    )
+                                                    putExtra(
+                                                            PontoSucessoActivity.EXTRA_DATA_HORA,
+                                                            horarioAtual
+                                                    )
+
+                                                    if (latitude != null && longitude != null) {
+                                                        putExtra(
+                                                                PontoSucessoActivity.EXTRA_LATITUDE,
+                                                                latitude
+                                                        )
+                                                        putExtra(
+                                                                PontoSucessoActivity
+                                                                        .EXTRA_LONGITUDE,
+                                                                longitude
+                                                        )
+                                                    }
+                                                }
+
                                 // ✅ NAVEGAR PARA ACTIVITY DE SUCESSO
                                 startActivity(intent)
-                                
+
                                 Log.d(TAG, "✅ Navegação para Activity de sucesso iniciada")
                             } else {
                                 Log.w(TAG, "⚠️ Activity finalizada - cancelando navegação")
@@ -3065,53 +3505,58 @@ class PontoActivity : AppCompatActivity() {
                         } catch (e: Exception) {
                             Log.e(TAG, "❌ Erro ao navegar para Activity de sucesso: ${e.message}")
                             e.printStackTrace()
-                            
+
                             // ✅ FALLBACK: Mostrar mensagem simples
                             if (::statusText.isInitialized) {
                                 val status = statusText
                                 status.text = "✅ Ponto registrado!\n${funcionario.nome}"
-                                
-                                status.postDelayed({
-                                    try {
-                                        if (!isFinishing && !isDestroyed) {
-                                            val statusInner = statusText
-                                            statusInner.text = ""
-                                            processandoFace = false
-                                            lastProcessingTime = 0L
-                                        }
-                                    } catch (e2: Exception) {
-                                        Log.e(TAG, "❌ Erro no reset: ${e2.message}")
-                                    }
-                                }, 3000)
+
+                                status.postDelayed(
+                                        {
+                                            try {
+                                                if (!isFinishing && !isDestroyed) {
+                                                    val statusInner = statusText
+                                                    statusInner.text = ""
+                                                    processandoFace = false
+                                                    lastProcessingTime = 0L
+                                                }
+                                            } catch (e2: Exception) {
+                                                Log.e(TAG, "❌ Erro no reset: ${e2.message}")
+                                            }
+                                        },
+                                        3000
+                                )
                             } else {
                                 Log.w(TAG, "⚠️ StatusText não inicializado")
                             }
                         }
                     }
-                    
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Erro crítico na coroutine de sucesso: ${e.message}")
                     e.printStackTrace()
-                    
+
                     // ✅ FALLBACK: Mostrar mensagem simples na thread principal
                     withContext(Dispatchers.Main) {
                         try {
                             if (!isFinishing && !isDestroyed && ::statusText.isInitialized) {
                                 val status = statusText
                                 status.text = "✅ Ponto registrado!\n${funcionario.nome}"
-                                
-                                status.postDelayed({
-                                    try {
-                                        if (!isFinishing && !isDestroyed) {
-                                            val statusInner = statusText
-                                            statusInner.text = ""
-                                            processandoFace = false
-                                            lastProcessingTime = 0L
-                                        }
-                                    } catch (e2: Exception) {
-                                        Log.e(TAG, "❌ Erro no reset: ${e2.message}")
-                                    }
-                                }, 3000)
+
+                                status.postDelayed(
+                                        {
+                                            try {
+                                                if (!isFinishing && !isDestroyed) {
+                                                    val statusInner = statusText
+                                                    statusInner.text = ""
+                                                    processandoFace = false
+                                                    lastProcessingTime = 0L
+                                                }
+                                            } catch (e2: Exception) {
+                                                Log.e(TAG, "❌ Erro no reset: ${e2.message}")
+                                            }
+                                        },
+                                        3000
+                                )
                             } else {
                                 Log.w(TAG, "⚠️ StatusText não inicializado ou Activity finalizada")
                             }
@@ -3121,29 +3566,154 @@ class PontoActivity : AppCompatActivity() {
                     }
                 }
             }
-            
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro crítico ao iniciar navegação: ${e.message}")
             e.printStackTrace()
-            
+
             // ✅ FALLBACK FINAL: Mostrar mensagem simples
             if (::statusText.isInitialized) {
                 val status = statusText
                 status.text = "✅ Ponto registrado!\n${funcionario.nome}"
-                
-                status.postDelayed({
-                    try {
-                        if (!isFinishing && !isDestroyed) {
-                            val statusInner = statusText
-                            statusInner.text = ""
-                            processandoFace = false
-                            lastProcessingTime = 0L
-                        }
-                    } catch (e2: Exception) {
-                        Log.e(TAG, "❌ Erro no reset: ${e2.message}")
-                    }
-                }, 3000)
+
+                status.postDelayed(
+                        {
+                            try {
+                                if (!isFinishing && !isDestroyed) {
+                                    val statusInner = statusText
+                                    statusInner.text = ""
+                                    processandoFace = false
+                                    lastProcessingTime = 0L
+                                }
+                            } catch (e2: Exception) {
+                                Log.e(TAG, "❌ Erro no reset: ${e2.message}")
+                            }
+                        },
+                        3000
+                )
             }
         }
     }
-} 
+
+    /** ✅ VALIDAR SE NÃO É UM FALSO POSITIVO - DETECTA CONFUSÃO ENTRE FACES - MUITO RIGOROSO */
+    private fun validateNotFalsePositive(embedding1: FloatArray, embedding2: FloatArray): Boolean {
+        return try {
+            if (embedding1.size != embedding2.size) {
+                Log.w(TAG, "⚠️ Tamanhos diferentes - possível falso positivo")
+                return false
+            }
+
+            // ✅ VERIFICAÇÃO 1: Correlação muito alta (pode ser a mesma pessoa)
+            val correlation = calculateCorrelation(embedding1, embedding2)
+            if (correlation > 0.995f) { // ✅ MUITO RIGOROSO
+                Log.d(
+                        TAG,
+                        "✅ Correlação muito alta (${String.format("%.3f", correlation)}) - provavelmente a mesma pessoa"
+                )
+                return true
+            }
+
+            // ✅ VERIFICAÇÃO 2: Correlação muito baixa (pessoas diferentes) - MUITO RIGOROSO
+            if (correlation < 0.75f) { // ✅ MUITO RIGOROSO
+                Log.w(
+                        TAG,
+                        "⚠️ Correlação muito baixa (${String.format("%.3f", correlation)}) - pessoas diferentes"
+                )
+                return false
+            }
+
+            // ✅ VERIFICAÇÃO 3: Verificar distribuição dos valores
+            val mean1 = embedding1.average().toFloat()
+            val mean2 = embedding2.average().toFloat()
+            val meanDiff = kotlin.math.abs(mean1 - mean2)
+
+            val variance1 = embedding1.map { (it - mean1) * (it - mean1) }.average().toFloat()
+            val variance2 = embedding2.map { (it - mean2) * (it - mean2) }.average().toFloat()
+            val varianceDiff = kotlin.math.abs(variance1 - variance2)
+
+            // ✅ VERIFICAÇÃO 4: Se as diferenças são muito grandes, são pessoas diferentes - MUITO RIGOROSO
+            if (meanDiff > 0.15f) { // ✅ MUITO RIGOROSO
+                Log.w(
+                        TAG,
+                        "⚠️ Diferença de média muito alta (${String.format("%.3f", meanDiff)}) - pessoas diferentes"
+                )
+                return false
+            }
+
+            if (varianceDiff > 0.08f) { // ✅ MUITO RIGOROSO
+                Log.w(
+                        TAG,
+                        "⚠️ Diferença de variância muito alta (${String.format("%.3f", varianceDiff)}) - pessoas diferentes"
+                )
+                return false
+            }
+
+            // ✅ VERIFICAÇÃO 5: Verificar padrões específicos de face - MUITO RIGOROSO
+            val patternSimilarity = calculatePatternSimilarity(embedding1, embedding2)
+            if (patternSimilarity < 0.85f) { // ✅ MUITO RIGOROSO
+                Log.w(
+                        TAG,
+                        "⚠️ Padrão facial muito diferente (${String.format("%.3f", patternSimilarity)}) - pessoas diferentes"
+                )
+                return false
+            }
+
+            // ✅ VERIFICAÇÃO 6: Verificar se não são embeddings muito similares (pode ser ruído)
+            val cosineSimilarity = calculateCosineSimilarity(embedding1, embedding2)
+            if (cosineSimilarity > 0.999f) { // ✅ MUITO RIGOROSO
+                Log.w(
+                        TAG,
+                        "⚠️ Embeddings muito similares (${String.format("%.6f", cosineSimilarity)}) - possível ruído"
+                )
+                return false
+            }
+
+            // ✅ VERIFICAÇÃO 7: Verificar se não são embeddings muito diferentes
+            if (cosineSimilarity < 0.8f) { // ✅ MUITO RIGOROSO
+                Log.w(
+                        TAG,
+                        "⚠️ Embeddings muito diferentes (${String.format("%.3f", cosineSimilarity)}) - pessoas diferentes"
+                )
+                return false
+            }
+
+            Log.d(TAG, "✅ Validações de falso positivo passaram:")
+            Log.d(TAG, "   - Correlação: ${String.format("%.3f", correlation)}")
+            Log.d(TAG, "   - Diferença média: ${String.format("%.3f", meanDiff)}")
+            Log.d(TAG, "   - Diferença variância: ${String.format("%.3f", varianceDiff)}")
+            Log.d(TAG, "   - Padrão facial: ${String.format("%.3f", patternSimilarity)}")
+            Log.d(TAG, "   - Cosseno: ${String.format("%.3f", cosineSimilarity)}")
+
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro na validação de falso positivo: ${e.message}")
+            false
+        }
+    }
+
+    /** ✅ CALCULAR SIMILARIDADE DE PADRÃO FACIAL */
+    private fun calculatePatternSimilarity(embedding1: FloatArray, embedding2: FloatArray): Float {
+        return try {
+            if (embedding1.size != embedding2.size) return 0f
+
+            // ✅ CALCULAR SIMILARIDADE POR SEGMENTOS (características faciais)
+            val segmentSize = embedding1.size / 4 // Dividir em 4 segmentos
+            var totalSimilarity = 0f
+
+            for (i in 0..3) {
+                val start = i * segmentSize
+                val end = if (i == 3) embedding1.size else (i + 1) * segmentSize
+
+                val segment1 = embedding1.slice(start until end).toFloatArray()
+                val segment2 = embedding2.slice(start until end).toFloatArray()
+
+                val segmentSimilarity = calculateSimilarity(segment1, segment2)
+                totalSimilarity += segmentSimilarity
+            }
+
+            totalSimilarity / 4f
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao calcular similaridade de padrão: ${e.message}")
+            0f
+        }
+    }
+}

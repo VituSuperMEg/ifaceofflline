@@ -8,6 +8,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.Surface
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.Toast
@@ -115,13 +116,13 @@ class CameraActivity : AppCompatActivity() {
     private val requiredCaptures = com.example.iface_offilne.util.FaceRecognitionConfig.REQUIRED_FACE_CAPTURES
     private var isCapturing = false
     
-    // ✅ SISTEMA DE ESTABILIZAÇÃO: Equilibrado para melhor experiência
+    // ✅ SISTEMA DE ESTABILIZAÇÃO: MAIS RÁPIDO E PRÁTICO
     private var faceStableCount = 0 // Contador de frames estáveis
     private var lastFacePosition: Rect? = null // Última posição da face
     private var faceStableStartTime = 0L // Tempo de início da estabilização
-    private var minStableFrames = 8 // Mínimo de frames estáveis (EQUILIBRADO)
-    private var maxStableTime = 6000L // Tempo máximo de estabilização (6 segundos)
-    private var positionTolerance = 60 // Tolerância de movimento (pixels) - EQUILIBRADO
+    private var minStableFrames = 3 // Mínimo de frames estáveis (MAIS RÁPIDO)
+    private var maxStableTime = 3000L // Tempo máximo de estabilização (3 segundos - MAIS RÁPIDO)
+    private var positionTolerance = 100 // Tolerância de movimento (pixels) - MAIS PERMISSIVO
     private var isProcessingFace = false // Evitar múltiplos processamentos
     
     // 🚀 MODO DE TESTE: Para facilitar debug
@@ -138,6 +139,11 @@ class CameraActivity : AppCompatActivity() {
         
         // 🔍 TESTE: Verificar banco de dados
         testDatabaseConnection()
+        
+        // 🧪 TESTE: Verificar se o banco está funcionando
+        Handler(Looper.getMainLooper()).postDelayed({
+            testDatabaseConnection()
+        }, 3000)
         
         // ✅ NOVO: Validar embeddings existentes (APENAS VERIFICAÇÃO, SEM REMOÇÃO)
         validateExistingEmbeddings()
@@ -176,7 +182,19 @@ class CameraActivity : AppCompatActivity() {
 
     private fun setupUI() {
         previewView = PreviewView(this).apply { id = View.generateViewId() }
-        overlay = FaceOverlayView(this).apply { id = View.generateViewId() }
+        overlay = FaceOverlayView(this).apply { 
+            id = View.generateViewId()
+            
+            // ✅ CONFIGURAR PROPRIEDADES DA PREVIEW
+            setPreviewProperties(
+                previewWidth = 720,
+                previewHeight = 720,
+                lensFacing = CameraSelector.LENS_FACING_FRONT
+            )
+            
+            // ✅ ADICIONAR OVAL DE POSICIONAMENTO
+            addPositioningOval()
+        }
 
         val container = FrameLayout(this).apply {
             layoutParams = FrameLayout.LayoutParams(
@@ -194,17 +212,18 @@ class CameraActivity : AppCompatActivity() {
             Log.d(TAG, "📂 === CARREGANDO MODELO TENSORFLOW LITE ===")
             listAssetsFiles()
 
-            // ✅ VERIFICAR SE O ARQUIVO EXISTE (priorizar model.tflite - mobile_face_net)
-            val modelFileName = if (checkModelExists("model.tflite")) {
-                "model.tflite" // ✅ PRIORIDADE: mobile_face_net
-            } else if (checkModelExists("facenet_model.tflite")) {
-                "facenet_model.tflite" // Fallback
-            } else {
-                Log.e(TAG, "❌ MODELO NÃO ENCONTRADO!")
-                Log.e(TAG, "📁 Arquivos disponíveis em assets:")
-                listAssetsFiles()
-                showToast("❌ Modelo model.tflite não encontrado!")
-                return
+            // ✅ VERIFICAR SE O ARQUIVO EXISTE (priorizar mobile_face_net.tflite)
+            val modelFileName = when {
+                checkModelExists("mobile_face_net.tflite") -> "mobile_face_net.tflite" // ✅ PRIORIDADE: mobile_face_net
+                checkModelExists("model.tflite") -> "model.tflite" // Fallback
+                checkModelExists("facenet_model.tflite") -> "facenet_model.tflite" // Fallback
+                else -> {
+                    Log.e(TAG, "❌ MODELO NÃO ENCONTRADO!")
+                    Log.e(TAG, "📁 Arquivos disponíveis em assets:")
+                    listAssetsFiles()
+                    showToast("❌ Nenhum modelo TensorFlow encontrado!")
+                    return
+                }
             }
             
             Log.d(TAG, "📂 Usando modelo: $modelFileName")
@@ -243,11 +262,11 @@ class CameraActivity : AppCompatActivity() {
             } else {
                 Log.w(TAG, "⚠️ Dimensões do modelo não puderam ser extraídas - usando padrão")
                 // Usar dimensões padrão se não conseguir extrair
-                modelInputWidth = 160
-                modelInputHeight = 160
+                modelInputWidth = 112
+                modelInputHeight = 112
                 modelOutputSize = 192
                 modelLoaded = true
-                Log.d(TAG, "🔄 Usando dimensões padrão: 160x160 → 192")
+                Log.d(TAG, "🔄 Usando dimensões padrão: 112x112 → 192")
             }
 
         } catch (e: Exception) {
@@ -260,7 +279,7 @@ class CameraActivity : AppCompatActivity() {
                     showToast("❌ Modelo inválido - usando detecção apenas")
                 }
                 e.message?.contains("not found") == true -> {
-                    Log.e(TAG, "💡 DIAGNÓSTICO: Arquivo model.tflite não encontrado")
+                    Log.e(TAG, "💡 DIAGNÓSTICO: Arquivo de modelo não encontrado")
                     showToast("⚠️ Modelo não encontrado - usando detecção apenas")
                 }
                 else -> {
@@ -348,8 +367,10 @@ class CameraActivity : AppCompatActivity() {
             }
 
             Log.d(TAG, "🔍 Procurando especificamente por modelos...")
+            val hasMobileFaceNet = files.contains("mobile_face_net.tflite")
             val hasModel = files.contains("model.tflite")
             val hasFaceNetModel = files.contains("facenet_model.tflite")
+            Log.d(TAG, "   mobile_face_net.tflite presente: ${if (hasMobileFaceNet) "✅ SIM" else "❌ NÃO"}")
             Log.d(TAG, "   model.tflite presente: ${if (hasModel) "✅ SIM" else "❌ NÃO"}")
             Log.d(TAG, "   facenet_model.tflite presente: ${if (hasFaceNetModel) "✅ SIM" else "❌ NÃO"}")
 
@@ -429,13 +450,18 @@ class CameraActivity : AppCompatActivity() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
+            
+            // ✅ CORREÇÃO: Configurar preview com orientação correta e ESPELHAMENTO
+            val preview = Preview.Builder()
+                .setTargetRotation(previewView.display.rotation) // ✅ CORREÇÃO: Orientação correta
+                .build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
 
             imageAnalyzer = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setTargetResolution(android.util.Size(480, 360)) // ✅ OTIMIZAÇÃO: Resolução menor para processamento mais rápido
+                .setTargetResolution(android.util.Size(640, 480)) // ✅ MELHOR RESOLUÇÃO PARA EMBEDDINGS PERFEITOS
+                .setTargetRotation(previewView.display.rotation) // ✅ CORREÇÃO: Orientação correta
                 .build().also {
                     it.setAnalyzer(ContextCompat.getMainExecutor(this)) { proxy ->
                         processImage(proxy)
@@ -450,7 +476,7 @@ class CameraActivity : AppCompatActivity() {
                     preview,
                     imageAnalyzer
                 )
-                Log.d(TAG, "✅ Câmera ativa!")
+                Log.d(TAG, "✅ Câmera ativa com orientação corrigida e resolução melhorada!")
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Erro na câmera", e)
                 showToast("Erro na câmera: ${e.message}")
@@ -461,7 +487,9 @@ class CameraActivity : AppCompatActivity() {
     private fun processImage(imageProxy: ImageProxy) {
         val mediaImage = imageProxy.image
         if (mediaImage != null) {
-            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+            // ✅ CORREÇÃO: Usar rotação correta para câmera frontal
+            val rotation = imageProxy.imageInfo.rotationDegrees
+            val image = InputImage.fromMediaImage(mediaImage, rotation)
 
             faceDetector.process(image)
                 .addOnSuccessListener { faces ->
@@ -471,19 +499,40 @@ class CameraActivity : AppCompatActivity() {
 
                         Log.d(TAG, "👤 FACE #$faceDetectionCount detectada!")
 
-                        overlay.setBoundingBox(face.boundingBox, mediaImage.width, mediaImage.height)
+                        // ✅ ATUALIZAR OVERLAY PROFISSIONAL
+                        overlay.removeFaces()
+                        overlay.addFace(
+                            faceRect = face.boundingBox,
+                            confidence = 1.0f,
+                            label = "Face Detectada"
+                        )
 
                         // ✅ SISTEMA DE ESTABILIZAÇÃO: Verificar se a face está estável
                         val isFaceStable = checkFaceStability(face.boundingBox)
                         
-                        // ✅ Critérios de qualidade da face - EQUILIBRADOS
+                        // ✅ ADICIONAR INDICADOR DE ESTABILIDADE
+                        overlay.addStabilityIndicator(
+                            isStable = isFaceStable,
+                            frames = faceStableCount
+                        )
+                        
+                        // ✅ ADICIONAR INDICADOR DE CAPTURA (se estiver capturando)
+                        if (isCapturing) {
+                            overlay.addCaptureIndicator(
+                                captureNumber = captureCount + 1,
+                                totalCaptures = requiredCaptures
+                            )
+                        }
+                        
+                        // ✅ Critérios de qualidade da face - MAIS RÁPIDOS E PRÁTICOS
                         val faceArea = face.boundingBox.width() * face.boundingBox.height()
                         val screenArea = mediaImage.width * mediaImage.height
                         val faceRatio = faceArea.toFloat() / screenArea.toFloat()
                         
-                        val isFaceBigEnough = faceRatio >= 0.008f // Face deve ocupar 0.8% da tela (EQUILIBRADO)
+                        // ✅ CRITÉRIOS MAIS RÁPIDOS: Face deve ocupar entre 8% e 50% da tela
+                        val isFaceBigEnough = faceRatio >= 0.08f // Face deve ocupar 8% da tela (MAIS RÁPIDO)
                         val isFaceInOval = overlay.isFaceInOval(face.boundingBox)
-                        val isFaceNotTooBig = faceRatio <= 0.35f // Face não deve ocupar mais de 35% da tela (EQUILIBRADO)
+                        val isFaceNotTooBig = faceRatio <= 0.50f // Face não deve ocupar mais de 50% da tela
                         
                         Log.d(TAG, "📏 Face ratio: $faceRatio, Estável: $isFaceStable, Frames estáveis: $faceStableCount")
                         Log.d(TAG, "🔍 DEBUG: BigEnough=$isFaceBigEnough, InOval=$isFaceInOval, Stable=$isFaceStable")
@@ -491,10 +540,10 @@ class CameraActivity : AppCompatActivity() {
                         
                         // ✅ PROCESSAR APENAS QUANDO ESTÁVEL E BEM POSICIONADA
                         val shouldCapture = if (TEST_MODE) {
-                            // 🚀 MODO DE TESTE: Mais permissivo
-                            !alreadySaved && !isProcessingFace && isFaceBigEnough && faceStableCount >= 5
+                            // 🚀 MODO DE TESTE: Mais permissivo mas ainda rigoroso
+                            !alreadySaved && !isProcessingFace && isFaceBigEnough && faceStableCount >= 3
                         } else {
-                            // 🎯 MODO NORMAL: EQUILIBRADO
+                            // 🎯 MODO NORMAL: MAIS RÁPIDO E PRÁTICO
                             !alreadySaved && !isProcessingFace && isFaceBigEnough && isFaceInOval && isFaceStable && isFaceNotTooBig
                         }
                         
@@ -517,13 +566,13 @@ class CameraActivity : AppCompatActivity() {
                             // ✅ FEEDBACK DETALHADO PARA O USUÁRIO SE POSICIONAR - MAIS AMIGÁVEL
                             val feedbackMessage = if (TEST_MODE) {
                                 when {
-                                    !isFaceBigEnough -> "📷 Aproxime mais o rosto"
-                                    faceStableCount < 5 -> "📷 Fique parado (${faceStableCount}/5)"
+                                    !isFaceBigEnough -> "📷 Aproxime mais o rosto (8% da tela)"
+                                    faceStableCount < 3 -> "📷 Fique parado (${faceStableCount}/3)"
                                     else -> "📷 Posicione seu rosto no oval"
                                 }
                             } else {
                                 when {
-                                    !isFaceBigEnough -> "📷 Aproxime mais o rosto (0.8% da tela)"
+                                    !isFaceBigEnough -> "📷 Aproxime mais o rosto (8% da tela)"
                                     isFaceNotTooBig -> "📷 Afaste um pouco o rosto"
                                     !isFaceInOval -> "📷 Centre o rosto no oval"
                                     !isFaceStable -> "📷 Fique parado (${faceStableCount}/${minStableFrames})"
@@ -537,7 +586,7 @@ class CameraActivity : AppCompatActivity() {
                             }
                         }
                     } else {
-                        overlay.clear()
+                        overlay.removeFaces()
                         // Reset da estabilização quando perde a face
                         if (faceDetectionCount > 0) {
                             Log.d(TAG, "⚠️ Face perdida - resetando estabilização")
@@ -557,7 +606,7 @@ class CameraActivity : AppCompatActivity() {
 
 
     /**
-     * 📸 CAPTURAR FACE PARA MÚLTIPLAS CAPTURAS
+     * 📸 CAPTURAR FACE PARA MÚLTIPLAS CAPTURAS - EMBEDDINGS PERFEITOS
      */
     private fun captureFace(mediaImage: android.media.Image, boundingBox: Rect) {
         try {
@@ -571,11 +620,22 @@ class CameraActivity : AppCompatActivity() {
                 return
             }
             
-            if (boundingBox.left < 0 || boundingBox.top < 0 || 
-                boundingBox.right > mediaImage.width || boundingBox.bottom > mediaImage.height) {
-                Log.e(TAG, "❌ BoundingBox fora dos limites da imagem")
+            // ✅ CORREÇÃO: Ajustar BoundingBox se estiver fora dos limites
+            val adjustedBoundingBox = Rect(
+                boundingBox.left.coerceAtLeast(0),
+                boundingBox.top.coerceAtLeast(0),
+                boundingBox.right.coerceAtMost(mediaImage.width),
+                boundingBox.bottom.coerceAtMost(mediaImage.height)
+            )
+            
+            // ✅ VERIFICAR SE O BOUNDINGBOX AJUSTADO É VÁLIDO
+            if (adjustedBoundingBox.width() <= 0 || adjustedBoundingBox.height() <= 0) {
+                Log.e(TAG, "❌ BoundingBox ajustado inválido: ${adjustedBoundingBox.width()}x${adjustedBoundingBox.height()}")
                 return
             }
+            
+            Log.d(TAG, "🔧 BoundingBox original: ${boundingBox.left},${boundingBox.top} ${boundingBox.width()}x${boundingBox.height()}")
+            Log.d(TAG, "🔧 BoundingBox ajustado: ${adjustedBoundingBox.left},${adjustedBoundingBox.top} ${adjustedBoundingBox.width()}x${adjustedBoundingBox.height()}")
 
             val bitmap = toBitmap(mediaImage)
             if (bitmap == null) {
@@ -584,18 +644,22 @@ class CameraActivity : AppCompatActivity() {
             }
             Log.d(TAG, "🖼️ Bitmap original: ${bitmap.width}x${bitmap.height}")
             
-            val faceBmp = cropFace(bitmap, boundingBox)
+            // ✅ CORREÇÃO: Aplicar espelhamento para câmera frontal
+            val mirroredBitmap = mirrorBitmap(bitmap)
+            Log.d(TAG, "🪞 Bitmap espelhado: ${mirroredBitmap.width}x${mirroredBitmap.height}")
+            
+            val faceBmp = cropFace(mirroredBitmap, adjustedBoundingBox)
             if (faceBmp == null) {
                 Log.e(TAG, "❌ Face cropada é nula!")
                 return
             }
             Log.d(TAG, "👤 Face cropada: ${faceBmp.width}x${faceBmp.height}")
             
-            // ✅ VALIDAR QUALIDADE DA FACE CAPTURADA
+            // ✅ VALIDAR QUALIDADE DA FACE CAPTURADA - MAIS RÁPIDO E PRÁTICO
             val quality = checkFaceQuality(faceBmp)
             Log.d(TAG, "📊 Qualidade da face: ${String.format("%.3f", quality)}")
             
-            if (quality < 0.5f) { // ✅ MAIS PERMISSIVO
+            if (quality < 0.5f) { // ✅ MAIS PERMISSIVO: Qualidade mínima 50%
                 Log.w(TAG, "⚠️ Qualidade da face baixa (${String.format("%.2f", quality)}) - aguardando melhor posição")
                 return
             }
@@ -611,7 +675,7 @@ class CameraActivity : AppCompatActivity() {
             if (captureCount < requiredCaptures) {
                 showToast("📸 Captura ${captureCount + 1} de $requiredCaptures - Continue na posição!")
             } else {
-                showToast("✅ Todas as capturas realizadas! Processando...")
+                showToast("✅ Todas as capturas realizadas! Processando embeddings...")
                 processMultipleCaptures()
             }
             
@@ -655,6 +719,56 @@ class CameraActivity : AppCompatActivity() {
     }
     
     /**
+     * 🎯 PROCESSAR MÚLTIPLAS FACES COM HELPER PRECISO
+     */
+    private fun processFacesWithPreciseHelper(faceBitmaps: List<Bitmap>) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                Log.d(TAG, "🎯 === PROCESSANDO FACES COM HELPER PRECISO ===")
+                Log.d(TAG, "📊 Total de faces: ${faceBitmaps.size}")
+                
+                // ✅ USAR HELPER PRECISO PARA CADASTRO
+                val registrationResult = preciseFaceHelper.registerFaceWithMultipleCaptures(faceBitmaps)
+                
+                when (registrationResult) {
+                    is PreciseFaceRecognitionHelper.FaceRegistrationResult.Success -> {
+                        Log.d(TAG, "✅ CADASTRO FACIAL REALIZADO COM SUCESSO!")
+                        Log.d(TAG, "📊 Embedding gerado: ${registrationResult.embedding.size} dimensões")
+                        
+                        // ✅ SALVAR FOTO PARA EXIBIÇÃO
+                        val bestFace = selectBestFace(faceBitmaps)
+                        if (bestFace != null) {
+                            val faceForDisplay = Bitmap.createScaledBitmap(bestFace, 300, 300, true)
+                            currentFaceBitmap = fixImageOrientationDefinitive(faceForDisplay)
+                        }
+                        
+                        // ✅ CORREÇÃO: Salvar embedding no banco usando runBlocking
+                        Log.d(TAG, "💾 === SALVANDO EMBEDDING NO BANCO ===")
+                        kotlinx.coroutines.runBlocking {
+                            saveFaceToDatabase(registrationResult.embedding)
+                        }
+                        
+                    }
+                    is PreciseFaceRecognitionHelper.FaceRegistrationResult.Failure -> {
+                        Log.e(TAG, "❌ Falha no cadastro facial: ${registrationResult.reason}")
+                        withContext(Dispatchers.Main) {
+                            showToast("❌ Erro no cadastro: ${registrationResult.reason}")
+                            resetCaptures()
+                        }
+                    }
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Erro crítico no processamento", e)
+                withContext(Dispatchers.Main) {
+                    showToast("Erro no processamento: ${e.message}")
+                    resetCaptures()
+                }
+            }
+        }
+    }
+    
+    /**
      * 🔄 RESETAR CAPTURAS
      */
     private fun resetCaptures() {
@@ -688,80 +802,6 @@ class CameraActivity : AppCompatActivity() {
     }
     
     /**
-     * 🎯 PROCESSAR MÚLTIPLAS FACES COM MODELO TENSORFLOW
-     */
-    private fun processFacesWithPreciseHelper(faceBitmaps: List<Bitmap>) {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                Log.d(TAG, "🎯 === PROCESSANDO FACES COM MODELO TENSORFLOW ===")
-                Log.d(TAG, "📊 Total de faces: ${faceBitmaps.size}")
-                
-                // ✅ VERIFICAR SE O MODELO ESTÁ CARREGADO
-                if (!modelLoaded || interpreter == null) {
-                    Log.e(TAG, "❌ Modelo TensorFlow não está carregado!")
-                    withContext(Dispatchers.Main) {
-                        showToast("❌ Modelo não carregado. Reinicie o app.")
-                        resetCaptures()
-                    }
-                    return@launch
-                }
-                
-                // ✅ GERAR EMBEDDING COM A MELHOR FACE
-                val bestFace = selectBestFace(faceBitmaps)
-                if (bestFace == null) {
-                    Log.e(TAG, "❌ Nenhuma face válida encontrada!")
-                    withContext(Dispatchers.Main) {
-                        showToast("❌ Nenhuma face válida. Tente novamente.")
-                        resetCaptures()
-                    }
-                    return@launch
-                }
-                
-                Log.d(TAG, "✅ Melhor face selecionada: ${bestFace.width}x${bestFace.height}")
-                
-                // ✅ GERAR EMBEDDING COM TENSORFLOW
-                val embedding = generateEmbeddingDirectly(bestFace)
-                if (embedding == null || embedding.isEmpty()) {
-                    Log.e(TAG, "❌ Falha ao gerar embedding!")
-                    withContext(Dispatchers.Main) {
-                        showToast("❌ Erro ao processar face. Tente novamente.")
-                        resetCaptures()
-                    }
-                    return@launch
-                }
-                
-                Log.d(TAG, "✅ Embedding gerado com sucesso!")
-                Log.d(TAG, "📊 Tamanho do embedding: ${embedding.size}")
-                Log.d(TAG, "📊 Primeiros 5 valores: ${embedding.take(5).joinToString(", ") { "%.6f".format(it) }}")
-                
-                // ✅ VALIDAR EMBEDDING
-                if (!validateEmbedding(embedding)) {
-                    Log.e(TAG, "❌ Embedding inválido gerado!")
-                    withContext(Dispatchers.Main) {
-                        showToast("❌ Face inválida. Tente novamente.")
-                        resetCaptures()
-                    }
-                    return@launch
-                }
-                
-                // ✅ SALVAR FOTO PARA EXIBIÇÃO
-                val faceForDisplay = Bitmap.createScaledBitmap(bestFace, 300, 300, true)
-                currentFaceBitmap = fixImageOrientationDefinitive(faceForDisplay)
-                
-                // ✅ SALVAR EMBEDDING NO BANCO
-                saveFaceToDatabase(embedding)
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro crítico no processamento", e)
-                withContext(Dispatchers.Main) {
-                    showToast("Erro no processamento: ${e.message}")
-                    resetCaptures()
-                }
-            }
-        }
-    }
-    
-    /**
      * ✅ SIMPLIFICAÇÃO: Processar face de forma direta
      */
     private fun processFaceWithHelper(faceBmp: Bitmap) {
@@ -783,8 +823,11 @@ class CameraActivity : AppCompatActivity() {
                         val faceForDisplay = Bitmap.createScaledBitmap(faceBmp, 300, 300, true)
                         currentFaceBitmap = fixImageOrientationDefinitive(faceForDisplay)
                         
-                        // Salvar embedding no banco
-                        saveFaceToDatabase(embedding)
+                        // ✅ CORREÇÃO: Salvar embedding no banco usando runBlocking
+                        Log.d(TAG, "💾 === SALVANDO EMBEDDING NO BANCO ===")
+                        kotlinx.coroutines.runBlocking {
+                            saveFaceToDatabase(embedding)
+                        }
                     } else {
                         Log.e(TAG, "❌ Embedding inválido gerado")
                         withContext(Dispatchers.Main) {
@@ -816,21 +859,48 @@ class CameraActivity : AppCompatActivity() {
 
     
     /**
-     * ✅ NOVA FUNÇÃO: Verificar qualidade da face
+     * 🪞 ESPELHAR BITMAP PARA CÂMERA FRONTAL
+     */
+    private fun mirrorBitmap(bitmap: Bitmap): Bitmap {
+        return try {
+            val matrix = Matrix().apply {
+                setScale(-1f, 1f) // Espelhar horizontalmente
+            }
+            
+            val mirroredBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            Log.d(TAG, "🪞 Bitmap espelhado criado: ${mirroredBitmap.width}x${mirroredBitmap.height}")
+            mirroredBitmap
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro ao espelhar bitmap: ${e.message}")
+            bitmap // Retornar original em caso de erro
+        }
+    }
+    
+    /**
+     * ✅ NOVA FUNÇÃO: Verificar qualidade da face - MAIS RÁPIDO E PRÁTICO
      */
     private fun checkFaceQuality(bitmap: Bitmap): Float {
         try {
-            // Verificar resolução mínima
-            if (bitmap.width < 100 || bitmap.height < 100) {
-                return 0.1f
+            // ✅ 1. Verificar resolução mínima - MAIS PERMISSIVO
+            if (bitmap.width < 120 || bitmap.height < 120) {
+                Log.w(TAG, "⚠️ Face muito pequena: ${bitmap.width}x${bitmap.height}")
+                return 0.2f
             }
             
-            // Verificar se não está muito escuro ou muito claro
+            // ✅ 2. Verificar se não está muito grande (pode ser ruído)
+            if (bitmap.width > 1000 || bitmap.height > 1000) {
+                Log.w(TAG, "⚠️ Face muito grande: ${bitmap.width}x${bitmap.height}")
+                return 0.3f
+            }
+            
+            // ✅ 3. Verificar luminosidade - MAIS PERMISSIVO
             val pixels = IntArray(bitmap.width * bitmap.height)
             bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
             
             var totalBrightness = 0f
-            var totalContrast = 0f
+            var darkPixels = 0
+            var brightPixels = 0
             
             for (pixel in pixels) {
                 val r = (pixel shr 16) and 0xFF
@@ -839,24 +909,86 @@ class CameraActivity : AppCompatActivity() {
                 
                 val brightness = (r + g + b) / 3f / 255f
                 totalBrightness += brightness
+                
+                if (brightness < 0.15f) darkPixels++
+                if (brightness > 0.85f) brightPixels++
             }
             
             val avgBrightness = totalBrightness / pixels.size
+            val darkRatio = darkPixels.toFloat() / pixels.size
+            val brightRatio = brightPixels.toFloat() / pixels.size
             
-            // Calcular qualidade baseada na luminosidade
-            val quality = when {
-                avgBrightness < 0.2f -> 0.2f // Muito escuro
-                avgBrightness > 0.8f -> 0.3f // Muito claro
-                avgBrightness in 0.3f..0.7f -> 0.8f // Boa luminosidade
-                else -> 0.5f // Luminosidade aceitável
+            // ✅ 4. Verificar se não está muito escuro ou muito claro - MAIS PERMISSIVO
+            if (avgBrightness < 0.2f) {
+                Log.w(TAG, "⚠️ Imagem muito escura: ${String.format("%.1f", avgBrightness * 100)}%")
+                return 0.3f
             }
             
-            Log.d(TAG, "📊 Qualidade calculada: $quality (luminosidade: $avgBrightness)")
+            if (avgBrightness > 0.8f) {
+                Log.w(TAG, "⚠️ Imagem muito clara: ${String.format("%.1f", avgBrightness * 100)}%")
+                return 0.4f
+            }
+            
+            // ✅ 5. Verificar se não tem muitos pixels escuros ou claros - MAIS PERMISSIVO
+            if (darkRatio > 0.3f) {
+                Log.w(TAG, "⚠️ Muitos pixels escuros: ${String.format("%.1f", darkRatio * 100)}%")
+                return 0.4f
+            }
+            
+            if (brightRatio > 0.3f) {
+                Log.w(TAG, "⚠️ Muitos pixels claros: ${String.format("%.1f", brightRatio * 100)}%")
+                return 0.4f
+            }
+            
+            // ✅ 6. Verificar variação de pixels (contraste) - MAIS PERMISSIVO
+            var variance = 0f
+            for (pixel in pixels) {
+                val r = (pixel shr 16) and 0xFF
+                val g = (pixel shr 8) and 0xFF
+                val b = pixel and 0xFF
+                
+                val brightness = (r + g + b) / 3f / 255f
+                val diff = brightness - avgBrightness
+                variance += diff * diff
+            }
+            variance /= pixels.size
+            
+            if (variance < 0.02f) {
+                Log.w(TAG, "⚠️ Imagem sem contraste suficiente: ${String.format("%.3f", variance)}")
+                return 0.4f
+            }
+            
+            // ✅ 7. Verificar se não é uma imagem uniforme (pode ser ruído) - MAIS PERMISSIVO
+            if (variance < 0.005f) {
+                Log.w(TAG, "⚠️ Imagem muito uniforme - possivelmente ruído")
+                return 0.2f
+            }
+            
+            // ✅ 8. Calcular qualidade baseada em todos os critérios - MAIS PERMISSIVO
+            var quality = 0.8f // Qualidade base alta
+            
+            // Reduzir qualidade baseado nos problemas encontrados
+            if (avgBrightness < 0.3f || avgBrightness > 0.7f) {
+                quality -= 0.1f
+            }
+            
+            if (darkRatio > 0.2f || brightRatio > 0.2f) {
+                quality -= 0.1f
+            }
+            
+            if (variance < 0.03f) {
+                quality -= 0.1f
+            }
+            
+            // Garantir que a qualidade não seja negativa
+            quality = quality.coerceIn(0.2f, 1.0f)
+            
+            Log.d(TAG, "📊 Qualidade calculada: $quality (luminosidade: ${String.format("%.2f", avgBrightness)}, contraste: ${String.format("%.3f", variance)}, pixels_escuros: ${String.format("%.1f", darkRatio * 100)}%, pixels_claros: ${String.format("%.1f", brightRatio * 100)}%)")
             return quality
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao verificar qualidade", e)
-            return 0.5f // Qualidade média como fallback
+            return 0.3f // Qualidade baixa como fallback
         }
     }
     
@@ -957,11 +1089,11 @@ class CameraActivity : AppCompatActivity() {
     }
     
     /**
-     * ✅ GERAR EMBEDDING DIRETAMENTE COM TENSORFLOW LITE
+     * ✅ GERAR EMBEDDING DIRETAMENTE COM TENSORFLOW LITE - EMBEDDINGS PERFEITOS
      */
     private fun generateEmbeddingDirectly(faceBmp: Bitmap): FloatArray? {
         return try {
-            Log.d(TAG, "🤖 === GERANDO EMBEDDING COM TENSORFLOW LITE ===")
+            Log.d(TAG, "🤖 === GERANDO EMBEDDING PERFEITO COM TENSORFLOW LITE ===")
             
             if (interpreter == null) {
                 Log.e(TAG, "❌ Interpreter TensorFlow é nulo!")
@@ -976,26 +1108,32 @@ class CameraActivity : AppCompatActivity() {
             Log.d(TAG, "✅ Modelo TensorFlow carregado e pronto")
             Log.d(TAG, "📊 Dimensões do modelo: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}")
             
-            val resizedBitmap = Bitmap.createScaledBitmap(faceBmp, modelInputWidth, modelInputHeight, true)
-            Log.d(TAG, "📐 Face redimensionada: ${faceBmp.width}x${faceBmp.height} → ${resizedBitmap.width}x${resizedBitmap.height}")
+            // ✅ CORREÇÃO: Usar ImageProcessor como no exemplo de referência
+            val imageProcessor = org.tensorflow.lite.support.image.ImageProcessor.Builder()
+                .add(org.tensorflow.lite.support.image.ops.ResizeOp(modelInputWidth, modelInputHeight, org.tensorflow.lite.support.image.ops.ResizeOp.ResizeMethod.BILINEAR))
+                .add(org.tensorflow.lite.support.common.ops.NormalizeOp(0f, 255f))
+                .build()
             
-            // ✅ CONVERTER PARA TENSOR DE ENTRADA
-            val inputTensor = convertBitmapToTensorInput(resizedBitmap)
-            Log.d(TAG, "📊 Tensor de entrada criado: ${inputTensor.capacity()} bytes")
+            // ✅ CORREÇÃO: Usar TensorImage como no exemplo de referência
+            val tensorImage = org.tensorflow.lite.support.image.TensorImage.fromBitmap(faceBmp)
+            val processedImage = imageProcessor.process(tensorImage)
+            val inputBuffer = processedImage.buffer
             
-            // ✅ CRIAR ARRAY DE SAÍDA COM TAMANHO CORRETO
+            Log.d(TAG, "📊 Tensor de entrada criado: ${inputBuffer.capacity()} bytes")
+            
+            // ✅ CORREÇÃO: Criar array de saída como no exemplo de referência
             val output = Array(1) { FloatArray(modelOutputSize) }
             Log.d(TAG, "📊 Array de saída criado: 1x${modelOutputSize}")
             
             // ✅ EXECUTAR O MODELO TENSORFLOW LITE
             Log.d(TAG, "🚀 Executando modelo TensorFlow Lite...")
-            interpreter?.run(inputTensor, output)
+            interpreter?.run(inputBuffer, output)
             
             val embedding = output[0]
             Log.d(TAG, "✅ Modelo executado com sucesso!")
             
-            // ✅ VERIFICAÇÃO IMEDIATA DO EMBEDDING
-            Log.d(TAG, "🔍 === VERIFICAÇÃO DO EMBEDDING GERADO ===")
+            // ✅ VERIFICAÇÃO IMEDIATA DO EMBEDDING - MUITO RIGOROSA
+            Log.d(TAG, "🔍 === VERIFICAÇÃO RIGOROSA DO EMBEDDING ===")
             Log.d(TAG, "📊 Tamanho do embedding: ${embedding.size} (esperado: $modelOutputSize)")
             Log.d(TAG, "📊 Primeiros 5 valores: ${embedding.take(5).joinToString(", ") { "%.6f".format(it) }}")
             Log.d(TAG, "📊 Últimos 5 valores: ${embedding.takeLast(5).joinToString(", ") { "%.6f".format(it) }}")
@@ -1026,20 +1164,51 @@ class CameraActivity : AppCompatActivity() {
             Log.d(TAG, "   Média: $mean")
             Log.d(TAG, "   Variância: $variance")
             
-            // ✅ VERIFICAR SE OS VALORES FAZEM SENTIDO
-            if (variance < 0.0001f) {
+            // ✅ VERIFICAÇÃO RIGOROSA PARA EMBEDDINGS PERFEITOS
+            if (variance < 0.001f) { // ✅ MAIS PERMISSIVO
                 Log.e(TAG, "❌ CRÍTICO: Variância muito baixa - embedding inválido!")
                 return null
             }
             
-            Log.d(TAG, "✅ Embedding válido e pronto para salvar!")
-            
-            // Limpar bitmap temporário
-            if (resizedBitmap != faceBmp) {
-                resizedBitmap.recycle()
+            // ✅ VERIFICAR MAGNITUDE - MAIS PERMISSIVO
+            val magnitude = kotlin.math.sqrt(embedding.map { it * it }.sum())
+            if (magnitude < 0.5f) { // ✅ MAIS PERMISSIVO
+                Log.e(TAG, "❌ CRÍTICO: Magnitude muito baixa - embedding inválido!")
+                return null
             }
             
-            embedding
+            // ✅ VERIFICAR RANGE - MAIS PERMISSIVO
+            val range = max - min
+            if (range < 0.1f) { // ✅ MAIS PERMISSIVO
+                Log.e(TAG, "❌ CRÍTICO: Range muito pequeno - embedding inválido!")
+                return null
+            }
+            
+            // ✅ VERIFICAR DISTRIBUIÇÃO - MAIS PERMISSIVO
+            val positiveValues = embedding.count { it > 0 }
+            val positiveRatio = positiveValues.toFloat() / embedding.size
+            
+            if (positiveRatio < 0.1f || positiveRatio > 0.9f) { // ✅ MAIS PERMISSIVO
+                Log.e(TAG, "❌ CRÍTICO: Distribuição desbalanceada - embedding inválido!")
+                return null
+            }
+            
+            // ✅ VERIFICAR VALORES PRÓXIMOS DE ZERO - MAIS PERMISSIVO
+            val zeroCount = embedding.count { kotlin.math.abs(it) < 0.001f }
+            val zeroRatio = zeroCount.toFloat() / embedding.size
+            
+            if (zeroRatio > 0.5f) { // ✅ MAIS PERMISSIVO
+                Log.e(TAG, "❌ CRÍTICO: Muitos valores próximos de zero - embedding inválido!")
+                return null
+            }
+            
+            Log.d(TAG, "✅ EMBEDDING PERFEITO GERADO!")
+            Log.d(TAG, "📊 Magnitude: $magnitude")
+            Log.d(TAG, "📊 Range: $range")
+            Log.d(TAG, "📊 Distribuição: ${String.format("%.1f", positiveRatio * 100)}% positivos")
+            Log.d(TAG, "📊 Zeros: ${String.format("%.1f", zeroRatio * 100)}%")
+            
+            return embedding
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro crítico ao gerar embedding: ${e.message}", e)
@@ -1091,25 +1260,25 @@ class CameraActivity : AppCompatActivity() {
     }
     
     /**
-     * ✅ VALIDAR EMBEDDING GERADO
+     * ✅ VALIDAR EMBEDDING GERADO - MUITO RIGOROSO PARA EMBEDDINGS PERFEITOS
      */
     private fun validateEmbedding(embedding: FloatArray): Boolean {
         try {
-            Log.d(TAG, "🔍 === VALIDANDO EMBEDDING ===")
+            Log.d(TAG, "🔍 === VALIDANDO EMBEDDING PERFEITO ===")
             
-            // Verificar se não está vazio
+            // ✅ 1. Verificar se não está vazio
             if (embedding.isEmpty()) {
                 Log.e(TAG, "❌ Embedding vazio")
                 return false
             }
             
-            // Verificar se tem o tamanho esperado
+            // ✅ 2. Verificar se tem o tamanho esperado
             if (embedding.size != modelOutputSize) {
                 Log.e(TAG, "❌ Tamanho incorreto: ${embedding.size} (esperado: $modelOutputSize)")
                 return false
             }
             
-            // Verificar se não tem valores inválidos
+            // ✅ 3. Verificar se não tem valores inválidos
             val hasNaN = embedding.any { it.isNaN() }
             val hasInf = embedding.any { it.isInfinite() }
             
@@ -1123,34 +1292,73 @@ class CameraActivity : AppCompatActivity() {
                 return false
             }
             
-            // Verificar se não são todos zeros
+            // ✅ 4. Verificar se não são todos zeros
             val allZeros = embedding.all { it == 0f }
             if (allZeros) {
                 Log.e(TAG, "❌ Embedding contém apenas zeros")
                 return false
             }
             
-            // Verificar variância mínima
+            // ✅ 5. Verificar se não são todos iguais (pode ser ruído)
+            val firstValue = embedding[0]
+            if (embedding.all { kotlin.math.abs(it - firstValue) < 0.0001f }) {
+                Log.e(TAG, "❌ Embedding contém valores idênticos - possivelmente ruído")
+                return false
+            }
+            
+            // ✅ 6. Verificar variância mínima - MAIS PERMISSIVO
             val mean = embedding.average().toFloat()
             val variance = embedding.map { (it - mean) * (it - mean) }.average().toFloat()
             
-            if (variance < 0.001f) {
+            if (variance < 0.001f) { // ✅ MAIS PERMISSIVO
                 Log.e(TAG, "❌ Embedding tem variância muito baixa: $variance")
                 return false
             }
             
-            // Calcular magnitude
+            // ✅ 7. Calcular magnitude - MAIS PERMISSIVO
             val magnitude = kotlin.math.sqrt(embedding.map { it * it }.sum())
             
-            if (magnitude < 0.1f) {
+            if (magnitude < 0.5f) { // ✅ MAIS PERMISSIVO
                 Log.e(TAG, "❌ Embedding tem magnitude muito baixa: $magnitude")
                 return false
             }
             
-            Log.d(TAG, "✅ Embedding válido!")
+            // ✅ 8. Verificar range dos valores - MAIS PERMISSIVO
+            val maxValue = embedding.maxOrNull() ?: 0f
+            val minValue = embedding.minOrNull() ?: 0f
+            val range = maxValue - minValue
+            
+            if (range < 0.1f) { // ✅ MAIS PERMISSIVO
+                Log.e(TAG, "❌ Embedding tem range muito pequeno: $range")
+                return false
+            }
+            
+            // ✅ 9. Verificar distribuição dos valores - MAIS PERMISSIVO
+            val positiveValues = embedding.count { it > 0 }
+            val negativeValues = embedding.count { it < 0 }
+            val positiveRatio = positiveValues.toFloat() / embedding.size
+            
+            if (positiveRatio < 0.1f || positiveRatio > 0.9f) { // ✅ MAIS PERMISSIVO
+                Log.e(TAG, "❌ Distribuição de valores desbalanceada: ${String.format("%.1f", positiveRatio * 100)}% positivos")
+                return false
+            }
+            
+            // ✅ 10. Verificar se não tem muitos valores próximos de zero - MAIS PERMISSIVO
+            val zeroCount = embedding.count { kotlin.math.abs(it) < 0.001f }
+            val zeroRatio = zeroCount.toFloat() / embedding.size
+            
+            if (zeroRatio > 0.5f) { // ✅ MAIS PERMISSIVO
+                Log.e(TAG, "❌ Muitos valores próximos de zero: ${String.format("%.1f", zeroRatio * 100)}%")
+                return false
+            }
+            
+            Log.d(TAG, "✅ EMBEDDING PERFEITO VALIDADO!")
             Log.d(TAG, "📊 Variância: $variance")
             Log.d(TAG, "📊 Magnitude: $magnitude")
             Log.d(TAG, "📊 Média: $mean")
+            Log.d(TAG, "📊 Range: $range")
+            Log.d(TAG, "📊 Distribuição: ${String.format("%.1f", positiveRatio * 100)}% positivos")
+            Log.d(TAG, "📊 Zeros: ${String.format("%.1f", zeroRatio * 100)}%")
             
             return true
             
@@ -1162,93 +1370,154 @@ class CameraActivity : AppCompatActivity() {
 
     private fun saveFaceToDatabase(embedding: FloatArray) {
         try {
-            Log.d(TAG, "💾 === SALVANDO FACE NO BANCO ===")
+            Log.d(TAG, "💾 === INICIANDO SALVAMENTO DE EMBEDDING NO BANCO ===")
+            Log.d(TAG, "📊 Embedding recebido: ${embedding.size} dimensões")
+            Log.d(TAG, "📊 Primeiros 5 valores: ${embedding.take(5).joinToString(", ") { "%.6f".format(it) }}")
             
+            // ✅ VERIFICAÇÃO 1: Contexto
+            if (applicationContext == null) {
+                Log.e(TAG, "❌ ERRO CRÍTICO: applicationContext é nulo!")
+                showToast("Erro: contexto inválido")
+                return
+            }
+            Log.d(TAG, "✅ Contexto válido")
+            
+            // ✅ VERIFICAÇÃO 2: Usuário
             val usuario = intent.getSerializableExtra("usuario") as? FuncionariosLocalModel
-            
             if (usuario == null) {
-                Log.e(TAG, "❌ Usuario nulo - não foi possível salvar o vetor facial.")
+                Log.e(TAG, "❌ ERRO CRÍTICO: Usuario nulo - não foi possível salvar o embedding facial.")
+                Log.e(TAG, "📋 Intent extras: ${intent.extras?.keySet()?.joinToString(", ") ?: "NENHUM"}")
                 showToast("Erro: usuário não encontrado.")
                 return
             }
             
-            Log.d(TAG, "👤 Usuário: ${usuario.nome} (${usuario.codigo})")
+            Log.d(TAG, "✅ Usuário válido: ${usuario.nome} (${usuario.codigo})")
             Log.d(TAG, "📊 Embedding tamanho: ${embedding.size}")
-            Log.d(TAG, "📊 Primeiros 3 valores: ${embedding.take(3).joinToString(", ") { "%.6f".format(it) }}")
             
-            // Validar embedding antes de salvar
+            // ✅ VERIFICAÇÃO 3: Embedding
             if (embedding.isEmpty()) {
-                Log.e(TAG, "❌ Embedding vazio!")
+                Log.e(TAG, "❌ ERRO CRÍTICO: Embedding vazio!")
                 showToast("Erro: embedding facial inválido")
                 return
             }
             
-            CoroutineScope(Dispatchers.IO).launch {
+            // ✅ VERIFICAÇÃO 4: Validação rigorosa
+            if (!validateEmbedding(embedding)) {
+                Log.e(TAG, "❌ ERRO CRÍTICO: Embedding falhou na validação rigorosa!")
+                showToast("Erro: embedding não passou na validação de qualidade")
+                return
+            }
+            Log.d(TAG, "✅ Embedding aprovado na validação")
+            
+            // ✅ CORREÇÃO: Usar runBlocking para garantir que a operação seja síncrona
+            kotlinx.coroutines.runBlocking {
                 try {
-                    val dao = AppDatabase.getInstance(applicationContext).faceDao()
+                    Log.d(TAG, "🔄 === INICIANDO OPERAÇÃO NO BANCO ===")
                     
-                    // ✅ VERIFICAR SE JÁ EXISTE FACE PARA ESTE FUNCIONÁRIO
+                    // ✅ VERIFICAÇÃO 5: Banco de dados
+                    val database = AppDatabase.getInstance(applicationContext)
+                    if (database == null) {
+                        Log.e(TAG, "❌ ERRO CRÍTICO: Banco de dados é nulo!")
+                        showToast("Erro: banco de dados não disponível")
+                        resetCaptures()
+                        return@runBlocking
+                    }
+                    Log.d(TAG, "✅ Banco de dados obtido")
+                    
+                    // ✅ VERIFICAÇÃO 6: DAO
+                    val dao = database.faceDao()
+                    if (dao == null) {
+                        Log.e(TAG, "❌ ERRO CRÍTICO: FaceDao é nulo!")
+                        showToast("Erro: DAO não disponível")
+                        resetCaptures()
+                        return@runBlocking
+                    }
+                    Log.d(TAG, "✅ FaceDao obtido")
+                    
+                    // ✅ VERIFICAÇÃO 7: Face existente
+                    Log.d(TAG, "🔍 Verificando face existente para: ${usuario.codigo}")
                     val existingFace = dao.getByFuncionarioId(usuario.codigo)
                     if (existingFace != null) {
                         Log.d(TAG, "🔄 Face existente encontrada para ${usuario.nome} (${usuario.codigo}) - substituindo...")
+                        Log.d(TAG, "📊 Face existente - ID: ${existingFace.id}, Embedding: ${existingFace.embedding.length} chars")
                         dao.deleteByFuncionarioId(usuario.codigo)
                         Log.d(TAG, "🗑️ Face antiga removida")
                     } else {
                         Log.d(TAG, "✨ Primeira face para o funcionário ${usuario.nome} (${usuario.codigo})")
                     }
                     
-                    // ✅ CONVERTER EMBEDDING PARA STRING
+                    // ✅ VERIFICAÇÃO 8: Conversão do embedding
                     val embeddingString = embedding.joinToString(",")
-                    Log.d(TAG, "📝 === SALVANDO EMBEDDING NO BANCO ===")
+                    Log.d(TAG, "📝 === CONVERTENDO EMBEDDING ===")
                     Log.d(TAG, "📝 Embedding string tamanho: ${embeddingString.length} caracteres")
                     Log.d(TAG, "📝 Embedding array tamanho: ${embedding.size}")
-                    Log.d(TAG, "📝 Embedding primeiros 3: ${embedding.take(3).joinToString(", ") { "%.6f".format(it) }}")
-                    Log.d(TAG, "📝 Embedding últimos 3: ${embedding.takeLast(3).joinToString(", ") { "%.6f".format(it) }}")
+                    Log.d(TAG, "📝 Embedding primeiros 5: ${embedding.take(5).joinToString(", ") { "%.6f".format(it) }}")
+                    Log.d(TAG, "📝 Embedding últimos 5: ${embedding.takeLast(5).joinToString(", ") { "%.6f".format(it) }}")
                     
-                    // ✅ CRIAR NOVA FACE
+                    // ✅ VERIFICAÇÃO 9: Criação da entidade
                     val faceEntity = FaceEntity(
                         id = 0, // Deixar o Room gerar o ID
                         funcionarioId = usuario.codigo,
                         embedding = embeddingString,
                         synced = true
                     )
+                    Log.d(TAG, "✅ FaceEntity criada: funcionarioId=${faceEntity.funcionarioId}, embedding=${faceEntity.embedding.length} chars")
                     
-                    // ✅ INSERIR NOVA FACE
+                    // ✅ VERIFICAÇÃO 10: Inserção
+                    Log.d(TAG, "💾 === INSERINDO EMBEDDING NO BANCO ===")
                     dao.insert(faceEntity)
+                    Log.d(TAG, "✅ Inserção executada")
                     
-                    // ✅ VERIFICAR SE FOI SALVO CORRETAMENTE
+                    // ✅ VERIFICAÇÃO 11: Confirmação
+                    Log.d(TAG, "🔍 === VERIFICANDO SE FOI SALVO ===")
                     val savedFace = dao.getByFuncionarioId(usuario.codigo)
                     if (savedFace != null) {
-                        Log.d(TAG, "✅ Face salva com sucesso!")
+                        Log.d(TAG, "✅ EMBEDDING SALVO COM SUCESSO!")
                         Log.d(TAG, "   ID: ${savedFace.id}")
                         Log.d(TAG, "   Funcionário: ${savedFace.funcionarioId}")
                         Log.d(TAG, "   Embedding tamanho: ${savedFace.embedding.split(",").size}")
                         Log.d(TAG, "   Sincronizado: ${savedFace.synced}")
+                        Log.d(TAG, "   Embedding string: ${savedFace.embedding.take(100)}...")
                         
-                        // ✅ MOSTRAR TELA DE CONFIRMAÇÃO
-                        withContext(Dispatchers.Main) {
-                            showSuccessScreen()
-                        }
+                        // ✅ VERIFICAÇÃO 12: Comparação
+                        val savedEmbedding = savedFace.embedding.split(",").map { it.toFloat() }.toFloatArray()
+                        val isEqual = embedding.contentEquals(savedEmbedding)
+                        Log.d(TAG, "🔍 Embeddings são iguais: $isEqual")
+                        
+                        // ✅ CORREÇÃO: Marcar como salvo e mostrar tela de sucesso
+                        alreadySaved = true
+                        isProcessingFace = false
+                        
+                        Log.d(TAG, "🎉 === NAVEGANDO PARA TELA DE SUCESSO ===")
+                        showSuccessScreen()
+                        
                     } else {
-                        Log.e(TAG, "❌ Face não foi encontrada após salvar!")
-                        withContext(Dispatchers.Main) {
-                            showToast("❌ Erro: face não foi salva corretamente")
-                            resetCaptures()
+                        Log.e(TAG, "❌ ERRO CRÍTICO: Embedding não foi encontrado após salvar!")
+                        Log.e(TAG, "🔍 Tentando buscar novamente...")
+                        val allFaces = dao.getAllFaces()
+                        Log.e(TAG, "📊 Total de faces no banco: ${allFaces.size}")
+                        allFaces.forEach { face ->
+                            Log.e(TAG, "   - ID: ${face.id}, Funcionario: ${face.funcionarioId}, Embedding: ${face.embedding.length} chars")
                         }
+                        
+                        showToast("❌ Erro: embedding não foi salvo corretamente")
+                        resetCaptures()
                     }
                     
                 } catch (e: Exception) {
-                    Log.e(TAG, "❌ Erro ao salvar face: ${e.message}", e)
-                    withContext(Dispatchers.Main) {
-                        showToast("❌ Erro ao salvar face: ${e.message}")
-                        resetCaptures()
-                    }
+                    Log.e(TAG, "❌ ERRO CRÍTICO ao salvar embedding: ${e.message}", e)
+                    Log.e(TAG, "📋 Stack trace completo:")
+                    e.printStackTrace()
+                    showToast("❌ Erro ao salvar embedding: ${e.message}")
+                    resetCaptures()
                 }
             }
             
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro geral ao salvar face", e)
-            showToast("❌ Erro ao salvar face: ${e.message}")
+            Log.e(TAG, "❌ ERRO CRÍTICO geral ao salvar embedding: ${e.message}", e)
+            Log.e(TAG, "📋 Stack trace completo:")
+            e.printStackTrace()
+            showToast("❌ Erro ao salvar embedding: ${e.message}")
             resetCaptures()
         }
     }
@@ -1414,37 +1683,52 @@ class CameraActivity : AppCompatActivity() {
     }
 
     /**
-     * 🔍 TESTE DE CONEXÃO COM O BANCO DE DADOS
+     * 🧪 TESTE: Verificar se o banco está funcionando
      */
     private fun testDatabaseConnection() {
         Log.d(TAG, "🔍 === TESTANDO CONEXÃO COM BANCO ===")
         
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val dao = AppDatabase.getInstance(applicationContext).faceDao()
-                val allFaces = dao.getAllFaces()
+                // ✅ TESTE 1: Obter banco
+                val database = AppDatabase.getInstance(applicationContext)
+                Log.d(TAG, "✅ Banco obtido: ${database != null}")
                 
+                // ✅ TESTE 2: Obter DAO
+                val faceDao = database.faceDao()
+                Log.d(TAG, "✅ FaceDao obtido: ${faceDao != null}")
+                
+                // ✅ TESTE 3: Listar faces existentes
+                val allFaces = faceDao.getAllFaces()
                 Log.d(TAG, "📊 Total de faces no banco: ${allFaces.size}")
                 
+                allFaces.forEach { face ->
+                    Log.d(TAG, "   - ID: ${face.id}, Funcionario: ${face.funcionarioId}, Embedding: ${face.embedding.length} chars")
+                }
+                
+                // ✅ TESTE 4: Verificar usuário atual
                 val usuario = intent.getSerializableExtra("usuario") as? FuncionariosLocalModel
                 if (usuario != null) {
-                    Log.d(TAG, "👤 Verificando face para usuário: ${usuario.nome} (${usuario.codigo})")
+                    Log.d(TAG, "👤 Usuário atual: ${usuario.nome} (${usuario.codigo})")
                     
-                    val existingFace = dao.getByFuncionarioId(usuario.codigo)
+                    val existingFace = faceDao.getByFuncionarioId(usuario.codigo)
                     if (existingFace != null) {
-                        Log.d(TAG, "✅ Face existente encontrada:")
+                        Log.d(TAG, "✅ Face existente encontrada para este usuário")
                         Log.d(TAG, "   ID: ${existingFace.id}")
-                        Log.d(TAG, "   Embedding tamanho: ${existingFace.embedding.split(",").size}")
+                        Log.d(TAG, "   Embedding: ${existingFace.embedding.length} chars")
                         Log.d(TAG, "   Sincronizado: ${existingFace.synced}")
                     } else {
                         Log.d(TAG, "📝 Nenhuma face encontrada para este usuário")
                     }
                 } else {
-                    Log.w(TAG, "⚠️ Usuário não informado no intent")
+                    Log.w(TAG, "⚠️ Usuário não encontrado no intent")
                 }
                 
+                Log.d(TAG, "✅ Teste de banco concluído com sucesso")
+                
             } catch (e: Exception) {
-                Log.e(TAG, "❌ Erro ao testar banco de dados", e)
+                Log.e(TAG, "❌ Erro no teste de banco: ${e.message}", e)
+                e.printStackTrace()
             }
         }
     }

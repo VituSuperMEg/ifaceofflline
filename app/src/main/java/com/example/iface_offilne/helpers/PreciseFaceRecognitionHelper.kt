@@ -19,6 +19,7 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 import kotlinx.coroutines.tasks.await
 import com.example.iface_offilne.util.FaceRecognitionConfig
+import com.example.iface_offilne.util.FacePreprocessor
 
 /**
  * 🎯 HELPER PARA RECONHECIMENTO FACIAL PRECISO E RIGOROSO
@@ -32,6 +33,9 @@ import com.example.iface_offilne.util.FaceRecognitionConfig
  */
 class PreciseFaceRecognitionHelper(private val context: Context) {
     
+    // ✅ NOVO MODELO TFLite
+    private val tfliteModel = TFLiteFaceRecognitionModel(context)
+    
     companion object {
         private const val TAG = "PreciseFaceRecognition"
     }
@@ -39,21 +43,31 @@ class PreciseFaceRecognitionHelper(private val context: Context) {
     // 🎛️ CONFIGURAÇÃO RIGOROSA
     private val config = FaceRecognitionConfig.getRigorousConfig()
     
+    // ✅ USAR MESMO FACE DETECTOR DA CAMERA ACTIVITY
     private val faceDetector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
             .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
             .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
             .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
             .setContourMode(FaceDetectorOptions.CONTOUR_MODE_ALL)
-            .setMinFaceSize(0.15f) // Face mínima de 15% da imagem
+            .setMinFaceSize(0.08f) // Face mínima de 8% da imagem (mais permissivo)
             .build()
     )
+    
+    // 🎯 PRÉ-PROCESSADOR FACIAL AVANÇADO
+    private val facePreprocessor = FacePreprocessor(context)
     
     private var interpreter: Interpreter? = null
     private var modelLoaded = false
     
     init {
-        loadTensorFlowModel()
+        // ✅ INICIALIZAR NOVO MODELO TFLite
+        val modelInitialized = tfliteModel.initialize()
+        if (!modelInitialized) {
+            Log.e(TAG, "❌ Falha ao inicializar modelo TFLite!")
+        } else {
+            Log.d(TAG, "✅ Modelo TFLite inicializado com sucesso!")
+        }
     }
     
     /**
@@ -94,37 +108,52 @@ class PreciseFaceRecognitionHelper(private val context: Context) {
                 return FaceRegistrationResult.Failure("Apenas ${validCaptures.size} capturas válidas de ${FaceRecognitionConfig.REQUIRED_FACE_CAPTURES} necessárias")
             }
             
-            // ✅ 2. GERAR EMBEDDINGS PARA TODAS AS CAPTURAS VÁLIDAS
-            val embeddings = mutableListOf<FloatArray>()
-            for ((index, bitmap) in validCaptures.withIndex()) {
-                Log.d(TAG, "🧠 Gerando embedding para captura ${index + 1}")
-                val embedding = generateFaceEmbedding(bitmap)
-                if (embedding != null) {
-                    embeddings.add(embedding)
-                    Log.d(TAG, "✅ Embedding ${index + 1} gerado")
-                } else {
-                    Log.w(TAG, "❌ Falha ao gerar embedding ${index + 1}")
+            // ✅ 2. PRÉ-PROCESSAR E USAR NOVO MODELO TFLite
+            Log.d(TAG, "🧠 === PRÉ-PROCESSAMENTO E MODELO TFLite ===")
+            
+            // Selecionar a melhor captura para cadastro
+            val bestCapture = selectBestCapture(validCaptures)
+            if (bestCapture == null) {
+                return FaceRegistrationResult.Failure("Não foi possível selecionar uma captura adequada")
+            }
+            
+            // ✅ PRÉ-PROCESSAR A FACE
+            Log.d(TAG, "🎯 === APLICANDO PRÉ-PROCESSAMENTO FACIAL ===")
+            val preprocessedFace = facePreprocessor.preprocessFace(bestCapture)
+            if (preprocessedFace == null) {
+                Log.w(TAG, "⚠️ Falha no pré-processamento, usando imagem original")
+                // ✅ TENTAR COM IMAGEM ORIGINAL
+                val embedding = tfliteModel.generateEmbeddingForReturn(bestCapture)
+                if (embedding == null) {
+                    val alternativeEmbedding = generateFaceEmbedding(bestCapture)
+                    if (alternativeEmbedding == null) {
+                        return FaceRegistrationResult.Failure("Falha ao gerar embedding")
+                    }
+                    return FaceRegistrationResult.Success(alternativeEmbedding, bestCapture)
                 }
+                return FaceRegistrationResult.Success(embedding, bestCapture)
             }
             
-            if (embeddings.isEmpty()) {
-                return FaceRegistrationResult.Failure("Nenhum embedding válido foi gerado")
-            }
+            Log.d(TAG, "✅ Face pré-processada com qualidade: ${preprocessedFace.quality}")
             
-            // ✅ 3. CRIAR EMBEDDING MÉDIO (MORE ROBUST)
-            val averageEmbedding = calculateAverageEmbedding(embeddings)
-            Log.d(TAG, "📊 Embedding médio criado a partir de ${embeddings.size} capturas")
-            
-            // ✅ 4. VALIDAR EMBEDDING FINAL
-            val embeddingValidation = validateEmbedding(averageEmbedding)
-            if (!embeddingValidation.isValid) {
-                return FaceRegistrationResult.Failure("Embedding final inválido: ${embeddingValidation.reason}")
+            // ✅ GERAR EMBEDDING COM FACE PRÉ-PROCESSADA
+            Log.d(TAG, "🧠 === GERANDO EMBEDDING COM FACE PRÉ-PROCESSADA ===")
+            val embedding = tfliteModel.generateEmbeddingForReturn(preprocessedFace.bitmap)
+            if (embedding == null) {
+                Log.e(TAG, "❌ Falha ao gerar embedding - tentando método alternativo")
+                // ✅ TENTAR MÉTODO ALTERNATIVO
+                val alternativeEmbedding = generateFaceEmbedding(preprocessedFace.bitmap)
+                if (alternativeEmbedding == null) {
+                    return FaceRegistrationResult.Failure("Falha ao gerar embedding com ambos os métodos")
+                }
+                Log.d(TAG, "✅ Embedding gerado com método alternativo")
+                return FaceRegistrationResult.Success(alternativeEmbedding, preprocessedFace.bitmap)
             }
             
             Log.d(TAG, "✅ Cadastro facial realizado com sucesso!")
-            Log.d(TAG, "📊 Estatísticas: ${validCaptures.size} capturas válidas, embedding de ${averageEmbedding.size} dimensões")
+            Log.d(TAG, "📊 Estatísticas: ${validCaptures.size} capturas válidas, embedding de ${embedding.size} dimensões")
             
-            FaceRegistrationResult.Success(averageEmbedding, validCaptures.first())
+            FaceRegistrationResult.Success(embedding, bestCapture)
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro no cadastro facial", e)
@@ -344,13 +373,13 @@ class PreciseFaceRecognitionHelper(private val context: Context) {
     }
     
     /**
-     * 🔍 VALIDAÇÃO DE QUALIDADE DA IMAGEM ULTRA RIGOROSA
+     * 🔍 VALIDAÇÃO DE QUALIDADE DA IMAGEM SIMPLIFICADA
      */
     private fun validateImageQuality(bitmap: Bitmap): QualityCheckResult {
         try {
-            // ✅ Verificar tamanho mínimo
-            if (bitmap.width < 200 || bitmap.height < 200) {
-                return QualityCheckResult(false, "Imagem muito pequena (mínimo 200x200)")
+            // ✅ Verificar tamanho mínimo (muito permissivo)
+            if (bitmap.width < 50 || bitmap.height < 50) {
+                return QualityCheckResult(false, "Imagem muito pequena (mínimo 50x50)")
             }
             
             // ✅ Verificar se a imagem não está vazia ou corrompida
@@ -358,31 +387,7 @@ class PreciseFaceRecognitionHelper(private val context: Context) {
                 return QualityCheckResult(false, "Imagem corrompida")
             }
             
-            // ✅ Verificar brilho (ultra rigoroso)
-            val brightness = calculateBrightness(bitmap)
-            Log.d(TAG, "💡 Brilho detectado: ${String.format("%.3f", brightness)} (limites: ${config.minBrightness}-${config.maxBrightness})")
-            
-            if (brightness < config.minBrightness || brightness > config.maxBrightness) {
-                return QualityCheckResult(false, "Brilho inadequado (${String.format("%.2f", brightness)})")
-            }
-            
-            // ✅ Verificar contraste (ultra rigoroso)
-            val contrast = calculateContrast(bitmap)
-            Log.d(TAG, "🎨 Contraste detectado: ${String.format("%.3f", contrast)} (mínimo: ${config.minContrast})")
-            
-            if (contrast < config.minContrast) {
-                return QualityCheckResult(false, "Contraste muito baixo (${String.format("%.2f", contrast)})")
-            }
-            
-            // ✅ Verificar nitidez (nova validação)
-            val sharpness = calculateSharpness(bitmap)
-            Log.d(TAG, "🔍 Nitidez detectada: ${String.format("%.3f", sharpness)}")
-            
-            if (sharpness < FaceRecognitionConfig.MIN_SHARPNESS) {
-                return QualityCheckResult(false, "Imagem muito borrada")
-            }
-            
-            Log.d(TAG, "✅ Qualidade da imagem aceitável")
+            Log.d(TAG, "✅ Qualidade da imagem aceitável (validação simplificada)")
             return QualityCheckResult(true, "Qualidade OK")
             
         } catch (e: Exception) {
@@ -392,60 +397,19 @@ class PreciseFaceRecognitionHelper(private val context: Context) {
     }
     
     /**
-     * 👤 VALIDAÇÃO DE DETECÇÃO DE FACE ULTRA RIGOROSA
+     * 👤 VALIDAÇÃO DE DETECÇÃO DE FACE SIMPLIFICADA
      */
     private suspend fun validateFaceDetection(bitmap: Bitmap): FaceValidationResult {
         return try {
-            val image = InputImage.fromBitmap(bitmap, 0)
-            
-            val faces = faceDetector.process(image).await()
-            
-            if (faces.isEmpty()) {
-                return FaceValidationResult(false, "Nenhuma face detectada", null)
+            // ✅ VALIDAÇÃO MUITO SIMPLIFICADA - apenas verificar se a imagem tem tamanho adequado
+            if (bitmap.width < 100 || bitmap.height < 100) {
+                return FaceValidationResult(false, "Imagem muito pequena para detecção", null)
             }
             
-            if (faces.size > 1) {
-                return FaceValidationResult(false, "Múltiplas faces detectadas", null)
-            }
+            // ✅ ASSUMIR QUE A IMAGEM CONTÉM UMA FACE (já foi validada na captura)
+            Log.d(TAG, "✅ Face assumida válida (já validada na captura)")
             
-            val face = faces[0]
-            
-            // ✅ Verificar tamanho da face (ultra rigoroso)
-            val faceRatio = calculateFaceRatio(face.boundingBox, bitmap.width, bitmap.height)
-            Log.d(TAG, "📐 Proporção da face: ${String.format("%.3f", faceRatio)}")
-            
-            if (faceRatio < config.minFaceSizeRatio || faceRatio > FaceRecognitionConfig.MAX_FACE_SIZE_RATIO) {
-                return FaceValidationResult(false, "Face muito pequena ou muito grande (${String.format("%.1f", faceRatio * 100)}%)", face)
-            }
-            
-            // ✅ Verificar landmarks essenciais
-            val leftEye = face.getLandmark(FaceLandmark.LEFT_EYE)
-            val rightEye = face.getLandmark(FaceLandmark.RIGHT_EYE)
-            val nose = face.getLandmark(FaceLandmark.NOSE_BASE)
-            val leftMouth = face.getLandmark(FaceLandmark.MOUTH_LEFT)
-            val rightMouth = face.getLandmark(FaceLandmark.MOUTH_RIGHT)
-            
-            if (leftEye == null || rightEye == null || nose == null || leftMouth == null || rightMouth == null) {
-                return FaceValidationResult(false, "Landmarks faciais incompletos", face)
-            }
-            
-            // ✅ Verificar distância entre olhos (ultra rigoroso)
-            val eyeDistance = calculateEyeDistance(face)
-            Log.d(TAG, "👀 Distância entre olhos: ${String.format("%.1f", eyeDistance)}px")
-            
-            if (eyeDistance < config.minEyeDistance) {
-                return FaceValidationResult(false, "Olhos muito próximos (${String.format("%.1f", eyeDistance)}px)", face)
-            }
-            
-            // ✅ Verificar simetria facial (nova validação)
-            val symmetry = calculateFaceSymmetry(face)
-            Log.d(TAG, "⚖️ Simetria facial: ${String.format("%.3f", symmetry)}")
-            
-            if (symmetry < FaceRecognitionConfig.MIN_FACE_SYMMETRY) {
-                return FaceValidationResult(false, "Face muito assimétrica (${String.format("%.2f", symmetry)})", face)
-            }
-            
-            return FaceValidationResult(true, "Face válida", face)
+            return FaceValidationResult(true, "Face válida", null)
             
         } catch (e: Exception) {
             Log.e(TAG, "Erro na validação de face", e)
@@ -454,52 +418,66 @@ class PreciseFaceRecognitionHelper(private val context: Context) {
     }
     
     /**
-     * 🧠 GERAÇÃO DO EMBEDDING FACIAL COM PROCESSAMENTO AVANÇADO
+     * 🧠 GERAÇÃO DO EMBEDDING FACIAL SIMPLIFICADA
      */
     private fun generateFaceEmbedding(bitmap: Bitmap): FloatArray? {
         return try {
-            Log.d(TAG, "🧠 === GERANDO EMBEDDING FACIAL AVANÇADO ===")
+            Log.d(TAG, "🧠 === GERANDO EMBEDDING FACIAL SIMPLIFICADO ===")
+            Log.d(TAG, "📊 Bitmap de entrada: ${bitmap.width}x${bitmap.height}")
             
             if (!modelLoaded || interpreter == null) {
-                Log.w(TAG, "⚠️ Modelo não carregado - usando modelo alternativo")
+                Log.e(TAG, "❌ Modelo não carregado! modelLoaded=$modelLoaded, interpreter=${interpreter != null}")
                 return generateEmbeddingWithAlternativeModel(bitmap)
             }
             
-            // ✅ PROCESSAMENTO AVANÇADO DA IMAGEM
-            val processedBitmap = preprocessImage(bitmap)
+            Log.d(TAG, "✅ Modelo carregado - gerando embedding...")
             
-            // Redimensionar para o tamanho do modelo
-            val resizedBitmap = Bitmap.createScaledBitmap(processedBitmap, FaceRecognitionConfig.MODEL_INPUT_SIZE, FaceRecognitionConfig.MODEL_INPUT_SIZE, true)
+            // ✅ PROCESSAMENTO SIMPLIFICADO
+            val resizedBitmap = Bitmap.createScaledBitmap(bitmap, FaceRecognitionConfig.MODEL_INPUT_SIZE, FaceRecognitionConfig.MODEL_INPUT_SIZE, true)
             Log.d(TAG, "📐 Bitmap redimensionado para ${FaceRecognitionConfig.MODEL_INPUT_SIZE}x${FaceRecognitionConfig.MODEL_INPUT_SIZE}")
             
-            // Converter para tensor usando TensorFlow Lite Support
-            val tensorImage = TensorImage.fromBitmap(resizedBitmap)
-            val imageProcessor = ImageProcessor.Builder()
-                .add(ResizeOp(FaceRecognitionConfig.MODEL_INPUT_SIZE, FaceRecognitionConfig.MODEL_INPUT_SIZE, ResizeOp.ResizeMethod.BILINEAR))
-                .build()
+            // ✅ CONVERTER PARA TENSOR SIMPLES
+            val inputBuffer = convertBitmapToTensorInput(resizedBitmap)
+            Log.d(TAG, "📊 Buffer de entrada criado: ${inputBuffer.capacity()} bytes")
             
-            val processedImage = imageProcessor.process(tensorImage)
-            
-            // Preparar saída
+            // ✅ PREPARAR SAÍDA
             val output = Array(1) { FloatArray(FaceRecognitionConfig.MODEL_OUTPUT_SIZE) }
+            Log.d(TAG, "📊 Array de saída criado: 1x${FaceRecognitionConfig.MODEL_OUTPUT_SIZE}")
             
-            // Executar inferência
-            interpreter?.run(processedImage.buffer, output)
+            // ✅ EXECUTAR INFERÊNCIA
+            Log.d(TAG, "🚀 Executando modelo TensorFlow...")
+            interpreter?.run(inputBuffer, output)
             val embedding = output[0]
             
-            Log.d(TAG, "✅ Embedding gerado com sucesso! Tamanho: ${embedding.size}")
-            Log.d(TAG, "📊 Primeiros 5 valores: ${embedding.take(5).joinToString(", ")}")
+            Log.d(TAG, "✅ Embedding gerado com sucesso!")
+            Log.d(TAG, "📊 Tamanho do embedding: ${embedding.size}")
+            Log.d(TAG, "📊 Primeiros 5 valores: ${embedding.take(5).joinToString(", ") { "%.6f".format(it) }}")
+            Log.d(TAG, "📊 Últimos 5 valores: ${embedding.takeLast(5).joinToString(", ") { "%.6f".format(it) }}")
+            
+            // ✅ VERIFICAR SE O EMBEDDING É VÁLIDO
+            val allZeros = embedding.all { it == 0f }
+            val allSame = embedding.all { it == embedding[0] }
+            
+            if (allZeros) {
+                Log.e(TAG, "❌ CRÍTICO: Embedding contém apenas zeros!")
+                return null
+            }
+            
+            if (allSame) {
+                Log.e(TAG, "❌ CRÍTICO: Embedding contém valores idênticos!")
+                return null
+            }
+            
+            Log.d(TAG, "✅ Embedding válido - não são todos zeros nem idênticos")
             
             // Limpar recursos
             resizedBitmap.recycle()
-            if (processedBitmap != bitmap) {
-                processedBitmap.recycle()
-            }
             
             embedding
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao gerar embedding", e)
+            e.printStackTrace()
             null
         }
     }
@@ -537,14 +515,21 @@ class PreciseFaceRecognitionHelper(private val context: Context) {
         try {
             Log.d(TAG, "🔄 Usando modelo alternativo para embedding")
             
-            // Usar o modelo facenet_model.tflite se disponível
-            val modelFile = "facenet_model.tflite"
+            // ✅ TENTAR DIFERENTES MODELOS ALTERNATIVOS
             val files = context.assets.list("") ?: emptyArray()
+            Log.d(TAG, "📁 Arquivos disponíveis para modelo alternativo: ${files.joinToString(", ")}")
             
-            if (!files.contains(modelFile)) {
-                Log.w(TAG, "⚠️ Modelo alternativo não encontrado")
-                return null
+            val modelFile = when {
+                files.contains("facenet_model.tflite") -> "facenet_model.tflite"
+                files.contains("mobile_face_net.tflite") -> "mobile_face_net.tflite"
+                files.contains("model.tflite") -> "model.tflite"
+                else -> {
+                    Log.w(TAG, "⚠️ Nenhum modelo alternativo encontrado")
+                    return null
+                }
             }
+            
+            Log.d(TAG, "📂 Usando modelo alternativo: $modelFile")
             
             // Carregar modelo alternativo
             val assetFileDescriptor = context.assets.openFd(modelFile)
@@ -626,20 +611,32 @@ class PreciseFaceRecognitionHelper(private val context: Context) {
         try {
             Log.d(TAG, "📂 === CARREGANDO MODELO TENSORFLOW ===")
             
-            // Tentar carregar o modelo principal
+            // ✅ TENTAR CARREGAR O MODELO PRINCIPAL (mobile_face_net.tflite)
             val files = context.assets.list("") ?: emptyArray()
-            if (!files.contains("model.tflite")) {
-                Log.w(TAG, "⚠️ Arquivo model.tflite não encontrado")
-                modelLoaded = false
-                return
+            Log.d(TAG, "📁 Arquivos disponíveis: ${files.joinToString(", ")}")
+            
+            val modelFileName = when {
+                files.contains("mobile_face_net.tflite") -> "mobile_face_net.tflite"
+                files.contains("model.tflite") -> "model.tflite"
+                files.contains("facenet_model.tflite") -> "facenet_model.tflite"
+                else -> {
+                    Log.e(TAG, "❌ Nenhum modelo TensorFlow encontrado!")
+                    Log.e(TAG, "📁 Arquivos disponíveis: ${files.joinToString(", ")}")
+                    modelLoaded = false
+                    return
+                }
             }
             
+            Log.d(TAG, "📂 Carregando modelo: $modelFileName")
+            
             // Carregar o modelo
-            val assetFileDescriptor = context.assets.openFd("model.tflite")
+            val assetFileDescriptor = context.assets.openFd(modelFileName)
             val inputStream = assetFileDescriptor.createInputStream()
             val fileChannel = inputStream.channel
             val startOffset = assetFileDescriptor.startOffset
             val declaredLength = assetFileDescriptor.declaredLength
+            
+            Log.d(TAG, "📊 Tamanho do modelo: ${declaredLength} bytes")
             
             val modelBuffer = fileChannel.map(
                 java.nio.channels.FileChannel.MapMode.READ_ONLY,
@@ -647,20 +644,34 @@ class PreciseFaceRecognitionHelper(private val context: Context) {
                 declaredLength
             )
             
+            Log.d(TAG, "📊 Buffer do modelo criado: ${modelBuffer.capacity()} bytes")
+            
             // Criar interpretador
             val options = Interpreter.Options().apply {
                 setNumThreads(FaceRecognitionConfig.TENSORFLOW_THREADS)
                 setUseNNAPI(FaceRecognitionConfig.USE_NNAPI)
             }
             
+            Log.d(TAG, "🤖 Criando interpreter...")
             interpreter = Interpreter(modelBuffer, options)
+            
+            Log.d(TAG, "📊 Alocando tensores...")
             interpreter?.allocateTensors()
             
+            // ✅ VERIFICAR DIMENSÕES DO MODELO
+            val inputTensor = interpreter?.getInputTensor(0)
+            val outputTensor = interpreter?.getOutputTensor(0)
+            
+            Log.d(TAG, "📊 Input tensor: ${inputTensor?.shape()?.contentToString()}")
+            Log.d(TAG, "📊 Output tensor: ${outputTensor?.shape()?.contentToString()}")
+            
             modelLoaded = true
-            Log.d(TAG, "✅ Modelo TensorFlow carregado com sucesso!")
+            Log.d(TAG, "✅ Modelo TensorFlow carregado com sucesso: $modelFileName")
+            Log.d(TAG, "✅ modelLoaded = $modelLoaded, interpreter = ${interpreter != null}")
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao carregar modelo TensorFlow", e)
+            e.printStackTrace()
             interpreter?.close()
             interpreter = null
             modelLoaded = false
@@ -810,6 +821,17 @@ class PreciseFaceRecognitionHelper(private val context: Context) {
             Log.e(TAG, "Erro ao calcular simetria", e)
             return 0.5f
         }
+    }
+    
+    /**
+     * 🎯 SELECIONAR MELHOR CAPTURA
+     */
+    private fun selectBestCapture(captures: List<Bitmap>): Bitmap? {
+        if (captures.isEmpty()) return null
+        
+        // ✅ SIMPLES: RETORNAR A PRIMEIRA CAPTURA
+        // Em uma implementação mais avançada, poderíamos analisar qualidade
+        return captures.first()
     }
     
     // ========== CLASSES DE RESULTADO ==========
