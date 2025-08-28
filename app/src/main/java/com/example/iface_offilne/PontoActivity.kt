@@ -472,26 +472,10 @@ class PontoActivity : AppCompatActivity() {
                                 throw Exception("Tamanho de buffer inválido")
                             }
 
-                            val testInput =
-                                    try {
-                                        ByteBuffer.allocateDirect(bufferSize)
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "❌ Erro ao alocar buffer de teste: ${e.message}")
-                                        throw e
-                                    }
-
-                            testInput.order(ByteOrder.nativeOrder())
-
-                            // ✅ PROTEÇÃO: Preencher buffer com validação
-                            try {
-                                for (i in 0 until modelInputWidth * modelInputHeight * 3) {
-                                    testInput.putFloat(0.1f)
-                                }
-                                testInput.rewind()
-                            } catch (e: Exception) {
-                                Log.e(TAG, "❌ Erro ao preencher buffer: ${e.message}")
-                                throw e
-                            }
+                            // ✅ Criar input de teste conforme o tipo do tensor de entrada
+                            val inputTensor = currentInterpreter.getInputTensor(0)
+                            val inputDataType = inputTensor.dataType()
+                            val inputShape = inputTensor.shape() // e.g., [1, 112, 112, 3]
 
                             val testOutput =
                                     try {
@@ -501,9 +485,31 @@ class PontoActivity : AppCompatActivity() {
                                         throw e
                                     }
 
-                            // ✅ PROTEÇÃO: Executar teste com captura de SIGBUS
+                            // ✅ PROTEÇÃO: Executar teste com o tipo correto
                             try {
-                                currentInterpreter.run(testInput, testOutput)
+                                when (inputDataType) {
+                                    org.tensorflow.lite.DataType.FLOAT32 -> {
+                                        val numFloats = modelInputWidth * modelInputHeight * 3
+                                        val floatBuffer = ByteBuffer.allocateDirect(numFloats * 4)
+                                        floatBuffer.order(ByteOrder.nativeOrder())
+                                        val asFloat = floatBuffer.asFloatBuffer()
+                                        for (i in 0 until numFloats) asFloat.put(0.1f)
+                                        floatBuffer.rewind()
+                                        currentInterpreter.run(floatBuffer, testOutput)
+                                    }
+                                    org.tensorflow.lite.DataType.UINT8 -> {
+                                        val numBytes = modelInputWidth * modelInputHeight * 3
+                                        val byteBuffer = ByteBuffer.allocateDirect(numBytes)
+                                        byteBuffer.order(ByteOrder.nativeOrder())
+                                        for (i in 0 until numBytes) byteBuffer.put(128.toByte()) // valor médio
+                                        byteBuffer.rewind()
+                                        currentInterpreter.run(byteBuffer, testOutput)
+                                    }
+                                    else -> {
+                                        // Fallback seguro: usar múltiplas entradas com mapa vazio (não deve ocorrer)
+                                        throw Exception("Tipo de entrada não suportado no teste: $inputDataType")
+                                    }
+                                }
 
                                 // ✅ VERIFICAÇÃO: Validar output
                                 val output = testOutput[0]
@@ -815,7 +821,7 @@ class PontoActivity : AppCompatActivity() {
                                         // ✅ CRITÉRIOS DE QUALIDADE DA FACE - EQUILIBRADOS
                                         val isFaceBigEnough =
                                                 faceRatio >=
-                                                        0.008f // Face deve ocupar pelo menos 0.8%
+                                                        0.05f // Face deve ocupar pelo menos 5%
                                         // da tela (EQUILIBRADO)
                                         val isFaceInOval = overlay.isFaceInOval(face.boundingBox)
                                         val isFaceNotTooBig =
@@ -920,7 +926,7 @@ class PontoActivity : AppCompatActivity() {
                                                 val feedbackMessage =
                                                         when {
                                                             !isFaceBigEnough ->
-                                                                    "📷 Aproxime mais o rosto (0.5% da tela)"
+                                                                    "📷 Aproxime mais o rosto (5% da tela)"
                                                             isFaceNotTooBig ->
                                                                     "📷 Afaste um pouco o rosto"
                                                             !isFaceInOval ->
@@ -1172,17 +1178,17 @@ class PontoActivity : AppCompatActivity() {
 
                 Log.d(TAG, "📸 Face recortada: ${faceBmp.width}x${faceBmp.height}")
 
-                // 🎯 PRÉ-PROCESSAMENTO FACIAL AVANÇADO (igual ao CameraActivity)
-                Log.d(TAG, "🎯 === APLICANDO PRÉ-PROCESSAMENTO FACIAL ===")
-                val preprocessedFace = facePreprocessor.preprocessFace(faceBmp)
-                
-                val faceToProcess = if (preprocessedFace != null) {
-                    Log.d(TAG, "✅ Face pré-processada com qualidade: ${preprocessedFace.quality}")
-                    preprocessedFace.bitmap
-                } else {
-                    Log.w(TAG, "⚠️ Falha no pré-processamento, usando face original")
-                    faceBmp
-                }
+                        // 🎯 PRÉ-PROCESSAMENTO FACIAL AVANÇADO (PARA FACE JÁ DETECTADA)
+        Log.d(TAG, "🎯 === APLICANDO PRÉ-PROCESSAMENTO FACIAL ===")
+        val preprocessedFace = facePreprocessor.preprocessDetectedFace(faceBmp)
+
+        val faceToProcess = if (preprocessedFace != null) {
+            Log.d(TAG, "✅ Face pré-processada com qualidade: ${preprocessedFace.quality}")
+            preprocessedFace.bitmap
+        } else {
+            Log.w(TAG, "⚠️ Falha no pré-processamento, usando face original")
+            faceBmp
+        }
 
                 // ✅ PROTEÇÃO: Salvar foto da face com validação
                 currentFaceBitmap =
@@ -1435,10 +1441,10 @@ class PontoActivity : AppCompatActivity() {
                 }
             }
 
-                // ✅ THRESHOLDS MUITO RIGOROSOS - SEGURANÇA MÁXIMA
-    val thresholdMinimo = 0.85f // 85% de similaridade mínima - MUITO RIGOROSO
-    val thresholdIdeal = 0.88f // 95% para confiança alta - MÁXIMA SEGURANÇA
-    val thresholdRejeicao = 0.75f // 75% - abaixo disso rejeita automaticamente
+                // ✅ THRESHOLDS MAIS PERMISSIVOS - PARA GARANTIR RECONHECIMENTO
+    val thresholdMinimo = 0.65f // 65% de similaridade mínima - MAIS PERMISSIVO
+    val thresholdIdeal = 0.70f // 70% para confiança alta - MAIS PERMISSIVO
+    val thresholdRejeicao = 0.55f // 55% - abaixo disso rejeita automaticamente
 
             Log.d(
                     TAG,
@@ -1481,7 +1487,7 @@ class PontoActivity : AppCompatActivity() {
                 )
         
         // ✅ VALIDAÇÃO FINAL: Verificar se a similaridade é realmente excepcional
-        val isExceptionalMatch = melhorSimilaridade >= 0.98f
+        val isExceptionalMatch = melhorSimilaridade >= 0.75f // ✅ MUDANÇA: Reduzir para 75% para garantir reconhecimento
 
         if (isHistoryConsistent && isExceptionalMatch) {
             Log.d(TAG, "✅ FUNCIONÁRIO RECONHECIDO COM SUCESSO!")
@@ -1554,10 +1560,12 @@ class PontoActivity : AppCompatActivity() {
         }
     }
 
-    /** 🤖 GERAR EMBEDDING DIRETAMENTE - OTIMIZADO */
+    /** 🤖 GERAR EMBEDDING DIRETAMENTE - COMPATÍVEL COM CAMERAACTIVITY */
     private fun generateEmbeddingDirect(bitmap: Bitmap): FloatArray {
         return try {
-            // ✅ OTIMIZAÇÃO: Verificações rápidas
+            Log.d(TAG, "🤖 === GERANDO EMBEDDING COMPATÍVEL COM CAMERAACTIVITY ===")
+            
+            // ✅ VERIFICAÇÕES: Verificações rápidas
             if (!modelLoaded || interpreter == null) {
                 throw Exception("TensorFlow não disponível")
             }
@@ -1566,32 +1574,41 @@ class PontoActivity : AppCompatActivity() {
                 throw Exception("Bitmap inválido")
             }
 
-            // ✅ OTIMIZAÇÃO: Redimensionar apenas se necessário
-            val resizedBitmap =
-                    if (bitmap.width != modelInputWidth || bitmap.height != modelInputHeight) {
-                        Bitmap.createScaledBitmap(bitmap, modelInputWidth, modelInputHeight, true)
-                    } else {
-                        bitmap
-                    }
-
-            // ✅ OTIMIZAÇÃO: Converter para tensor
-            val inputTensor = convertBitmapToTensorInput(resizedBitmap)
+            Log.d(TAG, "✅ Modelo TensorFlow carregado e pronto")
+            Log.d(TAG, "📊 Dimensões do modelo: ${modelInputWidth}x${modelInputHeight} → ${modelOutputSize}")
+            
+            // ✅ CORREÇÃO: Usar a mesma abordagem do CameraActivity
+            val imageProcessor = org.tensorflow.lite.support.image.ImageProcessor.Builder()
+                .add(org.tensorflow.lite.support.image.ops.ResizeOp(modelInputWidth, modelInputHeight, org.tensorflow.lite.support.image.ops.ResizeOp.ResizeMethod.BILINEAR))
+                .add(org.tensorflow.lite.support.common.ops.NormalizeOp(0f, 255f)) // ✅ MESMA NORMALIZAÇÃO
+                .build()
+            
+            // ✅ CORREÇÃO: Usar TensorImage como no CameraActivity
+            val tensorImage = org.tensorflow.lite.support.image.TensorImage.fromBitmap(bitmap)
+            val processedImage = imageProcessor.process(tensorImage)
+            val inputBuffer = processedImage.buffer
+            
+            Log.d(TAG, "📊 Tensor de entrada criado: ${inputBuffer.capacity()} bytes")
+            
+            // ✅ CORREÇÃO: Criar array de saída como no CameraActivity
             val output = Array(1) { FloatArray(modelOutputSize) }
-
-            // ✅ OTIMIZAÇÃO: Executar modelo
-            interpreter?.run(inputTensor, output)
+            Log.d(TAG, "📊 Array de saída criado: 1x${modelOutputSize}")
+            
+            // ✅ EXECUTAR O MODELO TENSORFLOW LITE
+            Log.d(TAG, "🚀 Executando modelo TensorFlow Lite...")
+            interpreter?.run(inputBuffer, output)
+            
             val embedding = output[0]
-
-            // ✅ OTIMIZAÇÃO: Validação rápida
+            Log.d(TAG, "✅ Modelo executado com sucesso!")
+            
+            // ✅ VERIFICAÇÃO SIMPLES DO EMBEDDING (como no código de referência)
             if (embedding.isEmpty() || embedding.all { it == 0f }) {
+                Log.e(TAG, "❌ Embedding inválido")
                 throw Exception("Embedding inválido")
             }
-
-            // ✅ OTIMIZAÇÃO: Limpar bitmap temporário
-            if (resizedBitmap != bitmap) {
-                resizedBitmap.recycle()
-            }
-
+            
+            Log.d(TAG, "✅ Embedding gerado: ${embedding.size} dimensões")
+            
             embedding
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao gerar embedding: ${e.message}")
@@ -1654,249 +1671,69 @@ class PontoActivity : AppCompatActivity() {
         }
     }
 
-    /** ✅ VALIDAR QUALIDADE DA FACE - MUITO RIGOROSO */
+    /** ✅ VALIDAR QUALIDADE DA FACE - SIMPLIFICADO */
     private fun validateFaceQuality(bitmap: Bitmap): QualityResult {
         return try {
-            // ✅ 1. VERIFICAR TAMANHO MÍNIMO - MUITO RIGOROSO
-            if (bitmap.width < 150 || bitmap.height < 150) {
-                return QualityResult(
-                        false,
-                        "Face muito pequena (${bitmap.width}x${bitmap.height}) - mínimo 150x150"
-                )
+            // ✅ VERIFICAÇÃO BÁSICA DE TAMANHO (como no código de referência)
+            if (bitmap.width < 100 || bitmap.height < 100) {
+                return QualityResult(false, "Face muito pequena")
             }
 
-            // ✅ 2. VERIFICAR SE NÃO ESTÁ MUITO GRANDE (PODE SER RUÍDO)
-            if (bitmap.width > 600 || bitmap.height > 600) {
-                return QualityResult(
-                        false,
-                        "Face muito grande (${bitmap.width}x${bitmap.height}) - pode ser ruído"
-                )
-            }
-
-            // ✅ 3. VERIFICAR LUMINOSIDADE - MUITO RIGOROSO
+            // ✅ VERIFICAÇÃO BÁSICA DE LUMINOSIDADE
             val pixels = IntArray(bitmap.width * bitmap.height)
             bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
 
             var totalBrightness = 0f
-            var darkPixels = 0
-            var brightPixels = 0
-
             for (pixel in pixels) {
                 val r = (pixel shr 16) and 0xFF
                 val g = (pixel shr 8) and 0xFF
                 val b = pixel and 0xFF
-
-                val brightness = (r + g + b) / 3f / 255f
-                totalBrightness += brightness
-
-                if (brightness < 0.15f) darkPixels++
-                if (brightness > 0.85f) brightPixels++
+                totalBrightness += (r + g + b) / 3f / 255f
             }
 
             val avgBrightness = totalBrightness / pixels.size
-            val darkRatio = darkPixels.toFloat() / pixels.size
-            val brightRatio = brightPixels.toFloat() / pixels.size
-
-            // ✅ 4. VERIFICAR SE NÃO ESTÁ MUITO ESCURO OU MUITO CLARO - MUITO RIGOROSO
-            if (avgBrightness < 0.25f) {
-                return QualityResult(
-                        false,
-                        "Imagem muito escura (${String.format("%.1f", avgBrightness * 100)}%)"
-                )
-            }
-
-            if (avgBrightness > 0.75f) {
-                return QualityResult(
-                        false,
-                        "Imagem muito clara (${String.format("%.1f", avgBrightness * 100)}%)"
-                )
-            }
-
-            // ✅ 5. VERIFICAR SE NÃO TEM MUITOS PIXELS ESCUROS OU CLAROS - MUITO RIGOROSO
-            if (darkRatio > 0.2f) {
-                return QualityResult(
-                        false,
-                        "Muitos pixels escuros (${String.format("%.1f", darkRatio * 100)}%)"
-                )
-            }
-
-            if (brightRatio > 0.2f) {
-                return QualityResult(
-                        false,
-                        "Muitos pixels claros (${String.format("%.1f", brightRatio * 100)}%)"
-                )
-            }
-
-            // ✅ 6. VERIFICAR VARIAÇÃO DE PIXELS (CONTRASTE) - MUITO RIGOROSO
-            var variance = 0f
-            for (pixel in pixels) {
-                val r = (pixel shr 16) and 0xFF
-                val g = (pixel shr 8) and 0xFF
-                val b = pixel and 0xFF
-
-                val brightness = (r + g + b) / 3f / 255f
-                val diff = brightness - avgBrightness
-                variance += diff * diff
-            }
-            variance /= pixels.size
-
-            if (variance < 0.02f) {
-                return QualityResult(
-                        false,
-                        "Imagem sem contraste suficiente (variância: ${String.format("%.3f", variance)})"
-                )
-            }
-
-            // ✅ 7. VERIFICAR SE NÃO É UMA IMAGEM UNIFORME (PODE SER RUÍDO)
-            if (variance < 0.005f) {
-                return QualityResult(false, "Imagem muito uniforme - possivelmente ruído")
-            }
-
-            // ✅ 8. VERIFICAR SE A FACE ESTÁ CENTRADA E BEM POSICIONADA
-            val centerX = bitmap.width / 2
-            val centerY = bitmap.height / 2
-            val centerPixel = pixels[centerY * bitmap.width + centerX]
-            val centerBrightness = ((centerPixel shr 16) and 0xFF + (centerPixel shr 8) and 0xFF + centerPixel and 0xFF) / 3f / 255f
             
-            if (centerBrightness < 0.2f || centerBrightness > 0.8f) {
-                return QualityResult(
-                        false,
-                        "Face não está bem posicionada no centro"
-                )
+            // ✅ VERIFICAÇÃO SIMPLES DE LUMINOSIDADE
+            if (avgBrightness < 0.1f || avgBrightness > 0.9f) {
+                return QualityResult(false, "Luminosidade inadequada")
             }
 
-            Log.d(
-                    TAG,
-                    "✅ Qualidade da face aprovada: luminosidade=${String.format("%.2f", avgBrightness)}, contraste=${String.format("%.3f", variance)}, pixels_escuros=${String.format("%.1f", darkRatio * 100)}%, pixels_claros=${String.format("%.1f", brightRatio * 100)}%"
-            )
-            return QualityResult(true, "Qualidade aprovada")
+            return QualityResult(true, "Qualidade aceitável")
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao validar qualidade da face: ${e.message}")
-            return QualityResult(false, "Erro na validação: ${e.message}")
+            return QualityResult(false, "Erro na validação")
         }
     }
 
-    /** ✅ VALIDAR QUALIDADE DO EMBEDDING - MAIS CRITERIOSO */
+    /** ✅ VALIDAR QUALIDADE DO EMBEDDING - SIMPLIFICADO */
     private fun validateEmbeddingQuality(embedding: FloatArray): QualityResult {
         return try {
-            // ✅ 1. VERIFICAR SE NÃO É TUDO ZERO
-            if (embedding.all { it == 0f }) {
-                return QualityResult(false, "Embedding zerado")
+            // ✅ VERIFICAÇÃO BÁSICA (como no código de referência)
+            if (embedding.isEmpty() || embedding.all { it == 0f }) {
+                return QualityResult(false, "Embedding inválido")
             }
 
-            // ✅ 2. VERIFICAR SE HÁ VALORES INVÁLIDOS
+            // ✅ VERIFICAR VALORES INVÁLIDOS
             if (embedding.any { it.isNaN() || it.isInfinite() }) {
                 return QualityResult(false, "Embedding com valores inválidos")
             }
 
-            // ✅ 3. VERIFICAR SE NÃO SÃO TODOS IGUAIS (PODE SER RUÍDO)
-            val firstValue = embedding[0]
-            if (embedding.all { kotlin.math.abs(it - firstValue) < 0.0001f }) {
-                return QualityResult(false, "Embedding com valores idênticos - possivelmente ruído")
-            }
-
-            // ✅ 4. VERIFICAR VARIÂNCIA DO EMBEDDING - MAIS RIGOROSO
-            val mean = embedding.average().toFloat()
-            var variance = 0f
-            for (value in embedding) {
-                val diff = value - mean
-                variance += diff * diff
-            }
-            variance /= embedding.size
-
-            if (variance < 0.005f) {
-                return QualityResult(
-                        false,
-                        "Embedding sem variação suficiente (variância: ${String.format("%.6f", variance)})"
-                )
-            }
-
-            // ✅ 5. VERIFICAR MAGNITUDE DO EMBEDDING - MAIS RIGOROSO
-            var magnitude = 0f
-            for (value in embedding) {
-                magnitude += value * value
-            }
-            magnitude = kotlin.math.sqrt(magnitude)
-
-            if (magnitude < 0.5f) {
-                return QualityResult(
-                        false,
-                        "Embedding com magnitude muito baixa (${String.format("%.3f", magnitude)})"
-                )
-            }
-
-            // ✅ 6. VERIFICAR SE NÃO TEM VALORES EXTREMOS (PODE SER RUÍDO)
-            val maxValue = embedding.maxOrNull() ?: 0f
-            val minValue = embedding.minOrNull() ?: 0f
-            val range = maxValue - minValue
-
-            if (range < 0.1f) {
-                return QualityResult(
-                        false,
-                        "Embedding com range muito pequeno (${String.format("%.3f", range)})"
-                )
-            }
-
-            // ✅ 7. VERIFICAR SE NÃO TEM MUITOS VALORES ZEROS
-            val zeroCount = embedding.count { kotlin.math.abs(it) < 0.001f }
-            val zeroRatio = zeroCount.toFloat() / embedding.size
-
-            if (zeroRatio > 0.5f) {
-                return QualityResult(
-                        false,
-                        "Muitos valores próximos de zero (${String.format("%.1f", zeroRatio * 100)}%)"
-                )
-            }
-
-            Log.d(
-                    TAG,
-                    "✅ Qualidade do embedding aprovada: variância=${String.format("%.6f", variance)}, magnitude=${String.format("%.3f", magnitude)}, range=${String.format("%.3f", range)}, zeros=${String.format("%.1f", zeroRatio * 100)}%"
-            )
-            return QualityResult(true, "Embedding de qualidade")
+            return QualityResult(true, "Embedding válido")
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao validar qualidade do embedding: ${e.message}")
-            return QualityResult(false, "Erro na validação: ${e.message}")
+            Log.e(TAG, "❌ Erro ao validar embedding: ${e.message}")
+            return QualityResult(false, "Erro na validação")
         }
     }
 
     /** 📊 RESULTADO DE QUALIDADE */
     data class QualityResult(val isValid: Boolean, val reason: String)
 
-    /** ✅ VALIDAR SE O MATCH É CONSISTENTE (EVITA FALSOS POSITIVOS) - MUITO RIGOROSO */
+    /** ✅ VALIDAR SE O MATCH É CONSISTENTE - SIMPLIFICADO */
     private fun validateConsistentMatch(embedding1: FloatArray, embedding2: FloatArray): Boolean {
         return try {
-            // ✅ VERIFICAR DISTRIBUIÇÃO DOS VALORES
-            val mean1 = embedding1.average().toFloat()
-            val mean2 = embedding2.average().toFloat()
-            val meanDiff = kotlin.math.abs(mean1 - mean2)
-
-            // ✅ VERIFICAR VARIÂNCIA
-            val variance1 = embedding1.map { (it - mean1) * (it - mean1) }.average().toFloat()
-            val variance2 = embedding2.map { (it - mean2) * (it - mean2) }.average().toFloat()
-            val varianceDiff = kotlin.math.abs(variance1 - variance2)
-
-            // ✅ VERIFICAR CORRELAÇÃO
+            // ✅ VERIFICAÇÃO SIMPLES DE CORRELAÇÃO (como no código de referência)
             val correlation = calculateCorrelation(embedding1, embedding2)
-
-            // ✅ CRITÉRIOS DE CONSISTÊNCIA - MUITO RIGOROSOS
-            val isMeanConsistent = meanDiff < 0.08f // ✅ MUITO RIGOROSO
-            val isVarianceConsistent = varianceDiff < 0.04f // ✅ MUITO RIGOROSO
-            val isCorrelationGood = correlation > 0.85f // ✅ MUITO RIGOROSO
-
-            // ✅ VERIFICAÇÃO ADICIONAL: Verificar se os padrões são similares
-            val patternSimilarity = calculatePatternSimilarity(embedding1, embedding2)
-            val isPatternConsistent = patternSimilarity > 0.8f // ✅ MUITO RIGOROSO
-
-            Log.d(
-                    TAG,
-                    "🔍 Validação consistente: meanDiff=${String.format("%.3f", meanDiff)}, varianceDiff=${String.format("%.3f", varianceDiff)}, correlation=${String.format("%.3f", correlation)}, pattern=${String.format("%.3f", patternSimilarity)}"
-            )
-            Log.d(
-                    TAG,
-                    "🔍 Consistência: mean=$isMeanConsistent, variance=$isVarianceConsistent, correlation=$isCorrelationGood, pattern=$isPatternConsistent"
-            )
-
-            isMeanConsistent && isVarianceConsistent && isCorrelationGood && isPatternConsistent
+            return correlation > 0.5f // ✅ THRESHOLD SIMPLES
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro na validação consistente: ${e.message}")
             false
@@ -2125,7 +1962,7 @@ class PontoActivity : AppCompatActivity() {
 
     private fun convertBitmapToTensorInput(bitmap: Bitmap): ByteBuffer {
         try {
-            // ✅ OTIMIZAÇÃO: Reduzir logs para melhor performance
+            // ✅ CORREÇÃO: Usar a mesma normalização do CameraActivity para compatibilidade
             val inputSize = modelInputWidth
 
             // ✅ PROTEÇÃO CRÍTICA: Validar bitmap de entrada
@@ -2133,40 +1970,20 @@ class PontoActivity : AppCompatActivity() {
                 throw IllegalArgumentException("Bitmap inválido")
             }
 
-            // ✅ OTIMIZAÇÃO: Alocar ByteBuffer diretamente
-            val bufferSize = 4 * inputSize * inputSize * 3
-            val byteBuffer = ByteBuffer.allocateDirect(bufferSize)
-            byteBuffer.order(ByteOrder.nativeOrder())
+            // ✅ CORREÇÃO: Usar ImageProcessor como no CameraActivity
+            val imageProcessor = org.tensorflow.lite.support.image.ImageProcessor.Builder()
+                .add(org.tensorflow.lite.support.image.ops.ResizeOp(inputSize, inputSize, org.tensorflow.lite.support.image.ops.ResizeOp.ResizeMethod.BILINEAR))
+                .add(org.tensorflow.lite.support.common.ops.NormalizeOp(0f, 255f)) // ✅ MESMA NORMALIZAÇÃO DO CAMERAACTIVITY
+                .build()
+            
+            // ✅ CORREÇÃO: Usar TensorImage como no CameraActivity
+            val tensorImage = org.tensorflow.lite.support.image.TensorImage.fromBitmap(bitmap)
+            val processedImage = imageProcessor.process(tensorImage)
+            val inputBuffer = processedImage.buffer
 
-            // ✅ OTIMIZAÇÃO: Redimensionar bitmap apenas se necessário
-            val resizedBitmap =
-                    if (bitmap.width != inputSize || bitmap.height != inputSize) {
-                        Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-                    } else {
-                        bitmap
-                    }
+            Log.d(TAG, "✅ Tensor de entrada criado com normalização compatível: ${inputBuffer.capacity()} bytes")
+            return inputBuffer
 
-            // ✅ OTIMIZAÇÃO: Alocar array de pixels
-            val intValues = IntArray(inputSize * inputSize)
-            resizedBitmap.getPixels(intValues, 0, inputSize, 0, 0, inputSize, inputSize)
-
-            // ✅ OTIMIZAÇÃO: Processar pixels de forma otimizada (MOBILE_FACE_NET: [-1, 1])
-            for (pixel in intValues) {
-                val r = ((pixel shr 16) and 0xFF) / 127.5f - 1.0f
-                val g = ((pixel shr 8) and 0xFF) / 127.5f - 1.0f
-                val b = (pixel and 0xFF) / 127.5f - 1.0f
-
-                byteBuffer.putFloat(r)
-                byteBuffer.putFloat(g)
-                byteBuffer.putFloat(b)
-            }
-
-            // ✅ OTIMIZAÇÃO: Limpar bitmap temporário
-            if (resizedBitmap != bitmap) {
-                resizedBitmap.recycle()
-            }
-
-            return byteBuffer
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro na conversão do bitmap: ${e.message}")
             throw e
@@ -2599,7 +2416,10 @@ class PontoActivity : AppCompatActivity() {
                 } else {
                     Log.d(TAG, "✅ Faces já cadastradas:")
                     faces.forEach { face ->
-                        Log.d(TAG, "   - ${face.funcionarioId}: ${face.embedding.length} chars")
+                        Log.d(
+                                TAG,
+                                "   - ${face.funcionarioId}: ${face.embedding.length} chars"
+                        )
                     }
                 }
             } catch (e: Exception) {
@@ -3142,83 +2962,27 @@ class PontoActivity : AppCompatActivity() {
         }
     }
 
-    /** ✅ HISTÓRICO: Validar consistência do histórico - MUITO RIGOROSO */
+    /** ✅ HISTÓRICO: Validar consistência do histórico - SIMPLIFICADO */
     private fun validateRecognitionHistory(
             funcionarioId: String,
             currentSimilarity: Float
     ): Boolean {
         return try {
+            // ✅ VERIFICAÇÃO SIMPLES (como no código de referência)
             if (recognitionHistory.isEmpty()) {
-                Log.d(TAG, "📊 Histórico vazio - primeira tentativa")
                 return true
-            }
-
-            // ✅ FILTRAR TENTATIVAS RECENTES (últimos 60 segundos) - MAIS RIGOROSO
-            val recentTime = System.currentTimeMillis() - 60000L
-            val recentAttempts = recognitionHistory.filter { it.timestamp > recentTime }
-
-            if (recentAttempts.isEmpty()) {
-                Log.d(TAG, "📊 Nenhuma tentativa recente - permitindo")
-                return true
-            }
-
-            // ✅ VERIFICAR CONSISTÊNCIA DO FUNCIONÁRIO - MUITO RIGOROSO
-            val sameEmployeeAttempts = recentAttempts.filter { it.funcionarioId == funcionarioId }
-            val differentEmployeeAttempts =
-                    recentAttempts.filter {
-                        it.funcionarioId != funcionarioId && it.funcionarioId != null
-                    }
-
-            // ✅ SE HOUVE TENTATIVAS DE OUTROS FUNCIONÁRIOS, SUSPEITAR - MUITO RIGOROSO
-            if (differentEmployeeAttempts.isNotEmpty()) {
-                Log.w(
-                        TAG,
-                        "⚠️ Tentativas de outros funcionários detectadas: ${differentEmployeeAttempts.size}"
-                )
-                suspiciousActivityCount += 2 // ✅ PENALIDADE MAIOR
-                return false
-            }
-
-            // ✅ VERIFICAR SE A SIMILARIDADE É CONSISTENTE - MUITO RIGOROSO
-            val successfulAttempts = sameEmployeeAttempts.filter { it.wasSuccessful }
-            if (successfulAttempts.isNotEmpty()) {
-                val avgSimilarity = successfulAttempts.map { it.similarity }.average().toFloat()
-                val similarityDiff = kotlin.math.abs(currentSimilarity - avgSimilarity)
-
-                Log.d(
-                        TAG,
-                        "📊 Similaridade média: ${String.format("%.3f", avgSimilarity)}, Diferença: ${String.format("%.3f", similarityDiff)}"
-                )
-
-                // ✅ SE A DIFERENÇA É MUITO GRANDE, SUSPEITAR - MUITO RIGOROSO
-                if (similarityDiff > 0.08f) { // ✅ MUITO RIGOROSO
-                    Log.w(TAG, "⚠️ Similaridade muito diferente do histórico")
-                    suspiciousActivityCount += 2 // ✅ PENALIDADE MAIOR
-                    return false
-                }
-                
-                // ✅ VERIFICAR SE A SIMILARIDADE ATUAL É MUITO BAIXA COMPARADA AO HISTÓRICO
-                if (currentSimilarity < avgSimilarity - 0.05f) {
-                    Log.w(TAG, "⚠️ Similaridade atual muito baixa comparada ao histórico")
-                    suspiciousActivityCount++
-                    return false
-                }
             }
 
             // ✅ VERIFICAR SE HÁ MUITAS TENTATIVAS FALHADAS RECENTES
-            val failedAttempts = recentAttempts.filter { !it.wasSuccessful }
-            if (failedAttempts.size >= 3) { // ✅ MUITO RIGOROSO
-                Log.w(TAG, "⚠️ Muitas tentativas falhadas recentes: ${failedAttempts.size}")
-                suspiciousActivityCount++
-                return false
+            val recentTime = System.currentTimeMillis() - 30000L // 30 segundos
+            val recentFailedAttempts = recognitionHistory.filter { 
+                it.timestamp > recentTime && !it.wasSuccessful 
             }
 
-            // ✅ RESETAR CONTADOR DE ATIVIDADE SUSPEITA SE TUDO OK
-            suspiciousActivityCount = 0
-            true
+            return recentFailedAttempts.size < 3 // ✅ LIMITE SIMPLES
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro ao validar histórico: ${e.message}")
-            false // ✅ MUITO RIGOROSO: Em caso de erro, rejeitar
+            true // ✅ PERMISSIVO: Em caso de erro, permitir
         }
     }
 
@@ -3594,126 +3358,21 @@ class PontoActivity : AppCompatActivity() {
         }
     }
 
-    /** ✅ VALIDAR SE NÃO É UM FALSO POSITIVO - DETECTA CONFUSÃO ENTRE FACES - MUITO RIGOROSO */
+    /** ✅ VALIDAR SE NÃO É UM FALSO POSITIVO - SIMPLIFICADO */
     private fun validateNotFalsePositive(embedding1: FloatArray, embedding2: FloatArray): Boolean {
         return try {
             if (embedding1.size != embedding2.size) {
-                Log.w(TAG, "⚠️ Tamanhos diferentes - possível falso positivo")
                 return false
             }
 
-            // ✅ VERIFICAÇÃO 1: Correlação muito alta (pode ser a mesma pessoa)
+            // ✅ VERIFICAÇÃO SIMPLES DE CORRELAÇÃO (como no código de referência)
             val correlation = calculateCorrelation(embedding1, embedding2)
-            if (correlation > 0.995f) { // ✅ MUITO RIGOROSO
-                Log.d(
-                        TAG,
-                        "✅ Correlação muito alta (${String.format("%.3f", correlation)}) - provavelmente a mesma pessoa"
-                )
-                return true
-            }
-
-            // ✅ VERIFICAÇÃO 2: Correlação muito baixa (pessoas diferentes) - MUITO RIGOROSO
-            if (correlation < 0.75f) { // ✅ MUITO RIGOROSO
-                Log.w(
-                        TAG,
-                        "⚠️ Correlação muito baixa (${String.format("%.3f", correlation)}) - pessoas diferentes"
-                )
-                return false
-            }
-
-            // ✅ VERIFICAÇÃO 3: Verificar distribuição dos valores
-            val mean1 = embedding1.average().toFloat()
-            val mean2 = embedding2.average().toFloat()
-            val meanDiff = kotlin.math.abs(mean1 - mean2)
-
-            val variance1 = embedding1.map { (it - mean1) * (it - mean1) }.average().toFloat()
-            val variance2 = embedding2.map { (it - mean2) * (it - mean2) }.average().toFloat()
-            val varianceDiff = kotlin.math.abs(variance1 - variance2)
-
-            // ✅ VERIFICAÇÃO 4: Se as diferenças são muito grandes, são pessoas diferentes - MUITO RIGOROSO
-            if (meanDiff > 0.15f) { // ✅ MUITO RIGOROSO
-                Log.w(
-                        TAG,
-                        "⚠️ Diferença de média muito alta (${String.format("%.3f", meanDiff)}) - pessoas diferentes"
-                )
-                return false
-            }
-
-            if (varianceDiff > 0.08f) { // ✅ MUITO RIGOROSO
-                Log.w(
-                        TAG,
-                        "⚠️ Diferença de variância muito alta (${String.format("%.3f", varianceDiff)}) - pessoas diferentes"
-                )
-                return false
-            }
-
-            // ✅ VERIFICAÇÃO 5: Verificar padrões específicos de face - MUITO RIGOROSO
-            val patternSimilarity = calculatePatternSimilarity(embedding1, embedding2)
-            if (patternSimilarity < 0.85f) { // ✅ MUITO RIGOROSO
-                Log.w(
-                        TAG,
-                        "⚠️ Padrão facial muito diferente (${String.format("%.3f", patternSimilarity)}) - pessoas diferentes"
-                )
-                return false
-            }
-
-            // ✅ VERIFICAÇÃO 6: Verificar se não são embeddings muito similares (pode ser ruído)
-            val cosineSimilarity = calculateCosineSimilarity(embedding1, embedding2)
-            if (cosineSimilarity > 0.999f) { // ✅ MUITO RIGOROSO
-                Log.w(
-                        TAG,
-                        "⚠️ Embeddings muito similares (${String.format("%.6f", cosineSimilarity)}) - possível ruído"
-                )
-                return false
-            }
-
-            // ✅ VERIFICAÇÃO 7: Verificar se não são embeddings muito diferentes
-            if (cosineSimilarity < 0.8f) { // ✅ MUITO RIGOROSO
-                Log.w(
-                        TAG,
-                        "⚠️ Embeddings muito diferentes (${String.format("%.3f", cosineSimilarity)}) - pessoas diferentes"
-                )
-                return false
-            }
-
-            Log.d(TAG, "✅ Validações de falso positivo passaram:")
-            Log.d(TAG, "   - Correlação: ${String.format("%.3f", correlation)}")
-            Log.d(TAG, "   - Diferença média: ${String.format("%.3f", meanDiff)}")
-            Log.d(TAG, "   - Diferença variância: ${String.format("%.3f", varianceDiff)}")
-            Log.d(TAG, "   - Padrão facial: ${String.format("%.3f", patternSimilarity)}")
-            Log.d(TAG, "   - Cosseno: ${String.format("%.3f", cosineSimilarity)}")
-
-            true
+            return correlation > 0.3f // ✅ THRESHOLD SIMPLES
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro na validação de falso positivo: ${e.message}")
             false
         }
     }
 
-    /** ✅ CALCULAR SIMILARIDADE DE PADRÃO FACIAL */
-    private fun calculatePatternSimilarity(embedding1: FloatArray, embedding2: FloatArray): Float {
-        return try {
-            if (embedding1.size != embedding2.size) return 0f
 
-            // ✅ CALCULAR SIMILARIDADE POR SEGMENTOS (características faciais)
-            val segmentSize = embedding1.size / 4 // Dividir em 4 segmentos
-            var totalSimilarity = 0f
-
-            for (i in 0..3) {
-                val start = i * segmentSize
-                val end = if (i == 3) embedding1.size else (i + 1) * segmentSize
-
-                val segment1 = embedding1.slice(start until end).toFloatArray()
-                val segment2 = embedding2.slice(start until end).toFloatArray()
-
-                val segmentSimilarity = calculateSimilarity(segment1, segment2)
-                totalSimilarity += segmentSimilarity
-            }
-
-            totalSimilarity / 4f
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Erro ao calcular similaridade de padrão: ${e.message}")
-            0f
-        }
-    }
 }

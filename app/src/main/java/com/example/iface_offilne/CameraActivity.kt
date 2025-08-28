@@ -452,8 +452,10 @@ class CameraActivity : AppCompatActivity() {
             val cameraProvider = cameraProviderFuture.get()
             
             // ✅ CORREÇÃO: Configurar preview com orientação correta e ESPELHAMENTO
+            val displayRotation = previewView.display?.rotation ?: Surface.ROTATION_0
+            
             val preview = Preview.Builder()
-                .setTargetRotation(previewView.display.rotation) // ✅ CORREÇÃO: Orientação correta
+                .setTargetRotation(displayRotation) // ✅ CORREÇÃO: Orientação correta com null safety
                 .build().also {
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
@@ -461,7 +463,7 @@ class CameraActivity : AppCompatActivity() {
             imageAnalyzer = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setTargetResolution(android.util.Size(640, 480)) // ✅ MELHOR RESOLUÇÃO PARA EMBEDDINGS PERFEITOS
-                .setTargetRotation(previewView.display.rotation) // ✅ CORREÇÃO: Orientação correta
+                .setTargetRotation(displayRotation) // ✅ CORREÇÃO: Orientação correta com null safety
                 .build().also {
                     it.setAnalyzer(ContextCompat.getMainExecutor(this)) { proxy ->
                         processImage(proxy)

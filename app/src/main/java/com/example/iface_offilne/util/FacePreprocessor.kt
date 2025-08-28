@@ -38,14 +38,14 @@ class FacePreprocessor(private val context: Context) {
         private const val SHARPNESS_FACTOR = 1.2f // Fator de nitidez
     }
     
-    // 🎯 FACE DETECTOR DE ALTA PRECISÃO
+    // 🎯 FACE DETECTOR DE ALTA PRECISÃO - CONFIGURAÇÃO COMPATÍVEL
     private val faceDetector: FaceDetector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
-            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+            .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST) // ✅ MUDANÇA: Usar FAST para compatibilidade
             .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
             .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
             .setContourMode(FaceDetectorOptions.CONTOUR_MODE_ALL)
-            .setMinFaceSize(0.08f)
+            .setMinFaceSize(0.05f) // ✅ MUDANÇA: Reduzir para 5% para detectar faces menores
             .enableTracking()
             .build()
     )
@@ -106,6 +106,49 @@ class FacePreprocessor(private val context: Context) {
             
         } catch (e: Exception) {
             Log.e(TAG, "❌ Erro no pré-processamento facial", e)
+            null
+        }
+    }
+    
+    /**
+     * 🎯 PRÉ-PROCESSAMENTO DE FACE JÁ DETECTADA (PARA PONTOACTIVITY)
+     * Usado quando a face já foi detectada pelo ML Kit principal
+     */
+    fun preprocessDetectedFace(faceBitmap: Bitmap): PreprocessedFace? {
+        return try {
+            Log.d(TAG, "🎯 === PRÉ-PROCESSAMENTO DE FACE JÁ DETECTADA ===")
+            Log.d(TAG, "📊 Face recebida: ${faceBitmap.width}x${faceBitmap.height}")
+            
+            // ✅ 1. REDIMENSIONAR PARA TAMANHO PADRÃO PRIMEIRO
+            val resizedFace = resizeToTargetSize(faceBitmap)
+            Log.d(TAG, "✅ Redimensionado para ${TARGET_SIZE}x${TARGET_SIZE}")
+            
+            // ✅ 2. CORRIGIR ILUMINAÇÃO
+            val illuminatedFace = correctIllumination(resizedFace)
+            Log.d(TAG, "✅ Iluminação corrigida")
+            
+            // ✅ 3. MELHORAR CONTRASTE
+            val contrastedFace = enhanceContrast(illuminatedFace)
+            Log.d(TAG, "✅ Contraste melhorado")
+            
+            // ✅ 4. APLICAR NITIDEZ
+            val sharpenedFace = applySharpening(contrastedFace)
+            Log.d(TAG, "✅ Nitidez aplicada")
+            
+            // ✅ 5. NORMALIZAR VALORES
+            val normalizedFace = normalizePixels(sharpenedFace)
+            Log.d(TAG, "✅ Pixels normalizados")
+            
+            Log.d(TAG, "🎉 === PRÉ-PROCESSAMENTO DE FACE DETECTADA CONCLUÍDO ===")
+            
+            PreprocessedFace(
+                bitmap = normalizedFace,
+                originalFace = null, // Não temos a face original do ML Kit
+                quality = calculateQuality(normalizedFace)
+            )
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Erro no pré-processamento de face detectada", e)
             null
         }
     }
@@ -408,7 +451,7 @@ class FacePreprocessor(private val context: Context) {
      */
     data class PreprocessedFace(
         val bitmap: Bitmap,
-        val originalFace: Face,
+        val originalFace: Face?, // Pode ser null se a face já foi detectada
         val quality: Float
     )
 } 

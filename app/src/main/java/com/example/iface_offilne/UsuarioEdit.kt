@@ -5,9 +5,11 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.os.Environment
 import android.util.Log
 import android.widget.ImageView
 import android.widget.Toast
+import java.io.File
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.findNavController
@@ -174,15 +176,18 @@ class UsuarioEdit : AppCompatActivity() {
                         binding.textViewStatusFacial.setTextColor(getColor(android.R.color.holo_green_dark))
                         binding.btnCadastrarFacial.text = "Atualizar Facial"
                         
-                        // Tentar carregar uma foto salva (se houver)
-                        // Por enquanto, exibir ícone de sucesso
-                        binding.imageViewFacial.setImageResource(android.R.drawable.ic_menu_camera)
+                        // ✅ CARREGAR E EXIBIR A FOTO REAL SALVA
+                        loadAndDisplayFacialImage(faceEntity)
                     } else {
                         // Usuário não tem foto facial
                         binding.textViewStatusFacial.text = "❌ Nenhuma foto facial cadastrada"
                         binding.textViewStatusFacial.setTextColor(getColor(android.R.color.holo_red_dark))
                         binding.btnCadastrarFacial.text = "Cadastrar Facial"
+                        
+                        // ✅ EXIBIR ÍCONE DE CÂMERA PARA INDICAR QUE NÃO HÁ FOTO
                         binding.imageViewFacial.setImageResource(android.R.drawable.ic_menu_camera)
+                        binding.imageViewFacial.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                        binding.imageViewFacial.setColorFilter(getColor(android.R.color.darker_gray))
                     }
                 }
             } catch (e: Exception) {
@@ -190,9 +195,153 @@ class UsuarioEdit : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     binding.textViewStatusFacial.text = "Erro ao verificar facial"
                     binding.textViewStatusFacial.setTextColor(getColor(android.R.color.holo_red_dark))
+                    binding.imageViewFacial.setImageResource(android.R.drawable.ic_dialog_alert)
                 }
             }
         }
+    }
+
+    /**
+     * ✅ CARREGAR E EXIBIR A FOTO FACIAL REAL SALVA
+     */
+    private fun loadAndDisplayFacialImage(faceEntity: com.example.iface_offilne.data.FaceEntity) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                // ✅ PROCURAR FOTO NOS LOCAIS ONDE O CAMERAACTIVITY SALVA
+                val bitmap = findAndLoadFacialImage(faceEntity.funcionarioId)
+                
+                withContext(Dispatchers.Main) {
+                    if (bitmap != null) {
+                        // ✅ EXIBIR A FOTO REAL
+                        binding.imageViewFacial.setImageBitmap(bitmap)
+                        binding.imageViewFacial.scaleType = ImageView.ScaleType.CENTER_CROP
+                        binding.imageViewFacial.clearColorFilter()
+                        
+                        Log.d("UsuarioEdit", "✅ Foto facial carregada com sucesso")
+                    } else {
+                        // ✅ FALHA AO CARREGAR - USAR ÍCONE
+                        showDefaultFacialIcon()
+                        Log.d("UsuarioEdit", "ℹ️ Nenhuma foto encontrada - usando ícone padrão")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("UsuarioEdit", "Erro ao carregar foto", e)
+                withContext(Dispatchers.Main) {
+                    showDefaultFacialIcon()
+                }
+            }
+        }
+    }
+
+    /**
+     * ✅ PROCURAR FOTO NOS LOCAIS ONDE O CAMERAACTIVITY SALVA
+     */
+    private fun findAndLoadFacialImage(funcionarioId: String): Bitmap? {
+        try {
+            // ✅ 1. PROCURAR NO DIRETÓRIO INTERNO (face_captures)
+            val internalDir = File(filesDir, "face_captures")
+            if (internalDir.exists()) {
+                val files = internalDir.listFiles { file ->
+                    file.name.startsWith("face_final_") && file.extension == "jpg"
+                }
+                
+                if (files != null && files.isNotEmpty()) {
+                    // ✅ PEGAR O ARQUIVO MAIS RECENTE
+                    val latestFile = files.maxByOrNull { it.lastModified() }
+                    if (latestFile != null) {
+                        val bitmap = BitmapFactory.decodeFile(latestFile.absolutePath)
+                        if (bitmap != null) {
+                            Log.d("UsuarioEdit", "✅ Foto encontrada em face_captures: ${latestFile.name}")
+                            return bitmap
+                        }
+                    }
+                }
+            }
+            
+            // ✅ 2. PROCURAR NO CACHE (face_captures)
+            val cacheDir = File(cacheDir, "face_captures")
+            if (cacheDir.exists()) {
+                val files = cacheDir.listFiles { file ->
+                    file.name.startsWith("face_final_") && file.extension == "jpg"
+                }
+                
+                if (files != null && files.isNotEmpty()) {
+                    val latestFile = files.maxByOrNull { it.lastModified() }
+                    if (latestFile != null) {
+                        val bitmap = BitmapFactory.decodeFile(latestFile.absolutePath)
+                        if (bitmap != null) {
+                            Log.d("UsuarioEdit", "✅ Foto encontrada em cache: ${latestFile.name}")
+                            return bitmap
+                        }
+                    }
+                }
+            }
+            
+            // ✅ 3. PROCURAR NO ARMAZENAMENTO EXTERNO (Android < 13)
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+                val picturesDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                val appDir = File(picturesDir, "FaceApp")
+                if (appDir.exists()) {
+                    val files = appDir.listFiles { file ->
+                        file.name.startsWith("face_final_") && file.extension == "jpg"
+                    }
+                    
+                    if (files != null && files.isNotEmpty()) {
+                        val latestFile = files.maxByOrNull { it.lastModified() }
+                        if (latestFile != null) {
+                            val bitmap = BitmapFactory.decodeFile(latestFile.absolutePath)
+                            if (bitmap != null) {
+                                Log.d("UsuarioEdit", "✅ Foto encontrada em armazenamento externo: ${latestFile.name}")
+                                return bitmap
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // ✅ 4. PROCURAR QUALQUER ARQUIVO DE FACE NO DIRETÓRIO INTERNO
+            val allFaceFiles = filesDir.listFiles { file ->
+                file.name.startsWith("face_") && file.extension == "jpg"
+            }
+            
+            if (allFaceFiles != null && allFaceFiles.isNotEmpty()) {
+                val latestFile = allFaceFiles.maxByOrNull { it.lastModified() }
+                if (latestFile != null) {
+                    val bitmap = BitmapFactory.decodeFile(latestFile.absolutePath)
+                    if (bitmap != null) {
+                        Log.d("UsuarioEdit", "✅ Foto encontrada no diretório interno: ${latestFile.name}")
+                        return bitmap
+                    }
+                }
+            }
+            
+            Log.d("UsuarioEdit", "ℹ️ Nenhuma foto facial encontrada nos locais esperados")
+            return null
+            
+        } catch (e: Exception) {
+            Log.e("UsuarioEdit", "Erro ao procurar foto facial", e)
+            return null
+        }
+    }
+
+    /**
+     * ✅ TENTAR CARREGAR FOTO DO BANCO DE DADOS (FALLBACK)
+     */
+    private fun loadFacialImageFromDatabase(faceEntity: com.example.iface_offilne.data.FaceEntity) {
+        // ✅ COMO A FACEENTITY NÃO TEM DADOS DE IMAGEM, USAR ÍCONE PADRÃO
+        lifecycleScope.launch(Dispatchers.Main) {
+            showDefaultFacialIcon()
+            Log.d("UsuarioEdit", "ℹ️ FaceEntity não contém dados de imagem - usando ícone padrão")
+        }
+    }
+
+    /**
+     * ✅ EXIBIR ÍCONE PADRÃO PARA FOTO FACIAL
+     */
+    private fun showDefaultFacialIcon() {
+        binding.imageViewFacial.setImageResource(android.R.drawable.ic_menu_camera)
+        binding.imageViewFacial.scaleType = ImageView.ScaleType.CENTER_INSIDE
+        binding.imageViewFacial.setColorFilter(getColor(android.R.color.holo_blue_dark))
     }
 
     private fun showDeleteConfirmationDialog() {
